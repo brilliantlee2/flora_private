@@ -55,7 +55,10 @@ QC. Existing `glycine` and `analyze` behavior remains backward compatible.
 Compatibility means that every invocation accepted by a legacy script is
 accepted with the same normalized value and every legacy-invalid value remains
 invalid. Rust/Clap may additionally accept `--option=value`; this is the only
-intentional syntax expansion. Exact help layout and exact parser error wording
+intentional syntax expansion. Removal of `--glycine-bin-dir` is the sole
+intentional legacy compatibility exception because Glycine is no longer an
+external executable. Both full workflows reject that option and never search
+for an external Glycine binary. Exact help layout and exact parser error wording
 may change, but errors remain on stderr with a nonzero exit status. A generated
 CLI contract fixture records every option, alias, type, default, conflict,
 required condition, and legacy accepted/rejected example for both workflows.
@@ -66,6 +69,25 @@ a Glycine executable, and do not resolve a relative Glycine installation path.
 Glycine algorithm options such as `--glycine-outdir`, `--glycine-err`, and
 `--glycine-shift` remain supported. `--skip-glycine` continues to require
 `--full-length-fastq`.
+
+Command boundaries are strict:
+
+- The default `flora` command runs the full single-species workflow, including
+  embedded Glycine unless `--skip-glycine` is supplied, and continues through
+  alignment, barcode/UMI/cell assignment, BAM tagging, expression, QC,
+  clustering, and report generation.
+- `flora mixed` runs the corresponding full mixed-species workflow and its
+  mixed-species QC and barnyard stages.
+- `flora glycine` accepts Glycine's raw-read and adapter options and writes only
+  Glycine outputs. It does not validate references, run barcode analysis,
+  alignment, expression, Python, QC, clustering, or reporting.
+- `flora analyze` accepts full-length FASTQ input and full 26 bp 3'/5' whitelist
+  inputs and writes only barcode, UMI, cell-assignment, and configured upstream
+  FASTQ/debug outputs. It does not run Glycine, reference alignment, BAM stages,
+  expression, Python, QC, clustering, or reporting.
+
+Preflight is command-scoped: each command checks only the tools, packages, and
+inputs needed by its permitted stages.
 
 ## Architecture
 
@@ -117,6 +139,8 @@ writers. Per-stage thread pools and large resources are owned by stage-local
 scopes and dropped before the next stage. The workflow catches a stage panic at
 the boundary, records it as a failed stage, and exits nonzero. Wrapper-versus-
 library tests run each Rust stage both ways and compare outputs and diagnostics.
+Release builds retain `panic = "unwind"`; changing to `panic = "abort"` is a
+release-contract change and fails the release configuration test.
 
 ### Python Stages and Assets
 
@@ -128,18 +152,30 @@ alongside `report_template.html`, the vendored Plotly JavaScript, and the runtim
 manifest. No `.py`, `.pyc`, HTML template, or JavaScript runtime asset is shipped
 as a separate installed file.
 
-Before a Python stage runs, Flora creates a process-private directory under the
-platform temporary directory with owner-only permissions, extracts only the
-required embedded assets, verifies every SHA-256 hash, and validates the Python
-implementation, major/minor ABI, and import/version constraints from the embedded
-manifest. The minimum manifest schema contains `python.implementation`,
-`python.major_minor`, and a `packages` object mapping each required import name
-to a PEP 440 version specifier. Package-relative imports and `__file__` template
-lookups are tested against this extracted runtime. Normal completion removes the
-directory; startup also removes stale Flora runtime directories owned by the
-current user and older than a bounded retention interval. A user with access to
-the running process can still recover extracted resources, so this is packaging
-and source-obscuring, not cryptographic secrecy.
+Before a Python stage runs, Flora atomically creates an unpredictable
+process-private directory under the platform temporary directory with mode
+`0700`. Resource paths must be relative, normalized, unique, and contain no
+parent traversal. Extraction creates regular files without following symlinks
+and refuses any pre-existing destination. Cleanup is confined to the exact
+directory handle created by the current process. Normal completion removes that
+directory; Flora does not automatically delete stale directories from other
+runs because a long-running active workflow must never be mistaken for stale.
+
+The embedded manifest records Python implementation and major/minor ABI, a
+`packages` object mapping each required import to a PEP 440 version specifier,
+and one record per resource containing logical path, type/entrypoint, SHA-256,
+compression format, compressed size, and uncompressed size. Extraction enforces
+per-resource and total uncompressed-size ceilings before allocation and verifies
+size and hash before execution. Package-relative imports and `__file__` template
+lookups are tested against this extracted runtime.
+
+Python is launched in isolated mode with `PYTHONHOME` and `PYTHONPATH` removed,
+user-site loading disabled, and the extracted runtime supplied only through the
+controlled entrypoint path. The selected Conda/environment site-packages remain
+available for declared scientific dependencies, while ambient current-directory
+and user-site shadow modules cannot override embedded entrypoints. A user with
+access to the running process can still recover extracted resources, so this is
+packaging and source-obscuring, not cryptographic secrecy.
 
 The Rust workflow invokes Python with an argument vector, never a shell command
 string. Paths containing spaces therefore remain valid and shell injection is
@@ -226,9 +262,11 @@ Flora-<version>-linux-x86_64/
   licenses/
 ```
 
-It does not contain shell workflow sources, Rust sources, Python source or
-bytecode, extracted report assets, Cargo metadata, standalone Rust stage
-binaries, tests, vendor sources, or private build scripts.
+It does not contain standalone archive entries or installed files containing
+shell workflow source, Rust source, Python source/bytecode, or extracted report
+assets. Embedded Python bytecode and report assets inside `flora` are required
+and are not rejected by this archive-entry rule. Cargo metadata, standalone Rust
+stage binaries, tests, vendor sources, and private build scripts are also absent.
 Release binaries are stripped and archives exclude macOS extended attributes.
 
 Packaging uses an allowlisted manifest rather than copying directories. It
@@ -260,6 +298,11 @@ hard compatibility requirement.
 - Run legacy `run_all.sh` and `flora` on the same small single-species input.
 - Run legacy `run_all_mixed_species.sh` and `flora mixed` on the same small
   mixed-species input.
+- Run all four commands from the extracted release archive in a clean test
+  environment where the source tree, legacy scripts, standalone stage binaries,
+  and external Glycine executable are absent. Full workflows must successfully
+  extract the embedded Python/template/Plotly resources and generate the final
+  report.
 - Compare every artifact according to the manifest below. Nondeterministic
   metadata is allowed only where listed.
 - Compare exit behavior for missing tools, malformed references, and a forced
@@ -281,6 +324,17 @@ hard compatibility requirement.
 - The archive contains no extended-attribute headers and its SHA256 verifies.
 - No private source path appears in ELF strings, Python code-object filenames,
   HTML/JavaScript assets, documentation, or archive metadata.
+- Hostile resource manifests are rejected for absolute, parent-traversal,
+  duplicate, missing-entrypoint, wrong-hash, wrong-size, unsupported-compression,
+  and oversized-decompression cases.
+- Concurrent runtime extraction, hostile symlinks, interrupted extraction, and
+  cleanup failure cannot overwrite or delete files outside the current run's
+  private directory. An old but active runtime directory is never removed.
+- Hostile `PYTHONPATH`, `PYTHONHOME`, current-directory shadow modules, and user
+  site-packages cannot replace an embedded Flora entrypoint.
+- A packaged test build with an injected Rust-stage panic emits a stage-labelled
+  error, exits nonzero, writes its log, and reaps child processes and temporary
+  resources.
 
 ## Artifact Parity Manifest
 
@@ -332,6 +386,10 @@ fixtures and checked into the private test suite.
 - Scientifically meaningful outputs match the legacy workflows according to the
   Artifact Parity Manifest.
 - Existing `glycine` and `analyze` commands remain compatible.
+- `flora glycine` and `flora analyze` produce only artifacts inside their stated
+  command boundaries and do not preflight downstream-only dependencies.
+- `--glycine-bin-dir` is rejected by both full workflows, and release tests run
+  successfully with no external Glycine executable present.
 - Public release layout contains one Rust executable and no workflow shell
   source.
 - The public archive is no larger than the current 28 MB archive unless a
