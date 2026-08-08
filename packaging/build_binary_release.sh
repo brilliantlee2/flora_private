@@ -13,15 +13,6 @@ ARCHIVE_PATH="${DIST_DIR}/${RELEASE_NAME}.tar.gz"
 BUILD_BIN="${ROOT_DIR}/target/${RUST_TARGET}/release/flora"
 MAX_GLIBC_VERSION="${FLORA_MAX_GLIBC:-}"
 
-PYTHON_RUNTIME_ASSETS=(
-  Saturation.py
-  barnyard_qc.py
-  build_report.py
-  generate_knee_plots.py
-  rna_cluster_analysis.py
-  rna_violin_plot.py
-)
-
 die() {
   echo "[ERROR] $*" >&2
   exit 1
@@ -51,6 +42,7 @@ if sys.implementation.name != "cpython" or sys.version_info[:2] != (3, 11):
 '
 
 cd "${ROOT_DIR}"
+export PYTHON_BIN
 export RUSTFLAGS="${RUSTFLAGS:+${RUSTFLAGS} }-C target-cpu=x86-64 --remap-path-prefix=${ROOT_DIR}=flora-src"
 cargo build --release --locked --target x86_64-unknown-linux-gnu --bin flora
 
@@ -82,7 +74,7 @@ done
 REQUIRED_GLIBC_VERSION="$(printf '%s\n' "${GLIBC_VERSIONS[@]}" | tail -n 1)"
 
 rm -rf "${STAGE_DIR}"
-mkdir -p "${STAGE_DIR}/scripts" "${STAGE_DIR}/licenses"
+mkdir -p "${STAGE_DIR}/licenses"
 install -m 0755 "${BUILD_BIN}" "${STAGE_DIR}/flora"
 {
   printf 'target=%s\n' "${RUST_TARGET}"
@@ -91,39 +83,21 @@ install -m 0755 "${BUILD_BIN}" "${STAGE_DIR}/flora"
   printf 'python=%s\n' "$("${PYTHON_BIN}" --version 2>&1)"
 } > "${STAGE_DIR}/BUILD_INFO.txt"
 
-# Refuse to publish a partial binary while the shell-to-Rust migration is incomplete.
-# Checking only the exit status is insufficient: clap may treat an unknown positional
-# command followed by --help as valid help for the analyze compatibility path.
 TOP_LEVEL_HELP="$("${STAGE_DIR}/flora" --help 2>&1)" \
   || die "failed to inspect the staged flora CLI"
-printf '%s\n' "${TOP_LEVEL_HELP}" | grep -Eq '^  flora run([[:space:]]|$)' \
-  || die "flora run is not advertised by the CLI; complete the Rust workflow migration before packaging"
-printf '%s\n' "${TOP_LEVEL_HELP}" | grep -Eq '^  flora run-mixed([[:space:]]|$)' \
-  || die "flora run-mixed is not advertised by the CLI; complete the Rust workflow migration before packaging"
+printf '%s\n' "${TOP_LEVEL_HELP}" | grep -Fq 'flora [OPTIONS]' \
+  || die "single-species workflow is not advertised by flora --help"
+printf '%s\n' "${TOP_LEVEL_HELP}" | grep -Fq 'flora mixed [OPTIONS]' \
+  || die "mixed-species workflow is not advertised by flora --help"
+printf '%s\n' "${TOP_LEVEL_HELP}" | grep -Fq 'flora glycine [OPTIONS]' \
+  || die "Glycine mode is not advertised by flora --help"
+printf '%s\n' "${TOP_LEVEL_HELP}" | grep -Fq 'flora analyze [OPTIONS]' \
+  || die "analyze mode is not advertised by flora --help"
 
-RUN_HELP="$("${STAGE_DIR}/flora" run --help 2>&1)" \
-  || die "flora run help failed"
-printf '%s\n' "${RUN_HELP}" | grep -Eq '^Usage: flora run([[:space:]]|$)' \
-  || die "flora run resolved to a different command; refusing to package an incomplete workflow"
-
-RUN_MIXED_HELP="$("${STAGE_DIR}/flora" run-mixed --help 2>&1)" \
-  || die "flora run-mixed help failed"
-printf '%s\n' "${RUN_MIXED_HELP}" | grep -Eq '^Usage: flora run-mixed([[:space:]]|$)' \
-  || die "flora run-mixed resolved to a different command; refusing to package an incomplete workflow"
-
-PYTHON_SOURCES=()
-for asset in "${PYTHON_RUNTIME_ASSETS[@]}"; do
-  source_path="${ROOT_DIR}/scripts/${asset}"
-  [[ -f "${source_path}" ]] || die "Missing Python runtime asset: ${source_path}"
-  PYTHON_SOURCES+=("${source_path}")
-done
-"${PYTHON_BIN}" "${ROOT_DIR}/packaging/compile_python_assets.py" \
-  --output-dir "${STAGE_DIR}/scripts" \
-  "${PYTHON_SOURCES[@]}"
-
-install -m 0644 "${ROOT_DIR}/runtime_manifest.json" "${STAGE_DIR}/runtime_manifest.json"
-install -m 0644 "${ROOT_DIR}/scripts/report_template.html" "${STAGE_DIR}/scripts/report_template.html"
-install -m 0644 "${ROOT_DIR}/scripts/plotly-2.26.0.min.js" "${STAGE_DIR}/scripts/plotly-2.26.0.min.js"
+MIXED_HELP="$("${STAGE_DIR}/flora" mixed --help 2>&1)" \
+  || die "flora mixed help failed"
+printf '%s\n' "${MIXED_HELP}" | grep -Eq '^  flora mixed([[:space:]\\]|$)' \
+  || die "flora mixed did not expose the mixed-species workflow"
 install -m 0644 "${ROOT_DIR}/docs/repository-templates/public/README.md" "${STAGE_DIR}/README.md"
 install -m 0644 "${ROOT_DIR}/docs/repository-templates/public/README_zh-CN.md" "${STAGE_DIR}/README_zh-CN.md"
 install -m 0644 "${ROOT_DIR}/environment.runtime.yml" "${STAGE_DIR}/environment.yml"
@@ -140,7 +114,7 @@ fi
 if find "${STAGE_DIR}" -type f -perm /111 ! -name flora -print -quit | grep -q .; then
   die "Release staging directory contains an unexpected executable"
 fi
-if find "${STAGE_DIR}" -type f \( -name '*.rs' -o -name '*.py' -o -name '*.sh' \
+if find "${STAGE_DIR}" -type f \( -name '*.rs' -o -name '*.py' -o -name '*.pyc' -o -name '*.sh' \
   -o -name Cargo.toml -o -name Cargo.lock \) -print -quit | grep -q .; then
   die "Release staging directory contains source or build files"
 fi

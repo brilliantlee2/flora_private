@@ -5,7 +5,10 @@ use anyhow::{Context, Result};
 use clap::Parser;
 
 #[derive(Debug, Parser)]
-#[command(version, about = "Prepare Sockeye-style read tag table from Flora assigned reads")]
+#[command(
+    version,
+    about = "Prepare Sockeye-style read tag table from Flora assigned reads"
+)]
 struct Cli {
     #[arg(long)]
     input: PathBuf,
@@ -32,7 +35,7 @@ struct Cli {
     barcode_3p_col: String,
 }
 
-fn main() -> Result<()> {
+pub fn main() -> Result<()> {
     let cli = Cli::parse();
     run(cli)
 }

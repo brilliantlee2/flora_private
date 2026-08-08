@@ -553,6 +553,8 @@ if [[ "${SAVE_INTERMEDIATE}" -eq 1 ]]; then
 fi
 if [[ "${LIGHT_OUTPUT}" -eq 1 ]]; then
   MAIN_ARGS+=(--light-output)
+else
+  MAIN_ARGS+=(--full-output)
 fi
 if [[ "${REQUIRE_PASS_BOTH_ENDS}" -eq 1 ]]; then
   MAIN_ARGS+=(--require_pass_both_ends)

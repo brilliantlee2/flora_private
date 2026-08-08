@@ -62,21 +62,32 @@ pub fn load_gene_gtf(path: &Path) -> Result<GeneIndex> {
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        let Some(fields) = parse_gtf_line(&line) else { continue };
+        let Some(fields) = parse_gtf_line(&line) else {
+            continue;
+        };
         if fields.feature != "gene" {
             continue;
         }
-        let Some(start) = parse_gtf_start(fields.start) else { continue };
-        let Some(end) = parse_u32(fields.end) else { continue };
-        let Some(label) = extract_attr(fields.attrs, "gene_name").or_else(|| extract_attr(fields.attrs, "gene_id")) else {
+        let Some(start) = parse_gtf_start(fields.start) else {
             continue;
         };
-        index.entry(fields.chrom.to_string()).or_default().push(GeneInterval {
-            start,
-            end,
-            strand: fields.strand.to_string(),
-            label,
-        });
+        let Some(end) = parse_u32(fields.end) else {
+            continue;
+        };
+        let Some(label) = extract_attr(fields.attrs, "gene_name")
+            .or_else(|| extract_attr(fields.attrs, "gene_id"))
+        else {
+            continue;
+        };
+        index
+            .entry(fields.chrom.to_string())
+            .or_default()
+            .push(GeneInterval {
+                start,
+                end,
+                strand: fields.strand.to_string(),
+                label,
+            });
     }
     sort_gene_index(&mut index);
     Ok(index)
@@ -91,25 +102,34 @@ pub fn load_exon_gtf(path: &Path) -> Result<ExonIndex> {
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        let Some(fields) = parse_gtf_line(&line) else { continue };
+        let Some(fields) = parse_gtf_line(&line) else {
+            continue;
+        };
         if fields.feature != "exon" {
             continue;
         }
-        let Some(start) = parse_gtf_start(fields.start) else { continue };
-        let Some(end) = parse_u32(fields.end) else { continue };
+        let Some(start) = parse_gtf_start(fields.start) else {
+            continue;
+        };
+        let Some(end) = parse_u32(fields.end) else {
+            continue;
+        };
         let Some(transcript_id) = extract_attr(fields.attrs, "transcript_id") else {
             continue;
         };
         let gene_label = extract_attr(fields.attrs, "gene_name")
             .or_else(|| extract_attr(fields.attrs, "gene_id"))
             .unwrap_or_else(|| "NA".to_string());
-        index.entry(fields.chrom.to_string()).or_default().push(ExonInterval {
-            start,
-            end,
-            strand: fields.strand.to_string(),
-            transcript_id,
-            gene_label,
-        });
+        index
+            .entry(fields.chrom.to_string())
+            .or_default()
+            .push(ExonInterval {
+                start,
+                end,
+                strand: fields.strand.to_string(),
+                transcript_id,
+                gene_label,
+            });
     }
     sort_exon_index(&mut index);
     Ok(index)
@@ -177,8 +197,15 @@ pub fn assign_gene(record: &BedRecord, genes: &GeneIndex, mapq: i32) -> ReadAssi
     }
 }
 
-pub fn assign_transcript(read_blocks: &[BedRecord], exons: &ExonIndex, mapq: i32) -> TranscriptAssignment {
-    let read_id = read_blocks.first().map(|x| x.name.clone()).unwrap_or_default();
+pub fn assign_transcript(
+    read_blocks: &[BedRecord],
+    exons: &ExonIndex,
+    mapq: i32,
+) -> TranscriptAssignment {
+    let read_id = read_blocks
+        .first()
+        .map(|x| x.name.clone())
+        .unwrap_or_default();
     let score = read_blocks.iter().map(|x| x.score).max().unwrap_or(0);
     if score < mapq {
         return TranscriptAssignment {
@@ -191,7 +218,9 @@ pub fn assign_transcript(read_blocks: &[BedRecord], exons: &ExonIndex, mapq: i32
     }
     let mut support: HashMap<(&str, &str), u32> = HashMap::default();
     for block in read_blocks {
-        let Some(intervals) = exons.get(&block.chrom) else { continue };
+        let Some(intervals) = exons.get(&block.chrom) else {
+            continue;
+        };
         for exon in candidate_exons(intervals, block.start, block.end) {
             if strand_mismatch(&block.strand, &exon.strand) {
                 continue;
@@ -268,7 +297,10 @@ pub fn write_gene_assignment(mut writer: impl Write, row: &ReadAssignment) -> Re
     Ok(())
 }
 
-pub fn write_transcript_assignment(mut writer: impl Write, row: &TranscriptAssignment) -> Result<()> {
+pub fn write_transcript_assignment(
+    mut writer: impl Write,
+    row: &TranscriptAssignment,
+) -> Result<()> {
     writeln!(
         writer,
         "{}\t{}\t{}\t{}\t{}",
@@ -355,14 +387,28 @@ fn sort_exon_index(index: &mut ExonIndex) {
     }
 }
 
-fn candidate_genes(intervals: &[GeneInterval], start: u32, end: u32) -> impl Iterator<Item = &GeneInterval> {
+fn candidate_genes(
+    intervals: &[GeneInterval],
+    start: u32,
+    end: u32,
+) -> impl Iterator<Item = &GeneInterval> {
     let start_idx = intervals.partition_point(|x| x.start < end);
-    intervals[..start_idx].iter().rev().take_while(move |x| x.end > start)
+    intervals[..start_idx]
+        .iter()
+        .rev()
+        .take_while(move |x| x.end > start)
 }
 
-fn candidate_exons(intervals: &[ExonInterval], start: u32, end: u32) -> impl Iterator<Item = &ExonInterval> {
+fn candidate_exons(
+    intervals: &[ExonInterval],
+    start: u32,
+    end: u32,
+) -> impl Iterator<Item = &ExonInterval> {
     let start_idx = intervals.partition_point(|x| x.start < end);
-    intervals[..start_idx].iter().rev().take_while(move |x| x.end > start)
+    intervals[..start_idx]
+        .iter()
+        .rev()
+        .take_while(move |x| x.end > start)
 }
 
 #[cfg(test)]
@@ -375,9 +421,24 @@ mod tests {
         index.insert(
             "chr1".to_string(),
             vec![
-                GeneInterval { start: 10, end: 30, strand: "+".to_string(), label: "gene_a".to_string() },
-                GeneInterval { start: 18, end: 40, strand: "-".to_string(), label: "gene_b".to_string() },
-                GeneInterval { start: 15, end: 50, strand: "+".to_string(), label: "gene_c".to_string() },
+                GeneInterval {
+                    start: 10,
+                    end: 30,
+                    strand: "+".to_string(),
+                    label: "gene_a".to_string(),
+                },
+                GeneInterval {
+                    start: 18,
+                    end: 40,
+                    strand: "-".to_string(),
+                    label: "gene_b".to_string(),
+                },
+                GeneInterval {
+                    start: 15,
+                    end: 50,
+                    strand: "+".to_string(),
+                    label: "gene_c".to_string(),
+                },
             ],
         );
         sort_gene_index(&mut index);
@@ -403,8 +464,18 @@ mod tests {
         index.insert(
             "chr1".to_string(),
             vec![
-                GeneInterval { start: 10, end: 20, strand: "+".to_string(), label: "gene_a".to_string() },
-                GeneInterval { start: 20, end: 30, strand: "+".to_string(), label: "gene_b".to_string() },
+                GeneInterval {
+                    start: 10,
+                    end: 20,
+                    strand: "+".to_string(),
+                    label: "gene_a".to_string(),
+                },
+                GeneInterval {
+                    start: 20,
+                    end: 30,
+                    strand: "+".to_string(),
+                    label: "gene_b".to_string(),
+                },
             ],
         );
         sort_gene_index(&mut index);
@@ -459,8 +530,20 @@ mod tests {
         index.insert(
             "chr1".to_string(),
             vec![
-                ExonInterval { start: 10, end: 20, strand: "+".to_string(), transcript_id: "tx1".to_string(), gene_label: "g1".to_string() },
-                ExonInterval { start: 10, end: 20, strand: "+".to_string(), transcript_id: "tx2".to_string(), gene_label: "g1".to_string() },
+                ExonInterval {
+                    start: 10,
+                    end: 20,
+                    strand: "+".to_string(),
+                    transcript_id: "tx1".to_string(),
+                    gene_label: "g1".to_string(),
+                },
+                ExonInterval {
+                    start: 10,
+                    end: 20,
+                    strand: "+".to_string(),
+                    transcript_id: "tx2".to_string(),
+                    gene_label: "g1".to_string(),
+                },
             ],
         );
         sort_exon_index(&mut index);
@@ -486,10 +569,34 @@ mod tests {
         index.insert(
             "chr1".to_string(),
             vec![
-                ExonInterval { start: 10, end: 20, strand: "+".to_string(), transcript_id: "tx1".to_string(), gene_label: "g1".to_string() },
-                ExonInterval { start: 30, end: 40, strand: "+".to_string(), transcript_id: "tx1".to_string(), gene_label: "g1".to_string() },
-                ExonInterval { start: 10, end: 20, strand: "+".to_string(), transcript_id: "tx2".to_string(), gene_label: "g1".to_string() },
-                ExonInterval { start: 30, end: 35, strand: "+".to_string(), transcript_id: "tx2".to_string(), gene_label: "g1".to_string() },
+                ExonInterval {
+                    start: 10,
+                    end: 20,
+                    strand: "+".to_string(),
+                    transcript_id: "tx1".to_string(),
+                    gene_label: "g1".to_string(),
+                },
+                ExonInterval {
+                    start: 30,
+                    end: 40,
+                    strand: "+".to_string(),
+                    transcript_id: "tx1".to_string(),
+                    gene_label: "g1".to_string(),
+                },
+                ExonInterval {
+                    start: 10,
+                    end: 20,
+                    strand: "+".to_string(),
+                    transcript_id: "tx2".to_string(),
+                    gene_label: "g1".to_string(),
+                },
+                ExonInterval {
+                    start: 30,
+                    end: 35,
+                    strand: "+".to_string(),
+                    transcript_id: "tx2".to_string(),
+                    gene_label: "g1".to_string(),
+                },
             ],
         );
         sort_exon_index(&mut index);
