@@ -44,6 +44,11 @@ env/
 *.mmi
 *.bed
 chrom_sizes.tsv
+!tests/fixtures/workflows/**/*.fastq
+!tests/fixtures/workflows/**/*.fa
+!tests/fixtures/workflows/**/*.gtf
+!tests/fixtures/workflows/**/*.bed
+!tests/fixtures/workflows/**/chrom_sizes.tsv
 
 # Pipeline outputs and logs
 alignment/
@@ -57,6 +62,7 @@ output/
 outputs/
 results/
 *.log
+!tests/fixtures/workflows/**/*.log
 *.nohup.log
 *.single_cell_report.html
 

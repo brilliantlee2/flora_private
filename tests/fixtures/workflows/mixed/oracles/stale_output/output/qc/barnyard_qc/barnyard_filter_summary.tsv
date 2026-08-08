@@ -1,0 +1,6 @@
+metric	value
+ambient_filter_enabled	True
+ambient_umi_threshold_each_species	1000
+cells_before_ambient_filter	1
+cells_after_ambient_filter	0
+cells_removed_by_ambient_filter	1

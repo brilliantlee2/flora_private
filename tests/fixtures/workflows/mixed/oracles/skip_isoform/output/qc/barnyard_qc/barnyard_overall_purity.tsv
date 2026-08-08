@@ -1,0 +1,17 @@
+metric	value
+genome0_name	human
+genome1_name	mouse
+genome0_singlet_cells	0
+genome1_singlet_cells	0
+effective_singlet_cells_for_overall_purity	0
+genome0_singlet_own_umis	0
+genome0_singlet_total_umis	0
+genome1_singlet_own_umis	0
+genome1_singlet_total_umis	0
+all_singlet_dominant_species_umis	0
+all_singlet_total_umis	0
+human_mean_purity	
+mouse_mean_purity	
+genome0_mean_purity	
+genome1_mean_purity	
+overall_purity	

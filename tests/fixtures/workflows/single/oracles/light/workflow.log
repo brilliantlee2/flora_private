@@ -1,0 +1,163 @@
+[run_all] Generating 26bp barcode whitelists from 10bp list: <REPOSITORY_ROOT>/tests/fixtures/workflows/single/barcodes_10bp.txt
+Input 10bp barcode count: 2
+3p whitelist: <WORKFLOW_ROOT>/output/barcodes/barcode_3prime_26bp.txt (4 records)
+5p whitelist: <WORKFLOW_ROOT>/output/barcodes/barcode_5prime_26bp.txt (4 records)
+First 3 raw barcodes: ["ACGTACGTAC", "TGCATGCATG"]
+First 3 5p RC barcodes: ["GTACGTACGT", "CATGCATGCA"]
+[run_all] Flora Rust project detected, attempting cargo build --release
+   Compiling edlib_rs v0.1.2 (<REPOSITORY_ROOT>/vendor/edlib_rs-0.1.2)
+   Compiling flora v0.1.0 (<REPOSITORY_ROOT>)
+    Finished `release` profile [optimized] target(s) in 4.34s
+warning: the following packages contain code that will be rejected by a future version of Rust: buf_redux v0.8.4
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+[run_all] Step 0/6: running Glycine full-length identification
+[run_all] Step 0/6 elapsed: 0s
+[run_all] Step 1/6: alignment-first minimap2 reference alignment
+[M::mm_idx_gen::0.000*17.71] collected minimizers
+[M::mm_idx_gen::0.000*8.90] sorted minimizers
+[M::main::0.000*8.55] loaded/built the index for 1 target sequence(s)
+[M::mm_mapopt_update::0.000*8.02] mid_occ = 77
+[M::mm_idx_stat] kmer size: 15; skip: 5; is_hpc: 0; #seq: 1
+[M::mm_idx_stat::0.000*7.51] distinct minimizers: 2 (0.00% are singletons); average occurrences: 76.000; average spacing: 2.105; total length: 320
+[mm_idx_bed_read_merge] read 1 introns, 1 of which are non-redundant
+[M::worker_pipeline::0.042*1.05] mapped 24 sequences
+[M::main] Version: 2.31-r1302
+[M::main] CMD: minimap2 -ax splice -uf --MD -t 1 --junc-bed <REPOSITORY_ROOT>/tests/fixtures/workflows/single/ref/genes.bed --secondary=no <REPOSITORY_ROOT>/tests/fixtures/workflows/single/ref/genome.fa <WORKFLOW_ROOT>/output/glycine/fixture_single.full-length-plus-rescued.fq.gz
+[M::main] Real time: 0.042 sec; CPU: 0.044 sec; Peak RSS: 0.003 GB
+[run_all] Step 1/6 elapsed: 0s
+[run_all] Step 2/6: Flora dual-end barcode split, correction, merge, and cell assignment
+[Flora] Step 1/7: streaming FASTQ and extracting putative 3p/5p barcode tables
+[timing] Step 1/7 elapsed: 0.00s
+[Flora] Step 2/7: reading whitelists and counting high-quality barcodes
+[timing] Step 2/7 elapsed: 0.00s
+[Flora] Step 3/7: correcting reads with unique-barcode caches
+[timing] Step 3/7 elapsed: 0.00s
+[Flora] Step 4/7: filtering corrected reads and stripping fixed barcode sequence
+[timing] Step 4/7 elapsed: 0.00s
+[Flora] Step 5/7: writing clean read and pair tables
+[timing] Step 5/7 elapsed: 0.00s
+[Flora] Step 6/7: assigning reads to graph components
+[timing] Step 6/7 elapsed: 0.00s
+[Flora] Step 7/7: optional FASTQ outputs
+[timing] Step 7/7 elapsed: 0.00s
+
+=== Flora Summary ===
+Output directory: <WORKFLOW_ROOT>/output/upstream
+FASTQ files: 1
+Reads total: 24
+Reads demultiplexed: 24
+
+Barcode validity in corrected reads:
+Any barcode valid: 24 (100.00%)
+Only 3' valid: 0 (0.00%)
+Only 5' valid: 0 (0.00%)
+Both ends valid: 24 (100.00%)
+Neither valid: 0 (0.00%)
+Merged putative rows: 24
+Filtered rows: 24
+Unique BC3_20bp_rc: 1
+Unique BC5_20bp: 1
+Unique union (BC3 ∪ BC5): 2
+Clean read rows: 24
+Pair rows kept: 1
+PAIR_MIN used: 1 (mode=manual)
+TOP1 alpha (reads/UMI): 0.1 / 0.3
+Core cells: 1 core barcodes: 2
+Assigned read rows: 24
+
+assign_stats:
+AssignStats { n_total_reads: 24, n_assigned_reads: 24, n_cells_before_min_reads: 1, n_cells_after_min_reads: 1, min_reads_per_cell: 20, n_core_barcodes: 2 }
+
+Top cell_read_stats:
+CellReadStat { cell_id: "cell_000001", n_reads: 24 }
+
+[Flora] Total elapsed: 0.00s
+<REPOSITORY_ROOT>/scripts/generate_knee_plots.py:66: UserWarning: Data has no positive values, and therefore cannot be log-scaled.
+  plt.axhline(y=threshold_value, color="r", linestyle="--", label="cell calling threshold")
+[run_all] Step 2/6 elapsed: 1s
+[run_all] Step 3/6: Sockeye-style dual-end barcode/UMI tags on aligned BAM
+total_alignments	24
+tagged_alignments	24
+unmatched_alignments	0
+total_alignment_records	24
+tagged_alignment_records	24
+unmatched_alignment_records	0
+[run_all] Step 3/6 elapsed: 2s
+[run_all] Step 4/6: Sockeye-style gene tagging, directional UMI clustering, and matrix generation
+RNA clustering complete: cells=1, analyzed=1, output=fixture_single.rna_cluster.tsv
+[run_all] Step 4/6 elapsed: 3s
+[run_all] Step 5/6: transcript assignment and isoform matrix generation
+[run_all] Step 5/6 elapsed: 1s
+[run_all] Step 6/6: RNA QC and saturation analysis
+
+RNA QC Metrics
+Metric	Value
+Input reads	24
+Full length reads	24
+Estimated number of cells	1
+Raw FASTQ reads	24
+Aligned BAM reads	24
+Aligned BAM records	24
+Pass reads	24
+Mapped	24
+Unmapped	0
+Supplementary	0
+Barcode-valid reads	24
+Reads assigned to final cells	24
+Gene assigned reads	19
+Reads in final cells	24
+Reads aligned to reference genome in final cells	24
+Reads per cell (mean)	24.00
+Mean reads per cell	24.00
+Mean cell-associated reads per cell	24.00
+Mean UMI counts per cell	1.00
+Median UMI counts per cell	1.00
+Mean Genes per cell	1.00
+Median Genes per cell	1.00
+Genes per cell (median)	1.00
+Unique genes	1
+Total genes detected	1
+Fraction reads in cells	100.00%
+Percent full length reads	100.00%
+Percent barcode-valid reads of full length	100.00%
+Percent reads assigned to final cells of full length	100.00%
+Percent gene assigned reads of full length	79.17%
+Fraction reads aligned to reference genome in final cells	100.00%
+Transcript assigned reads	19
+Percent transcript assigned reads of full length	79.17%
+High-confidence known-transcript reads	19
+Fraction high-confidence known-transcript reads in final cells	79.17%
+Unique isoforms	1
+rna_violin_plot.png
+fraction	reads	reads_per_cell	genes_per_cell	umis_per_cell	saturation
+0.01	0	0.0	0.0	0.0	0.0
+0.02	0	0.0	0.0	0.0	0.0
+0.05	1	1.0	1.0	1.0	0.0
+0.1	2	2.0	1.0	1.0	0.5
+0.2	5	5.0	1.0	1.0	0.6
+0.3	7	7.0	1.0	1.0	0.7142857142857143
+0.4	10	10.0	1.0	1.0	0.8
+0.5	12	12.0	1.0	1.0	0.8333333333333334
+0.6	14	14.0	1.0	1.0	0.8571428571428572
+0.7	17	17.0	1.0	1.0	0.8823529411764706
+0.8	19	19.0	1.0	1.0	0.8947368421052632
+0.9	22	22.0	1.0	1.0	0.9090909090909091
+1.0	24	24.0	1.0	1.0	0.9166666666666666
+fixture_single.read_qc_summary.json
+Wrote report: fixture_single.single_cell_report.html
+[run_all] Step 6/6 elapsed: 4s
+[run_all] Pipeline completed successfully.
+[run_all] Total elapsed: 16s
+[run_all] Key outputs:
+  full-length fastq        : <WORKFLOW_ROOT>/output/glycine/fixture_single.full-length-plus-rescued.fq.gz
+  aligned mother BAM       : <WORKFLOW_ROOT>/output/alignment/fixture_single.aligned.sorted.bam
+  upstream read assignments: <WORKFLOW_ROOT>/output/upstream/read_assigned_cell.csv
+  Sockeye-style read tags   : <WORKFLOW_ROOT>/output/alignment/fixture_single.read_tags.tsv
+  tagged bam              : <WORKFLOW_ROOT>/output/matrix/fixture_single.filtered.tagged.sorted.bam
+  gene expression         : <WORKFLOW_ROOT>/output/matrix/fixture_single.gene_expression.tsv
+  RNA cluster table       : <WORKFLOW_ROOT>/output/matrix/fixture_single.rna_cluster.tsv
+  isoform expression      : <WORKFLOW_ROOT>/output/matrix/fixture_single.isoform_expression.tsv
+  RNA QC                  : <WORKFLOW_ROOT>/output/qc/fixture_single.rna_qc_metrics.tsv
+  report metrics         : <WORKFLOW_ROOT>/output/qc/fixture_single.single_cell_report_metrics.tsv
+  html report            : <WORKFLOW_ROOT>/output/qc/fixture_single.single_cell_report.html
+  saturation table        : <WORKFLOW_ROOT>/output/qc/fixture_single.saturation.tsv

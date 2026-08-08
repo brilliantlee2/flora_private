@@ -1,0 +1,37 @@
+Metric	Value
+Input reads	40
+Full length reads	40
+Estimated number of cells	1
+Raw FASTQ reads	40
+Aligned BAM reads	40
+Aligned BAM records	40
+Pass reads	40
+Mapped	40
+Unmapped	0
+Supplementary	0
+Barcode-valid reads	40
+Reads assigned to final cells	40
+Gene assigned reads	28
+Reads in final cells	40
+Reads aligned to reference genome in final cells	40
+Reads per cell (mean)	40.00
+Mean reads per cell	40.00
+Mean cell-associated reads per cell	40.00
+Mean UMI counts per cell	1.00
+Median UMI counts per cell	1.00
+Mean Genes per cell	2.00
+Median Genes per cell	2.00
+Genes per cell (median)	2.00
+Unique genes	2
+Total genes detected	2
+Fraction reads in cells	100.00%
+Percent full length reads	100.00%
+Percent barcode-valid reads of full length	100.00%
+Percent reads assigned to final cells of full length	100.00%
+Percent gene assigned reads of full length	70.00%
+Fraction reads aligned to reference genome in final cells	100.00%
+Transcript assigned reads	28
+Percent transcript assigned reads of full length	70.00%
+High-confidence known-transcript reads	28
+Fraction high-confidence known-transcript reads in final cells	70.00%
+Unique isoforms	2

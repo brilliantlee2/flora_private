@@ -1,0 +1,2846 @@
+{
+  "artifacts": [
+    {
+      "classification": "parsed_exact",
+      "path": "exit_status.tsv",
+      "scenario": "forced_failure",
+      "sha256": "935d120e72ca91e2061ad9970fb6c2cf1fc6cc806b041aa18827da5cd2769cab"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/alignment/fixture_single.aligned.sorted.bam",
+      "require_index": true,
+      "required_tags": [],
+      "samtools": ".conda-env/bin/samtools",
+      "scenario": "forced_failure",
+      "sha256": "7e45dc77cfa5ae82bd0a55d9b0747f83cd26aac4c65f7cabed8a028a4efcf4d0"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/alignment/fixture_single.aligned.sorted.bam.bai",
+      "scenario": "forced_failure",
+      "sha256": "c247766a7779807a0d416bfcce50507759217655e07e874ce888c416c07795e0"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/alignment/fixture_single.filtered.cb_ur.bed",
+      "scenario": "forced_failure",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/alignment/fixture_single.filtered.cb_ur.sorted.bam",
+      "require_index": true,
+      "required_tags": [
+        "CB",
+        "CR",
+        "UR",
+        "C5",
+        "C3",
+        "U5",
+        "U3"
+      ],
+      "samtools": ".conda-env/bin/samtools",
+      "scenario": "forced_failure",
+      "sha256": "b9296eee14e87986b1af2ea0c100949b6d270e95e5105b628579fcccdb80f34a"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/alignment/fixture_single.filtered.cb_ur.sorted.bam.bai",
+      "scenario": "forced_failure",
+      "sha256": "a4bebcc88c9b5481d87b3fa8faddf6548a960168c9986b5ccbe9fee8e63f6658"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/alignment/fixture_single.read_tags.tsv",
+      "scenario": "forced_failure",
+      "sha256": "53cb323743d8506df42629e2968db2570a8b8b4f6cd0a748b3d9a4fb02130236"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/barcode_whitelist_generation.log",
+      "scenario": "forced_failure",
+      "sha256": "83c70ed829e6430bfcff7abd4c84cca98df41cb309265e48fe00f5a1697d15f7"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/barcodes/barcode_3prime_26bp.txt",
+      "scenario": "forced_failure",
+      "sha256": "e03ff037a1acaaaa2b87b9b950ed174a22ed12c7b0ebe7f5c80c031d94362004"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/barcodes/barcode_5prime_26bp.txt",
+      "scenario": "forced_failure",
+      "sha256": "7ea13285bffc58816c09ba4efe1741e03b92965b18b8f1ad91b54021a42b61bb"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/logs/01_alignment.log",
+      "scenario": "forced_failure",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/logs/02_dual_barcode.log",
+      "scenario": "forced_failure",
+      "sha256": "9e4073fd209ec933048fcd4ea8319e9ebc8ced2c76c5ff7d22321a2d7abc06ec"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/logs/03_bam_tagging.log",
+      "scenario": "forced_failure",
+      "sha256": "de8e1f576613dfe91c08a96fa98e6cc07f28b262d9e1b756936f2e03ebcce5dd"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/ReadIDs_UMI_BC_clean.csv",
+      "scenario": "forced_failure",
+      "sha256": "c386e4ca671a67c72e63acf18ca4368df04223cd64a1646331fbd8bc6539fcb6"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/assign_stats.tsv",
+      "scenario": "forced_failure",
+      "sha256": "1d9ea59fefb8767711555207a6b7ec85683944def7d9a6c518b2e4cc8d056954"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/barcode_counts_3p.tsv",
+      "scenario": "forced_failure",
+      "sha256": "becca54d3ee6e69d6cd69d3572e09a43f6448678f9af5baf1ae627a11925d44d"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/barcode_counts_5p.tsv",
+      "scenario": "forced_failure",
+      "sha256": "fcb6e95be250a79bbc75afcee3a4a6578f325f5abef9e383634eed81dbb2050b"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/barcode_to_cell.csv",
+      "scenario": "forced_failure",
+      "sha256": "c43f5342a6d0126455002598ca044b2d19e71f88f3893b3f8b43f00c755ee222"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/barcode_validity_summary.tsv",
+      "scenario": "forced_failure",
+      "sha256": "d748481489f4e46ad8ce06c7eb128c3dbd4738aa5af4ee478453e7e9e3ef1c8e"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/cell_read_stats.csv",
+      "scenario": "forced_failure",
+      "sha256": "c63e44278b66e6b3a250a90263bbe98cf26e296af5a2761131669f0e4af99ac4"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/correction_map_3p.tsv",
+      "scenario": "forced_failure",
+      "sha256": "79a82809c538bc374b42eda5ca88779cafa3373263f8b676185780e9efe81ddf"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/correction_map_5p.tsv",
+      "scenario": "forced_failure",
+      "sha256": "7b3766bd39118fce12fb14f9da68fa6e3eb391ad650d8d3fcf6db6f36a1d7f6a"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/empty_bc_list_3p.csv",
+      "scenario": "forced_failure",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/empty_bc_list_5p.csv",
+      "scenario": "forced_failure",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/upstream/knee_plot_3p.png",
+      "scenario": "forced_failure",
+      "sha256": "6487b297ac79a349e16ac86d1519d560d070bce427def6d2ff5ada34e5c28554"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/upstream/knee_plot_5p.png",
+      "scenario": "forced_failure",
+      "sha256": "6487b297ac79a349e16ac86d1519d560d070bce427def6d2ff5ada34e5c28554"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/pair_counts_kept.csv",
+      "scenario": "forced_failure",
+      "sha256": "846458165f413552f2482c6d8712e0b6d5534481c42199364b44de9874dffc4f"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/read_assigned_cell.csv",
+      "scenario": "forced_failure",
+      "sha256": "73854ba778daa4ca315259d24a558770a25f0566d0de5d8db604e287b07f7501"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/whitelist_3p.csv",
+      "scenario": "forced_failure",
+      "sha256": "976e443414ebc61775f3dda12f946ab794ecb726e68e34d720ae24552bfca203"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/whitelist_5p.csv",
+      "scenario": "forced_failure",
+      "sha256": "18400be49271378bd0e6955da6c92e7a5b0d9bbeabd1537ff798f525beff0525"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "rust_stage_selection.log",
+      "scenario": "forced_failure",
+      "sha256": "ee22c1e42811aa3f0ad44421b52ee38b0ae1db0b1eaf8ae3ce4007afebc6ff79"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "workflow.log",
+      "scenario": "forced_failure",
+      "sha256": "9317ce173a10f786f1ff98fb9ac49f599497d50c5148d6e03c336777f69d994c"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/logs/00_glycine.log",
+      "scenario": "forced_failure"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/upstream/matched_reads.fastq.gz",
+      "scenario": "forced_failure"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/upstream/unmatched_reads.fastq.gz",
+      "scenario": "forced_failure"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/upstream/cell_reads.fastq.gz",
+      "scenario": "forced_failure"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/matrix/fixture_single.isoform_expression.tsv",
+      "scenario": "forced_failure"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/matrix/fixture_single.read_transcript_assigns.tsv",
+      "scenario": "forced_failure"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/qc/barnyard_qc/per_cell_barnyard.tsv",
+      "scenario": "forced_failure"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/qc/fixture_single.single_cell_report.html",
+      "scenario": "forced_failure"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "exit_status.tsv",
+      "scenario": "full",
+      "sha256": "39c913dbd6fa371b2cf11a3552262bcc3bbc75672792944be6414bd6e2e70bad"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/alignment/fixture_single.aligned.sorted.bam",
+      "require_index": true,
+      "required_tags": [],
+      "samtools": ".conda-env/bin/samtools",
+      "scenario": "full",
+      "sha256": "7e45dc77cfa5ae82bd0a55d9b0747f83cd26aac4c65f7cabed8a028a4efcf4d0"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/alignment/fixture_single.aligned.sorted.bam.bai",
+      "scenario": "full",
+      "sha256": "c247766a7779807a0d416bfcce50507759217655e07e874ce888c416c07795e0"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/barcode_whitelist_generation.log",
+      "scenario": "full",
+      "sha256": "83c70ed829e6430bfcff7abd4c84cca98df41cb309265e48fe00f5a1697d15f7"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/barcodes/barcode_3prime_26bp.txt",
+      "scenario": "full",
+      "sha256": "e03ff037a1acaaaa2b87b9b950ed174a22ed12c7b0ebe7f5c80c031d94362004"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/barcodes/barcode_5prime_26bp.txt",
+      "scenario": "full",
+      "sha256": "7ea13285bffc58816c09ba4efe1741e03b92965b18b8f1ad91b54021a42b61bb"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/logs/01_alignment.log",
+      "scenario": "full",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/logs/02_dual_barcode.log",
+      "scenario": "full",
+      "sha256": "9e4073fd209ec933048fcd4ea8319e9ebc8ced2c76c5ff7d22321a2d7abc06ec"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/ReadIDs_UMI_BC_clean.csv",
+      "scenario": "full",
+      "sha256": "c386e4ca671a67c72e63acf18ca4368df04223cd64a1646331fbd8bc6539fcb6"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/assign_stats.tsv",
+      "scenario": "full",
+      "sha256": "1d9ea59fefb8767711555207a6b7ec85683944def7d9a6c518b2e4cc8d056954"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/barcode_counts_3p.tsv",
+      "scenario": "full",
+      "sha256": "becca54d3ee6e69d6cd69d3572e09a43f6448678f9af5baf1ae627a11925d44d"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/barcode_counts_5p.tsv",
+      "scenario": "full",
+      "sha256": "fcb6e95be250a79bbc75afcee3a4a6578f325f5abef9e383634eed81dbb2050b"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/barcode_to_cell.csv",
+      "scenario": "full",
+      "sha256": "c43f5342a6d0126455002598ca044b2d19e71f88f3893b3f8b43f00c755ee222"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/barcode_validity_summary.tsv",
+      "scenario": "full",
+      "sha256": "d748481489f4e46ad8ce06c7eb128c3dbd4738aa5af4ee478453e7e9e3ef1c8e"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/cell_read_stats.csv",
+      "scenario": "full",
+      "sha256": "c63e44278b66e6b3a250a90263bbe98cf26e296af5a2761131669f0e4af99ac4"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/correction_map_3p.tsv",
+      "scenario": "full",
+      "sha256": "79a82809c538bc374b42eda5ca88779cafa3373263f8b676185780e9efe81ddf"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/correction_map_5p.tsv",
+      "scenario": "full",
+      "sha256": "7b3766bd39118fce12fb14f9da68fa6e3eb391ad650d8d3fcf6db6f36a1d7f6a"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/empty_bc_list_3p.csv",
+      "scenario": "full",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/empty_bc_list_5p.csv",
+      "scenario": "full",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/upstream/knee_plot_3p.png",
+      "scenario": "full",
+      "sha256": "6487b297ac79a349e16ac86d1519d560d070bce427def6d2ff5ada34e5c28554"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/upstream/knee_plot_5p.png",
+      "scenario": "full",
+      "sha256": "6487b297ac79a349e16ac86d1519d560d070bce427def6d2ff5ada34e5c28554"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/pair_counts_kept.csv",
+      "scenario": "full",
+      "sha256": "846458165f413552f2482c6d8712e0b6d5534481c42199364b44de9874dffc4f"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/read_assigned_cell.csv",
+      "scenario": "full",
+      "sha256": "73854ba778daa4ca315259d24a558770a25f0566d0de5d8db604e287b07f7501"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/whitelist_3p.csv",
+      "scenario": "full",
+      "sha256": "976e443414ebc61775f3dda12f946ab794ecb726e68e34d720ae24552bfca203"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/whitelist_5p.csv",
+      "scenario": "full",
+      "sha256": "18400be49271378bd0e6955da6c92e7a5b0d9bbeabd1537ff798f525beff0525"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "rust_stage_selection.log",
+      "scenario": "full",
+      "sha256": "ee22c1e42811aa3f0ad44421b52ee38b0ae1db0b1eaf8ae3ce4007afebc6ff79"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "workflow.log",
+      "scenario": "full",
+      "sha256": "a0e1b8b4f2702c82b99db60e740e56ffc0ca0a4d61a59ec62c23a86ea677e605"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/logs/00_glycine.log",
+      "scenario": "full"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/upstream/matched_reads.fastq.gz",
+      "scenario": "full"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/upstream/unmatched_reads.fastq.gz",
+      "scenario": "full"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/upstream/cell_reads.fastq.gz",
+      "scenario": "full"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/matrix/fixture_single.isoform_expression.tsv",
+      "scenario": "full"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/matrix/fixture_single.read_transcript_assigns.tsv",
+      "scenario": "full"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/qc/barnyard_qc/per_cell_barnyard.tsv",
+      "scenario": "full"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/qc/fixture_single.single_cell_report.html",
+      "scenario": "full"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "exit_status.tsv",
+      "scenario": "light",
+      "sha256": "b95b177d120d2004f8942462eb8080cef667c55888f290f2f17eb60e7dc2ffcb"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/alignment/fixture_single.aligned.sorted.bam",
+      "require_index": true,
+      "required_tags": [],
+      "samtools": ".conda-env/bin/samtools",
+      "scenario": "light",
+      "sha256": "55bf70d1b17fe3fd5920fe0930b2e5e6e4464a06b2d9a4bf2292d1bcfb746e43"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/alignment/fixture_single.aligned.sorted.bam.bai",
+      "scenario": "light",
+      "sha256": "1ad48ff5909ada5e39c4273d195205891c67d1861a3f807e1d523ac24e69df66"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/alignment/fixture_single.filtered.cb_ur.bed",
+      "scenario": "light",
+      "sha256": "d5cedddbda00b754e81efbe414d8749a6f07832391c2475426b11b65788d9ab3"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/alignment/fixture_single.filtered.cb_ur.sorted.bam",
+      "require_index": true,
+      "required_tags": [
+        "CB",
+        "CR",
+        "UR",
+        "C5",
+        "C3",
+        "U5",
+        "U3"
+      ],
+      "samtools": ".conda-env/bin/samtools",
+      "scenario": "light",
+      "sha256": "f1ac999fa09b51352eeb993429a7e58c393d0f4639ded2d920d9826c5ac19d70"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/alignment/fixture_single.filtered.cb_ur.sorted.bam.bai",
+      "scenario": "light",
+      "sha256": "8400f47a07feb73e5f29ec8ffb4dea76e00762ecc763d64bc6e6ec21239a45b3"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/alignment/fixture_single.read_tags.tsv",
+      "scenario": "light",
+      "sha256": "a993775ffa8c6c677d366d425e57ad31aa0baaba9242e2f0ed2f114b62c78197"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/barcode_whitelist_generation.log",
+      "scenario": "light",
+      "sha256": "83c70ed829e6430bfcff7abd4c84cca98df41cb309265e48fe00f5a1697d15f7"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/barcodes/barcode_3prime_26bp.txt",
+      "scenario": "light",
+      "sha256": "e03ff037a1acaaaa2b87b9b950ed174a22ed12c7b0ebe7f5c80c031d94362004"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/barcodes/barcode_5prime_26bp.txt",
+      "scenario": "light",
+      "sha256": "7ea13285bffc58816c09ba4efe1741e03b92965b18b8f1ad91b54021a42b61bb"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/glycine/fixture_single.full-length-plus-rescued.fq.gz",
+      "scenario": "light",
+      "sha256": "907b690c60e880cf579ad687ba0ad822577a7babf40a319f6b9a2540d55fe144"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/glycine/fixture_single.identifying_statistic.txt",
+      "scenario": "light",
+      "sha256": "d09f0dc79030b3634c704b66b5a34252275f032bce9555953f6818ec3c8e0ceb"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/logs/00_glycine.log",
+      "scenario": "light",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/logs/01_alignment.log",
+      "scenario": "light",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/logs/02_dual_barcode.log",
+      "scenario": "light",
+      "sha256": "fe43f237f5b6f7e24d91efc0b9d4bf7bd6a335e0d19c300c661e353c56e7dfaa"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/logs/03_bam_tagging.log",
+      "scenario": "light",
+      "sha256": "de8e1f576613dfe91c08a96fa98e6cc07f28b262d9e1b756936f2e03ebcce5dd"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/logs/04_gene.log",
+      "scenario": "light",
+      "sha256": "7575072c8efa3af0533d63ccfce7d84dfb78d8c2b98ba98cb71443d5c944befd"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/logs/05_isoform.log",
+      "scenario": "light",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/logs/06_qc.log",
+      "scenario": "light",
+      "sha256": "bb436258ad56df80dd6c08e25a12faaee9282e1b1046ba1bfeea91d4bcab527c"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/matrix/fixture_single.cell_umi_gene.tsv",
+      "scenario": "light",
+      "sha256": "a9465eaf9c10f0f4f3da64d1a9795ad20daf3cb2f715b2a19cd7499c7f14e88f"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/matrix/fixture_single.filtered.cb_ur.gn.sorted.bam",
+      "require_index": true,
+      "required_tags": [
+        "CB",
+        "CR",
+        "UR",
+        "C5",
+        "C3",
+        "U5",
+        "U3",
+        "GN"
+      ],
+      "samtools": ".conda-env/bin/samtools",
+      "scenario": "light",
+      "sha256": "cdb459748d7296523a7045b56f1270c9841d9c25b8f0fbeb0cd844e24bf26303"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/matrix/fixture_single.filtered.cb_ur.gn.sorted.bam.bai",
+      "scenario": "light",
+      "sha256": "ade64ed391a56b1b17a338b346f0b92ca177945e6bbf62b70c53c29767f1c560"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/matrix/fixture_single.filtered.read_gene_assigns.tsv",
+      "scenario": "light",
+      "sha256": "92f5233d52354b399e97259a922ae1cb74c824dd3abaaa91fe0fed5eb1adb106"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/matrix/fixture_single.filtered.tagged.sorted.bam",
+      "require_index": true,
+      "required_tags": [
+        "CB",
+        "CR",
+        "UR",
+        "C5",
+        "C3",
+        "U5",
+        "U3",
+        "GN",
+        "UB"
+      ],
+      "samtools": ".conda-env/bin/samtools",
+      "scenario": "light",
+      "sha256": "d578e8e14de693f0ea83b93be5987e3908ac9aceb9dfa4748c91551a6b67c43f"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/matrix/fixture_single.filtered.tagged.sorted.bam.bai",
+      "scenario": "light",
+      "sha256": "5d9ced7f2a0bc4cddfdefd99c55e5fbec146afa569d992c18e1393246ad9c0d2"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/matrix/fixture_single.gene_expression.tsv",
+      "scenario": "light",
+      "sha256": "224b0a5ed720e8a202fbff8c0b10ab46e43c7d5b6fe796f1f9a1fdb5e7259c1e"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/matrix/fixture_single.isoform_expression.tsv",
+      "scenario": "light",
+      "sha256": "a698146e458799bc11e41d434ab37d0eab5eeaf4e08f06460086240faa8d6786"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/matrix/fixture_single.read_transcript_assigns.tsv",
+      "scenario": "light",
+      "sha256": "ba6e8b07061b46d663ae5824ebcbfc3aedd436921db8386ed5bc5323e5bbe3e4"
+    },
+    {
+      "classification": "numeric_tolerance",
+      "path": "output/matrix/fixture_single.rna_cluster.tsv",
+      "scenario": "light",
+      "sha256": "4657e4ef188eddb6270534a202a00c35bda1d487410f9f5600f68373196be560"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/qc/cell_umi_gene.tsv",
+      "scenario": "light",
+      "sha256": "381163deee2761285840f3bea5a2a176e301944b80f63a790928248351f55fec"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/qc/filtered.sorted.bam",
+      "scenario": "light",
+      "sha256": "4ed04aec53dd658bea3fd19e150e0289cb9dc2305c4cb1562012fb7a63996932"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/qc/filtered.sorted.bam.bai",
+      "scenario": "light",
+      "sha256": "901029c45c3258dfdb982ccf400e9d64a2aa1bc3f1527c89d55d412d7ff26792"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/qc/fixture_single.parameters.tsv",
+      "scenario": "light",
+      "sha256": "4486295bb77ad568a9ae8182beee0ddf4815b88d546c778e6001ad6a5a24bdc6"
+    },
+    {
+      "classification": "numeric_tolerance",
+      "path": "output/qc/fixture_single.per_cell_qc.tsv",
+      "scenario": "light",
+      "sha256": "534756773b68adbe9be5a8aae9609e57a01d6bdc898d5a20a938b51f8890b2c2"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/qc/fixture_single.read_qc_summary.json",
+      "scenario": "light",
+      "sha256": "1be9000c61dc06bfa94b3e4efc7904276ccb7f273162039ee7bc88ff2b7b1ae4"
+    },
+    {
+      "classification": "numeric_tolerance",
+      "path": "output/qc/fixture_single.rna_qc_metrics.tsv",
+      "scenario": "light",
+      "sha256": "a401ca6de54b9c10eed087910511c85b5dda8f0a04b41e978b21105e3c07d9f7"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/qc/fixture_single.rna_violin_plot.png",
+      "scenario": "light",
+      "sha256": "39e61ba24f31de3a69edee800153a6e33d02234bef54fd45141192b087ce23c5"
+    },
+    {
+      "classification": "numeric_tolerance",
+      "path": "output/qc/fixture_single.saturation.tsv",
+      "scenario": "light",
+      "sha256": "bf90c24b8e39ac6ffba6e2aa0681b9ef9db2b2e2901fabd500d8c199899b4d1e"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/qc/fixture_single.saturation_curves.png",
+      "scenario": "light",
+      "sha256": "fbae7cc168c2c4c42d3b9df85020523437a1f6bfbf9650f59030efae1070afb4"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "oracle_path": "output/qc/fixture_single.single_cell_report.html.gz",
+      "path": "output/qc/fixture_single.single_cell_report.html",
+      "scenario": "light",
+      "sha256": "c67af04f3f6c07bdbff8c4f449435c8ed889e6229952d29cbb43f76922604930"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/qc/fixture_single.single_cell_report_metrics.tsv",
+      "scenario": "light",
+      "sha256": "0a0053301df1a03924a968f728cf42ef29060a232ccaf68a30fd4fc7422cf42b"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/ReadIDs_UMI_BC_clean.csv",
+      "scenario": "light",
+      "sha256": "e41a83565e432b8d229ed69c99add18fe19887dcfe79273164957084f42b2344"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/assign_stats.tsv",
+      "scenario": "light",
+      "sha256": "1d9ea59fefb8767711555207a6b7ec85683944def7d9a6c518b2e4cc8d056954"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/barcode_counts_3p.tsv",
+      "scenario": "light",
+      "sha256": "becca54d3ee6e69d6cd69d3572e09a43f6448678f9af5baf1ae627a11925d44d"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/barcode_counts_5p.tsv",
+      "scenario": "light",
+      "sha256": "fcb6e95be250a79bbc75afcee3a4a6578f325f5abef9e383634eed81dbb2050b"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/barcode_to_cell.csv",
+      "scenario": "light",
+      "sha256": "c43f5342a6d0126455002598ca044b2d19e71f88f3893b3f8b43f00c755ee222"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/barcode_validity_summary.tsv",
+      "scenario": "light",
+      "sha256": "d748481489f4e46ad8ce06c7eb128c3dbd4738aa5af4ee478453e7e9e3ef1c8e"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/cell_read_stats.csv",
+      "scenario": "light",
+      "sha256": "c63e44278b66e6b3a250a90263bbe98cf26e296af5a2761131669f0e4af99ac4"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/correction_map_3p.tsv",
+      "scenario": "light",
+      "sha256": "1f769cda2064c323786603379800d5a2f26234babb82e2db48351c35673b0c15"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/correction_map_5p.tsv",
+      "scenario": "light",
+      "sha256": "f57583b94533b91f6817a3e4663bc95901b09428b2b5ea39b5bf80f9463e41f5"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/empty_bc_list_3p.csv",
+      "scenario": "light",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/empty_bc_list_5p.csv",
+      "scenario": "light",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/upstream/knee_plot_3p.png",
+      "scenario": "light",
+      "sha256": "6487b297ac79a349e16ac86d1519d560d070bce427def6d2ff5ada34e5c28554"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/upstream/knee_plot_5p.png",
+      "scenario": "light",
+      "sha256": "6487b297ac79a349e16ac86d1519d560d070bce427def6d2ff5ada34e5c28554"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/pair_counts_kept.csv",
+      "scenario": "light",
+      "sha256": "846458165f413552f2482c6d8712e0b6d5534481c42199364b44de9874dffc4f"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/read_assigned_cell.csv",
+      "scenario": "light",
+      "sha256": "5c9ac718dddfc1b014f38f004c065ac6d2ac9211f6c262e9bcbe7cbc48fe8b4a"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/whitelist_3p.csv",
+      "scenario": "light",
+      "sha256": "976e443414ebc61775f3dda12f946ab794ecb726e68e34d720ae24552bfca203"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/whitelist_5p.csv",
+      "scenario": "light",
+      "sha256": "18400be49271378bd0e6955da6c92e7a5b0d9bbeabd1537ff798f525beff0525"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "rust_stage_selection.log",
+      "scenario": "light",
+      "sha256": "ee22c1e42811aa3f0ad44421b52ee38b0ae1db0b1eaf8ae3ce4007afebc6ff79"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "workflow.log",
+      "scenario": "light",
+      "sha256": "250cd93424ceec06bae2518596ba44bffaab70d0416b7f3ad02506ea1e491685"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/upstream/matched_reads.fastq.gz",
+      "scenario": "light"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/upstream/unmatched_reads.fastq.gz",
+      "scenario": "light"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/upstream/cell_reads.fastq.gz",
+      "scenario": "light"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/qc/barnyard_qc/per_cell_barnyard.tsv",
+      "scenario": "light"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "exit_status.tsv",
+      "scenario": "malformed_input",
+      "sha256": "39c913dbd6fa371b2cf11a3552262bcc3bbc75672792944be6414bd6e2e70bad"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "malformed.fastq",
+      "scenario": "malformed_input",
+      "sha256": "bc74b3de90273a30f96fd9dcc43f912eccb974b7b1a2094009428805b9be97d9"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/alignment/fixture_single.aligned.sorted.bam",
+      "require_index": true,
+      "required_tags": [],
+      "samtools": ".conda-env/bin/samtools",
+      "scenario": "malformed_input",
+      "sha256": "fe4883be6e488b6d95911a046284d3c6f914d258a1c7d6712aa5d3e97843b8ec"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/alignment/fixture_single.aligned.sorted.bam.bai",
+      "scenario": "malformed_input",
+      "sha256": "03c4bc183336c377bb4dcbdd603eb67cd92db3c2f49e7144198ef2d557ed2746"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/barcode_whitelist_generation.log",
+      "scenario": "malformed_input",
+      "sha256": "83c70ed829e6430bfcff7abd4c84cca98df41cb309265e48fe00f5a1697d15f7"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/barcodes/barcode_3prime_26bp.txt",
+      "scenario": "malformed_input",
+      "sha256": "e03ff037a1acaaaa2b87b9b950ed174a22ed12c7b0ebe7f5c80c031d94362004"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/barcodes/barcode_5prime_26bp.txt",
+      "scenario": "malformed_input",
+      "sha256": "7ea13285bffc58816c09ba4efe1741e03b92965b18b8f1ad91b54021a42b61bb"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/logs/01_alignment.log",
+      "scenario": "malformed_input",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/logs/02_dual_barcode.log",
+      "scenario": "malformed_input",
+      "sha256": "f878d410e5724010d04fafea5ff639696c24680b399cc03427c5e6fc8670f511"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/logs/03_bam_tagging.log",
+      "scenario": "malformed_input",
+      "sha256": "909b84477d45508360e652b92e3a359ac8c2bc0f0b91e810d9fdb741b654b92f"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/ReadIDs_UMI_BC_clean.csv",
+      "scenario": "malformed_input",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/assign_stats.tsv",
+      "scenario": "malformed_input",
+      "sha256": "83fa2c57f37a4cb91e9581298818ac6fcc306ec7f177a3b7ea42b6d9ad64a83a"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/barcode_counts_3p.tsv",
+      "scenario": "malformed_input",
+      "sha256": "38ea79285d70c2b297a95098d72d1e2c1d4092b295ed95be72b485ada5015575"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/barcode_counts_5p.tsv",
+      "scenario": "malformed_input",
+      "sha256": "38ea79285d70c2b297a95098d72d1e2c1d4092b295ed95be72b485ada5015575"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/barcode_to_cell.csv",
+      "scenario": "malformed_input",
+      "sha256": "e90b459061ecb578d580e174771b4065c69ba6eb303e2a64805f52e07ce5a9cd"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/barcode_validity_summary.tsv",
+      "scenario": "malformed_input",
+      "sha256": "b27c95c9375e0f840fe836a667f5fb6f70ef14c3ac757ce8985b6017e964e846"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/cell_read_stats.csv",
+      "scenario": "malformed_input",
+      "sha256": "b2f4e28afbf58a35c781bae42b2e06a79b403d2816c632e0674e253c38f74bcb"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/correction_map_3p.tsv",
+      "scenario": "malformed_input",
+      "sha256": "bd40dc1df595c14afb3ae539480eac6f5829906d20adbaf3a860e82570dca710"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/correction_map_5p.tsv",
+      "scenario": "malformed_input",
+      "sha256": "1cd3e789af1a4368edddcc79de1c45d2fec94645f202176de3d958f7e5151690"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/empty_bc_list_3p.csv",
+      "scenario": "malformed_input",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/empty_bc_list_5p.csv",
+      "scenario": "malformed_input",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/upstream/knee_plot_3p.png",
+      "scenario": "malformed_input",
+      "sha256": "febb26faeb135f5763d0b84a58861986815ed4dc10024c10a063eb065990207e"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/upstream/knee_plot_5p.png",
+      "scenario": "malformed_input",
+      "sha256": "febb26faeb135f5763d0b84a58861986815ed4dc10024c10a063eb065990207e"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/pair_counts_kept.csv",
+      "scenario": "malformed_input",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/read_assigned_cell.csv",
+      "scenario": "malformed_input",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/whitelist_3p.csv",
+      "scenario": "malformed_input",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/whitelist_5p.csv",
+      "scenario": "malformed_input",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "rust_stage_selection.log",
+      "scenario": "malformed_input",
+      "sha256": "ee22c1e42811aa3f0ad44421b52ee38b0ae1db0b1eaf8ae3ce4007afebc6ff79"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "workflow.log",
+      "scenario": "malformed_input",
+      "sha256": "1afefec658a60526552cbb9878ba1ad0c36059d2ed17ed5e6fcfbce53f5e2695"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/logs/00_glycine.log",
+      "scenario": "malformed_input"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/upstream/matched_reads.fastq.gz",
+      "scenario": "malformed_input"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/upstream/unmatched_reads.fastq.gz",
+      "scenario": "malformed_input"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/upstream/cell_reads.fastq.gz",
+      "scenario": "malformed_input"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/matrix/fixture_single.isoform_expression.tsv",
+      "scenario": "malformed_input"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/matrix/fixture_single.read_transcript_assigns.tsv",
+      "scenario": "malformed_input"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/qc/barnyard_qc/per_cell_barnyard.tsv",
+      "scenario": "malformed_input"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/qc/fixture_single.single_cell_report.html",
+      "scenario": "malformed_input"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "exit_status.tsv",
+      "scenario": "skip_glycine",
+      "sha256": "b95b177d120d2004f8942462eb8080cef667c55888f290f2f17eb60e7dc2ffcb"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/alignment/fixture_single.aligned.sorted.bam",
+      "require_index": true,
+      "required_tags": [],
+      "samtools": ".conda-env/bin/samtools",
+      "scenario": "skip_glycine",
+      "sha256": "7e45dc77cfa5ae82bd0a55d9b0747f83cd26aac4c65f7cabed8a028a4efcf4d0"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/alignment/fixture_single.aligned.sorted.bam.bai",
+      "scenario": "skip_glycine",
+      "sha256": "c247766a7779807a0d416bfcce50507759217655e07e874ce888c416c07795e0"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/alignment/fixture_single.filtered.cb_ur.bed",
+      "scenario": "skip_glycine",
+      "sha256": "179a0dc8aabb17c09adf661a6fee5565ee35cf76db6d0e13c38bb330f72a075c"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/alignment/fixture_single.filtered.cb_ur.sorted.bam",
+      "require_index": true,
+      "required_tags": [
+        "CB",
+        "CR",
+        "UR",
+        "C5",
+        "C3",
+        "U5",
+        "U3"
+      ],
+      "samtools": ".conda-env/bin/samtools",
+      "scenario": "skip_glycine",
+      "sha256": "b9296eee14e87986b1af2ea0c100949b6d270e95e5105b628579fcccdb80f34a"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/alignment/fixture_single.filtered.cb_ur.sorted.bam.bai",
+      "scenario": "skip_glycine",
+      "sha256": "a4bebcc88c9b5481d87b3fa8faddf6548a960168c9986b5ccbe9fee8e63f6658"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/alignment/fixture_single.read_tags.tsv",
+      "scenario": "skip_glycine",
+      "sha256": "53cb323743d8506df42629e2968db2570a8b8b4f6cd0a748b3d9a4fb02130236"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/barcode_whitelist_generation.log",
+      "scenario": "skip_glycine",
+      "sha256": "83c70ed829e6430bfcff7abd4c84cca98df41cb309265e48fe00f5a1697d15f7"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/barcodes/barcode_3prime_26bp.txt",
+      "scenario": "skip_glycine",
+      "sha256": "e03ff037a1acaaaa2b87b9b950ed174a22ed12c7b0ebe7f5c80c031d94362004"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/barcodes/barcode_5prime_26bp.txt",
+      "scenario": "skip_glycine",
+      "sha256": "7ea13285bffc58816c09ba4efe1741e03b92965b18b8f1ad91b54021a42b61bb"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/logs/01_alignment.log",
+      "scenario": "skip_glycine",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/logs/02_dual_barcode.log",
+      "scenario": "skip_glycine",
+      "sha256": "fe43f237f5b6f7e24d91efc0b9d4bf7bd6a335e0d19c300c661e353c56e7dfaa"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/logs/03_bam_tagging.log",
+      "scenario": "skip_glycine",
+      "sha256": "de8e1f576613dfe91c08a96fa98e6cc07f28b262d9e1b756936f2e03ebcce5dd"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/logs/04_gene.log",
+      "scenario": "skip_glycine",
+      "sha256": "7575072c8efa3af0533d63ccfce7d84dfb78d8c2b98ba98cb71443d5c944befd"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/logs/05_isoform.log",
+      "scenario": "skip_glycine",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/logs/06_qc.log",
+      "scenario": "skip_glycine",
+      "sha256": "166ea001230391c2053eda267cdbb1a3f73afd4092863585ca15cc97619089f5"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/matrix/fixture_single.cell_umi_gene.tsv",
+      "scenario": "skip_glycine",
+      "sha256": "f0862fe5ab3acd89c77dd06cde3113b9c34d8a1bebd6e6ef881bc36500b02b4e"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/matrix/fixture_single.filtered.cb_ur.gn.sorted.bam",
+      "require_index": true,
+      "required_tags": [
+        "CB",
+        "CR",
+        "UR",
+        "C5",
+        "C3",
+        "U5",
+        "U3",
+        "GN"
+      ],
+      "samtools": ".conda-env/bin/samtools",
+      "scenario": "skip_glycine",
+      "sha256": "12ab3d3c76c23ca3af840333e435c7054e131c13647d4eb27f1e4d00ccdbda14"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/matrix/fixture_single.filtered.cb_ur.gn.sorted.bam.bai",
+      "scenario": "skip_glycine",
+      "sha256": "4c1d9359ce79ae0d41c40fb47b2ae7978154aa065df100f35070392b0e1afe15"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/matrix/fixture_single.filtered.read_gene_assigns.tsv",
+      "scenario": "skip_glycine",
+      "sha256": "b9ada705b6104649e1ac1d6dd30b1daf35922c42d7c42d9fa1dffa73c6a122cd"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/matrix/fixture_single.filtered.tagged.sorted.bam",
+      "require_index": true,
+      "required_tags": [
+        "CB",
+        "CR",
+        "UR",
+        "C5",
+        "C3",
+        "U5",
+        "U3",
+        "GN",
+        "UB"
+      ],
+      "samtools": ".conda-env/bin/samtools",
+      "scenario": "skip_glycine",
+      "sha256": "11bf251ebb5949ddb433c1ff9c1d4013d469f7af594f8bfcd0c87c04a8805c62"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/matrix/fixture_single.filtered.tagged.sorted.bam.bai",
+      "scenario": "skip_glycine",
+      "sha256": "c8cce4b6553ff7061ab583c61aec46cdbe41e4c1a6b8e9da6ed5aaf992d0ed51"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/matrix/fixture_single.gene_expression.tsv",
+      "scenario": "skip_glycine",
+      "sha256": "224b0a5ed720e8a202fbff8c0b10ab46e43c7d5b6fe796f1f9a1fdb5e7259c1e"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/matrix/fixture_single.isoform_expression.tsv",
+      "scenario": "skip_glycine",
+      "sha256": "a698146e458799bc11e41d434ab37d0eab5eeaf4e08f06460086240faa8d6786"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/matrix/fixture_single.read_transcript_assigns.tsv",
+      "scenario": "skip_glycine",
+      "sha256": "94cc2536c414d5179b1852664f59d692e4c14f191481973ec4d2e3b501d893c1"
+    },
+    {
+      "classification": "numeric_tolerance",
+      "path": "output/matrix/fixture_single.rna_cluster.tsv",
+      "scenario": "skip_glycine",
+      "sha256": "4657e4ef188eddb6270534a202a00c35bda1d487410f9f5600f68373196be560"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/qc/cell_umi_gene.tsv",
+      "scenario": "skip_glycine",
+      "sha256": "381163deee2761285840f3bea5a2a176e301944b80f63a790928248351f55fec"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/qc/filtered.sorted.bam",
+      "scenario": "skip_glycine",
+      "sha256": "4ed04aec53dd658bea3fd19e150e0289cb9dc2305c4cb1562012fb7a63996932"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/qc/filtered.sorted.bam.bai",
+      "scenario": "skip_glycine",
+      "sha256": "901029c45c3258dfdb982ccf400e9d64a2aa1bc3f1527c89d55d412d7ff26792"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/qc/fixture_single.parameters.tsv",
+      "scenario": "skip_glycine",
+      "sha256": "2151c3874f1f8868f080fe61277e36437d05fe75431c3d68feaf843a52df93cf"
+    },
+    {
+      "classification": "numeric_tolerance",
+      "path": "output/qc/fixture_single.per_cell_qc.tsv",
+      "scenario": "skip_glycine",
+      "sha256": "534756773b68adbe9be5a8aae9609e57a01d6bdc898d5a20a938b51f8890b2c2"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/qc/fixture_single.read_qc_summary.json",
+      "scenario": "skip_glycine",
+      "sha256": "7961acd6db0c898ecbb8650e0e9775a7c811283999a89d7f2027454ae17ede98"
+    },
+    {
+      "classification": "numeric_tolerance",
+      "path": "output/qc/fixture_single.rna_qc_metrics.tsv",
+      "scenario": "skip_glycine",
+      "sha256": "2fab6cd5cf84d5c0d4111b315f73a8a827b90f8ca0aef813e8058ab2cb0dcdec"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/qc/fixture_single.rna_violin_plot.png",
+      "scenario": "skip_glycine",
+      "sha256": "39e61ba24f31de3a69edee800153a6e33d02234bef54fd45141192b087ce23c5"
+    },
+    {
+      "classification": "numeric_tolerance",
+      "path": "output/qc/fixture_single.saturation.tsv",
+      "scenario": "skip_glycine",
+      "sha256": "5c769dd1a28165c6ce7854fb5a601c7d0f66aa28b4653d114b1dd0f711680757"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/qc/fixture_single.saturation_curves.png",
+      "scenario": "skip_glycine",
+      "sha256": "19e8edd929f3d6ee638abe78ebc87c8f096400532833af612656a8be98983277"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "oracle_path": "output/qc/fixture_single.single_cell_report.html.gz",
+      "path": "output/qc/fixture_single.single_cell_report.html",
+      "scenario": "skip_glycine",
+      "sha256": "9c2f6fd8301b35687631cc155844905f17fe820198cfc2c92b0d2ac66595a5dc"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/qc/fixture_single.single_cell_report_metrics.tsv",
+      "scenario": "skip_glycine",
+      "sha256": "d6677cf966852bc5dbb9ca0c36a88d3fb3525f9b4cc7742c872e6051874113a2"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/ReadIDs_UMI_BC_clean.csv",
+      "scenario": "skip_glycine",
+      "sha256": "c386e4ca671a67c72e63acf18ca4368df04223cd64a1646331fbd8bc6539fcb6"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/assign_stats.tsv",
+      "scenario": "skip_glycine",
+      "sha256": "1d9ea59fefb8767711555207a6b7ec85683944def7d9a6c518b2e4cc8d056954"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/barcode_counts_3p.tsv",
+      "scenario": "skip_glycine",
+      "sha256": "becca54d3ee6e69d6cd69d3572e09a43f6448678f9af5baf1ae627a11925d44d"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/barcode_counts_5p.tsv",
+      "scenario": "skip_glycine",
+      "sha256": "fcb6e95be250a79bbc75afcee3a4a6578f325f5abef9e383634eed81dbb2050b"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/barcode_to_cell.csv",
+      "scenario": "skip_glycine",
+      "sha256": "c43f5342a6d0126455002598ca044b2d19e71f88f3893b3f8b43f00c755ee222"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/barcode_validity_summary.tsv",
+      "scenario": "skip_glycine",
+      "sha256": "d748481489f4e46ad8ce06c7eb128c3dbd4738aa5af4ee478453e7e9e3ef1c8e"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/cell_read_stats.csv",
+      "scenario": "skip_glycine",
+      "sha256": "c63e44278b66e6b3a250a90263bbe98cf26e296af5a2761131669f0e4af99ac4"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/correction_map_3p.tsv",
+      "scenario": "skip_glycine",
+      "sha256": "79a82809c538bc374b42eda5ca88779cafa3373263f8b676185780e9efe81ddf"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/correction_map_5p.tsv",
+      "scenario": "skip_glycine",
+      "sha256": "7b3766bd39118fce12fb14f9da68fa6e3eb391ad650d8d3fcf6db6f36a1d7f6a"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/empty_bc_list_3p.csv",
+      "scenario": "skip_glycine",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/empty_bc_list_5p.csv",
+      "scenario": "skip_glycine",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/upstream/knee_plot_3p.png",
+      "scenario": "skip_glycine",
+      "sha256": "6487b297ac79a349e16ac86d1519d560d070bce427def6d2ff5ada34e5c28554"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/upstream/knee_plot_5p.png",
+      "scenario": "skip_glycine",
+      "sha256": "6487b297ac79a349e16ac86d1519d560d070bce427def6d2ff5ada34e5c28554"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/pair_counts_kept.csv",
+      "scenario": "skip_glycine",
+      "sha256": "846458165f413552f2482c6d8712e0b6d5534481c42199364b44de9874dffc4f"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/read_assigned_cell.csv",
+      "scenario": "skip_glycine",
+      "sha256": "73854ba778daa4ca315259d24a558770a25f0566d0de5d8db604e287b07f7501"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/whitelist_3p.csv",
+      "scenario": "skip_glycine",
+      "sha256": "976e443414ebc61775f3dda12f946ab794ecb726e68e34d720ae24552bfca203"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/whitelist_5p.csv",
+      "scenario": "skip_glycine",
+      "sha256": "18400be49271378bd0e6955da6c92e7a5b0d9bbeabd1537ff798f525beff0525"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "rust_stage_selection.log",
+      "scenario": "skip_glycine",
+      "sha256": "ee22c1e42811aa3f0ad44421b52ee38b0ae1db0b1eaf8ae3ce4007afebc6ff79"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "workflow.log",
+      "scenario": "skip_glycine",
+      "sha256": "c513326f374f89fb70e1de88dfff4dcd511e52d35937d6ff3d59ac8e7d607988"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/logs/00_glycine.log",
+      "scenario": "skip_glycine"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/upstream/matched_reads.fastq.gz",
+      "scenario": "skip_glycine"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/upstream/unmatched_reads.fastq.gz",
+      "scenario": "skip_glycine"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/upstream/cell_reads.fastq.gz",
+      "scenario": "skip_glycine"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/qc/barnyard_qc/per_cell_barnyard.tsv",
+      "scenario": "skip_glycine"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "exit_status.tsv",
+      "scenario": "skip_isoform",
+      "sha256": "b95b177d120d2004f8942462eb8080cef667c55888f290f2f17eb60e7dc2ffcb"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/alignment/fixture_single.aligned.sorted.bam",
+      "require_index": true,
+      "required_tags": [],
+      "samtools": ".conda-env/bin/samtools",
+      "scenario": "skip_isoform",
+      "sha256": "7e45dc77cfa5ae82bd0a55d9b0747f83cd26aac4c65f7cabed8a028a4efcf4d0"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/alignment/fixture_single.aligned.sorted.bam.bai",
+      "scenario": "skip_isoform",
+      "sha256": "c247766a7779807a0d416bfcce50507759217655e07e874ce888c416c07795e0"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/alignment/fixture_single.filtered.cb_ur.bed",
+      "scenario": "skip_isoform",
+      "sha256": "179a0dc8aabb17c09adf661a6fee5565ee35cf76db6d0e13c38bb330f72a075c"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/alignment/fixture_single.filtered.cb_ur.sorted.bam",
+      "require_index": true,
+      "required_tags": [
+        "CB",
+        "CR",
+        "UR",
+        "C5",
+        "C3",
+        "U5",
+        "U3"
+      ],
+      "samtools": ".conda-env/bin/samtools",
+      "scenario": "skip_isoform",
+      "sha256": "b9296eee14e87986b1af2ea0c100949b6d270e95e5105b628579fcccdb80f34a"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/alignment/fixture_single.filtered.cb_ur.sorted.bam.bai",
+      "scenario": "skip_isoform",
+      "sha256": "a4bebcc88c9b5481d87b3fa8faddf6548a960168c9986b5ccbe9fee8e63f6658"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/alignment/fixture_single.read_tags.tsv",
+      "scenario": "skip_isoform",
+      "sha256": "53cb323743d8506df42629e2968db2570a8b8b4f6cd0a748b3d9a4fb02130236"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/barcode_whitelist_generation.log",
+      "scenario": "skip_isoform",
+      "sha256": "83c70ed829e6430bfcff7abd4c84cca98df41cb309265e48fe00f5a1697d15f7"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/barcodes/barcode_3prime_26bp.txt",
+      "scenario": "skip_isoform",
+      "sha256": "e03ff037a1acaaaa2b87b9b950ed174a22ed12c7b0ebe7f5c80c031d94362004"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/barcodes/barcode_5prime_26bp.txt",
+      "scenario": "skip_isoform",
+      "sha256": "7ea13285bffc58816c09ba4efe1741e03b92965b18b8f1ad91b54021a42b61bb"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/logs/01_alignment.log",
+      "scenario": "skip_isoform",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/logs/02_dual_barcode.log",
+      "scenario": "skip_isoform",
+      "sha256": "fe43f237f5b6f7e24d91efc0b9d4bf7bd6a335e0d19c300c661e353c56e7dfaa"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/logs/03_bam_tagging.log",
+      "scenario": "skip_isoform",
+      "sha256": "de8e1f576613dfe91c08a96fa98e6cc07f28b262d9e1b756936f2e03ebcce5dd"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/logs/04_gene.log",
+      "scenario": "skip_isoform",
+      "sha256": "7575072c8efa3af0533d63ccfce7d84dfb78d8c2b98ba98cb71443d5c944befd"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/logs/05_isoform.log",
+      "scenario": "skip_isoform",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/logs/06_qc.log",
+      "scenario": "skip_isoform",
+      "sha256": "fb2f90173f2d3e6264af32d09e643027237838ea0126bd76c2864cf1014d3bec"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/matrix/fixture_single.cell_umi_gene.tsv",
+      "scenario": "skip_isoform",
+      "sha256": "f0862fe5ab3acd89c77dd06cde3113b9c34d8a1bebd6e6ef881bc36500b02b4e"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/matrix/fixture_single.filtered.cb_ur.gn.sorted.bam",
+      "require_index": true,
+      "required_tags": [
+        "CB",
+        "CR",
+        "UR",
+        "C5",
+        "C3",
+        "U5",
+        "U3",
+        "GN"
+      ],
+      "samtools": ".conda-env/bin/samtools",
+      "scenario": "skip_isoform",
+      "sha256": "12ab3d3c76c23ca3af840333e435c7054e131c13647d4eb27f1e4d00ccdbda14"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/matrix/fixture_single.filtered.cb_ur.gn.sorted.bam.bai",
+      "scenario": "skip_isoform",
+      "sha256": "4c1d9359ce79ae0d41c40fb47b2ae7978154aa065df100f35070392b0e1afe15"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/matrix/fixture_single.filtered.read_gene_assigns.tsv",
+      "scenario": "skip_isoform",
+      "sha256": "b9ada705b6104649e1ac1d6dd30b1daf35922c42d7c42d9fa1dffa73c6a122cd"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/matrix/fixture_single.filtered.tagged.sorted.bam",
+      "require_index": true,
+      "required_tags": [
+        "CB",
+        "CR",
+        "UR",
+        "C5",
+        "C3",
+        "U5",
+        "U3",
+        "GN",
+        "UB"
+      ],
+      "samtools": ".conda-env/bin/samtools",
+      "scenario": "skip_isoform",
+      "sha256": "11bf251ebb5949ddb433c1ff9c1d4013d469f7af594f8bfcd0c87c04a8805c62"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/matrix/fixture_single.filtered.tagged.sorted.bam.bai",
+      "scenario": "skip_isoform",
+      "sha256": "c8cce4b6553ff7061ab583c61aec46cdbe41e4c1a6b8e9da6ed5aaf992d0ed51"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/matrix/fixture_single.gene_expression.tsv",
+      "scenario": "skip_isoform",
+      "sha256": "224b0a5ed720e8a202fbff8c0b10ab46e43c7d5b6fe796f1f9a1fdb5e7259c1e"
+    },
+    {
+      "classification": "numeric_tolerance",
+      "path": "output/matrix/fixture_single.rna_cluster.tsv",
+      "scenario": "skip_isoform",
+      "sha256": "4657e4ef188eddb6270534a202a00c35bda1d487410f9f5600f68373196be560"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/qc/cell_umi_gene.tsv",
+      "scenario": "skip_isoform",
+      "sha256": "381163deee2761285840f3bea5a2a176e301944b80f63a790928248351f55fec"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/qc/filtered.sorted.bam",
+      "scenario": "skip_isoform",
+      "sha256": "4ed04aec53dd658bea3fd19e150e0289cb9dc2305c4cb1562012fb7a63996932"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/qc/filtered.sorted.bam.bai",
+      "scenario": "skip_isoform",
+      "sha256": "901029c45c3258dfdb982ccf400e9d64a2aa1bc3f1527c89d55d412d7ff26792"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/qc/fixture_single.parameters.tsv",
+      "scenario": "skip_isoform",
+      "sha256": "f4381715293489f1235ca8c8f20d282c9415d6c7dc6532027c113d4f5015d927"
+    },
+    {
+      "classification": "numeric_tolerance",
+      "path": "output/qc/fixture_single.per_cell_qc.tsv",
+      "scenario": "skip_isoform",
+      "sha256": "534756773b68adbe9be5a8aae9609e57a01d6bdc898d5a20a938b51f8890b2c2"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/qc/fixture_single.read_qc_summary.json",
+      "scenario": "skip_isoform",
+      "sha256": "7961acd6db0c898ecbb8650e0e9775a7c811283999a89d7f2027454ae17ede98"
+    },
+    {
+      "classification": "numeric_tolerance",
+      "path": "output/qc/fixture_single.rna_qc_metrics.tsv",
+      "scenario": "skip_isoform",
+      "sha256": "9162e3387a4ca543678a370bc15a1774a3f01317dedbcef00e41af02f8bb8ae2"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/qc/fixture_single.rna_violin_plot.png",
+      "scenario": "skip_isoform",
+      "sha256": "39e61ba24f31de3a69edee800153a6e33d02234bef54fd45141192b087ce23c5"
+    },
+    {
+      "classification": "numeric_tolerance",
+      "path": "output/qc/fixture_single.saturation.tsv",
+      "scenario": "skip_isoform",
+      "sha256": "5c769dd1a28165c6ce7854fb5a601c7d0f66aa28b4653d114b1dd0f711680757"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/qc/fixture_single.saturation_curves.png",
+      "scenario": "skip_isoform",
+      "sha256": "19e8edd929f3d6ee638abe78ebc87c8f096400532833af612656a8be98983277"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "oracle_path": "output/qc/fixture_single.single_cell_report.html.gz",
+      "path": "output/qc/fixture_single.single_cell_report.html",
+      "scenario": "skip_isoform",
+      "sha256": "2cc943656a0637b96f8be09fd07074c789a7709f1046822d03a538fa523a80b1"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/qc/fixture_single.single_cell_report_metrics.tsv",
+      "scenario": "skip_isoform",
+      "sha256": "f3f5fe47585f092d8c7c03ae4cb0c5d501961ce5cb73b80ee335ccb586cefc46"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/ReadIDs_UMI_BC_clean.csv",
+      "scenario": "skip_isoform",
+      "sha256": "c386e4ca671a67c72e63acf18ca4368df04223cd64a1646331fbd8bc6539fcb6"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/assign_stats.tsv",
+      "scenario": "skip_isoform",
+      "sha256": "1d9ea59fefb8767711555207a6b7ec85683944def7d9a6c518b2e4cc8d056954"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/barcode_counts_3p.tsv",
+      "scenario": "skip_isoform",
+      "sha256": "becca54d3ee6e69d6cd69d3572e09a43f6448678f9af5baf1ae627a11925d44d"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/barcode_counts_5p.tsv",
+      "scenario": "skip_isoform",
+      "sha256": "fcb6e95be250a79bbc75afcee3a4a6578f325f5abef9e383634eed81dbb2050b"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/barcode_to_cell.csv",
+      "scenario": "skip_isoform",
+      "sha256": "c43f5342a6d0126455002598ca044b2d19e71f88f3893b3f8b43f00c755ee222"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/barcode_validity_summary.tsv",
+      "scenario": "skip_isoform",
+      "sha256": "d748481489f4e46ad8ce06c7eb128c3dbd4738aa5af4ee478453e7e9e3ef1c8e"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/cell_read_stats.csv",
+      "scenario": "skip_isoform",
+      "sha256": "c63e44278b66e6b3a250a90263bbe98cf26e296af5a2761131669f0e4af99ac4"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/correction_map_3p.tsv",
+      "scenario": "skip_isoform",
+      "sha256": "79a82809c538bc374b42eda5ca88779cafa3373263f8b676185780e9efe81ddf"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/correction_map_5p.tsv",
+      "scenario": "skip_isoform",
+      "sha256": "7b3766bd39118fce12fb14f9da68fa6e3eb391ad650d8d3fcf6db6f36a1d7f6a"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/empty_bc_list_3p.csv",
+      "scenario": "skip_isoform",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/empty_bc_list_5p.csv",
+      "scenario": "skip_isoform",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/upstream/knee_plot_3p.png",
+      "scenario": "skip_isoform",
+      "sha256": "6487b297ac79a349e16ac86d1519d560d070bce427def6d2ff5ada34e5c28554"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/upstream/knee_plot_5p.png",
+      "scenario": "skip_isoform",
+      "sha256": "6487b297ac79a349e16ac86d1519d560d070bce427def6d2ff5ada34e5c28554"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/pair_counts_kept.csv",
+      "scenario": "skip_isoform",
+      "sha256": "846458165f413552f2482c6d8712e0b6d5534481c42199364b44de9874dffc4f"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/read_assigned_cell.csv",
+      "scenario": "skip_isoform",
+      "sha256": "73854ba778daa4ca315259d24a558770a25f0566d0de5d8db604e287b07f7501"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/whitelist_3p.csv",
+      "scenario": "skip_isoform",
+      "sha256": "976e443414ebc61775f3dda12f946ab794ecb726e68e34d720ae24552bfca203"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/whitelist_5p.csv",
+      "scenario": "skip_isoform",
+      "sha256": "18400be49271378bd0e6955da6c92e7a5b0d9bbeabd1537ff798f525beff0525"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "rust_stage_selection.log",
+      "scenario": "skip_isoform",
+      "sha256": "ee22c1e42811aa3f0ad44421b52ee38b0ae1db0b1eaf8ae3ce4007afebc6ff79"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "workflow.log",
+      "scenario": "skip_isoform",
+      "sha256": "4b47d3459341ca8844337952c4935876d70a725664f19e180c5f946ecbe3edc6"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/logs/00_glycine.log",
+      "scenario": "skip_isoform"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/upstream/matched_reads.fastq.gz",
+      "scenario": "skip_isoform"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/upstream/unmatched_reads.fastq.gz",
+      "scenario": "skip_isoform"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/upstream/cell_reads.fastq.gz",
+      "scenario": "skip_isoform"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/matrix/fixture_single.isoform_expression.tsv",
+      "scenario": "skip_isoform"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/matrix/fixture_single.read_transcript_assigns.tsv",
+      "scenario": "skip_isoform"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/qc/barnyard_qc/per_cell_barnyard.tsv",
+      "scenario": "skip_isoform"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "exit_status.tsv",
+      "scenario": "stale_output",
+      "sha256": "b95b177d120d2004f8942462eb8080cef667c55888f290f2f17eb60e7dc2ffcb"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/alignment/fixture_single.aligned.sorted.bam",
+      "require_index": true,
+      "required_tags": [],
+      "samtools": ".conda-env/bin/samtools",
+      "scenario": "stale_output",
+      "sha256": "7e45dc77cfa5ae82bd0a55d9b0747f83cd26aac4c65f7cabed8a028a4efcf4d0"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/alignment/fixture_single.aligned.sorted.bam.bai",
+      "scenario": "stale_output",
+      "sha256": "c247766a7779807a0d416bfcce50507759217655e07e874ce888c416c07795e0"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/alignment/fixture_single.filtered.cb_ur.bed",
+      "scenario": "stale_output",
+      "sha256": "179a0dc8aabb17c09adf661a6fee5565ee35cf76db6d0e13c38bb330f72a075c"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/alignment/fixture_single.filtered.cb_ur.sorted.bam",
+      "require_index": true,
+      "required_tags": [
+        "CB",
+        "CR",
+        "UR",
+        "C5",
+        "C3",
+        "U5",
+        "U3"
+      ],
+      "samtools": ".conda-env/bin/samtools",
+      "scenario": "stale_output",
+      "sha256": "b9296eee14e87986b1af2ea0c100949b6d270e95e5105b628579fcccdb80f34a"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/alignment/fixture_single.filtered.cb_ur.sorted.bam.bai",
+      "scenario": "stale_output",
+      "sha256": "a4bebcc88c9b5481d87b3fa8faddf6548a960168c9986b5ccbe9fee8e63f6658"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/alignment/fixture_single.read_tags.tsv",
+      "scenario": "stale_output",
+      "sha256": "53cb323743d8506df42629e2968db2570a8b8b4f6cd0a748b3d9a4fb02130236"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/barcode_whitelist_generation.log",
+      "scenario": "stale_output",
+      "sha256": "83c70ed829e6430bfcff7abd4c84cca98df41cb309265e48fe00f5a1697d15f7"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/barcodes/barcode_3prime_26bp.txt",
+      "scenario": "stale_output",
+      "sha256": "e03ff037a1acaaaa2b87b9b950ed174a22ed12c7b0ebe7f5c80c031d94362004"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/barcodes/barcode_5prime_26bp.txt",
+      "scenario": "stale_output",
+      "sha256": "7ea13285bffc58816c09ba4efe1741e03b92965b18b8f1ad91b54021a42b61bb"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/logs/01_alignment.log",
+      "scenario": "stale_output",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/logs/02_dual_barcode.log",
+      "scenario": "stale_output",
+      "sha256": "9e4073fd209ec933048fcd4ea8319e9ebc8ced2c76c5ff7d22321a2d7abc06ec"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/logs/03_bam_tagging.log",
+      "scenario": "stale_output",
+      "sha256": "de8e1f576613dfe91c08a96fa98e6cc07f28b262d9e1b756936f2e03ebcce5dd"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/logs/04_gene.log",
+      "scenario": "stale_output",
+      "sha256": "7575072c8efa3af0533d63ccfce7d84dfb78d8c2b98ba98cb71443d5c944befd"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/logs/05_isoform.log",
+      "scenario": "stale_output",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/logs/06_qc.log",
+      "scenario": "stale_output",
+      "sha256": "166ea001230391c2053eda267cdbb1a3f73afd4092863585ca15cc97619089f5"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/matrix/fixture_single.cell_umi_gene.tsv",
+      "scenario": "stale_output",
+      "sha256": "f0862fe5ab3acd89c77dd06cde3113b9c34d8a1bebd6e6ef881bc36500b02b4e"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/matrix/fixture_single.filtered.cb_ur.gn.sorted.bam",
+      "require_index": true,
+      "required_tags": [
+        "CB",
+        "CR",
+        "UR",
+        "C5",
+        "C3",
+        "U5",
+        "U3",
+        "GN"
+      ],
+      "samtools": ".conda-env/bin/samtools",
+      "scenario": "stale_output",
+      "sha256": "12ab3d3c76c23ca3af840333e435c7054e131c13647d4eb27f1e4d00ccdbda14"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/matrix/fixture_single.filtered.cb_ur.gn.sorted.bam.bai",
+      "scenario": "stale_output",
+      "sha256": "4c1d9359ce79ae0d41c40fb47b2ae7978154aa065df100f35070392b0e1afe15"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/matrix/fixture_single.filtered.read_gene_assigns.tsv",
+      "scenario": "stale_output",
+      "sha256": "b9ada705b6104649e1ac1d6dd30b1daf35922c42d7c42d9fa1dffa73c6a122cd"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/matrix/fixture_single.filtered.tagged.sorted.bam",
+      "require_index": true,
+      "required_tags": [
+        "CB",
+        "CR",
+        "UR",
+        "C5",
+        "C3",
+        "U5",
+        "U3",
+        "GN",
+        "UB"
+      ],
+      "samtools": ".conda-env/bin/samtools",
+      "scenario": "stale_output",
+      "sha256": "11bf251ebb5949ddb433c1ff9c1d4013d469f7af594f8bfcd0c87c04a8805c62"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/matrix/fixture_single.filtered.tagged.sorted.bam.bai",
+      "scenario": "stale_output",
+      "sha256": "c8cce4b6553ff7061ab583c61aec46cdbe41e4c1a6b8e9da6ed5aaf992d0ed51"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/matrix/fixture_single.gene_expression.tsv",
+      "scenario": "stale_output",
+      "sha256": "224b0a5ed720e8a202fbff8c0b10ab46e43c7d5b6fe796f1f9a1fdb5e7259c1e"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/matrix/fixture_single.isoform_expression.tsv",
+      "scenario": "stale_output",
+      "sha256": "a698146e458799bc11e41d434ab37d0eab5eeaf4e08f06460086240faa8d6786"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/matrix/fixture_single.read_transcript_assigns.tsv",
+      "scenario": "stale_output",
+      "sha256": "94cc2536c414d5179b1852664f59d692e4c14f191481973ec4d2e3b501d893c1"
+    },
+    {
+      "classification": "numeric_tolerance",
+      "path": "output/matrix/fixture_single.rna_cluster.tsv",
+      "scenario": "stale_output",
+      "sha256": "4657e4ef188eddb6270534a202a00c35bda1d487410f9f5600f68373196be560"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/qc/cell_umi_gene.tsv",
+      "scenario": "stale_output",
+      "sha256": "381163deee2761285840f3bea5a2a176e301944b80f63a790928248351f55fec"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/qc/filtered.sorted.bam",
+      "scenario": "stale_output",
+      "sha256": "4ed04aec53dd658bea3fd19e150e0289cb9dc2305c4cb1562012fb7a63996932"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/qc/filtered.sorted.bam.bai",
+      "scenario": "stale_output",
+      "sha256": "901029c45c3258dfdb982ccf400e9d64a2aa1bc3f1527c89d55d412d7ff26792"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/qc/fixture_single.parameters.tsv",
+      "scenario": "stale_output",
+      "sha256": "2151c3874f1f8868f080fe61277e36437d05fe75431c3d68feaf843a52df93cf"
+    },
+    {
+      "classification": "numeric_tolerance",
+      "path": "output/qc/fixture_single.per_cell_qc.tsv",
+      "scenario": "stale_output",
+      "sha256": "534756773b68adbe9be5a8aae9609e57a01d6bdc898d5a20a938b51f8890b2c2"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/qc/fixture_single.read_qc_summary.json",
+      "scenario": "stale_output",
+      "sha256": "7961acd6db0c898ecbb8650e0e9775a7c811283999a89d7f2027454ae17ede98"
+    },
+    {
+      "classification": "numeric_tolerance",
+      "path": "output/qc/fixture_single.rna_qc_metrics.tsv",
+      "scenario": "stale_output",
+      "sha256": "2fab6cd5cf84d5c0d4111b315f73a8a827b90f8ca0aef813e8058ab2cb0dcdec"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/qc/fixture_single.rna_violin_plot.png",
+      "scenario": "stale_output",
+      "sha256": "39e61ba24f31de3a69edee800153a6e33d02234bef54fd45141192b087ce23c5"
+    },
+    {
+      "classification": "numeric_tolerance",
+      "path": "output/qc/fixture_single.saturation.tsv",
+      "scenario": "stale_output",
+      "sha256": "5c769dd1a28165c6ce7854fb5a601c7d0f66aa28b4653d114b1dd0f711680757"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/qc/fixture_single.saturation_curves.png",
+      "scenario": "stale_output",
+      "sha256": "19e8edd929f3d6ee638abe78ebc87c8f096400532833af612656a8be98983277"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "oracle_path": "output/qc/fixture_single.single_cell_report.html.gz",
+      "path": "output/qc/fixture_single.single_cell_report.html",
+      "scenario": "stale_output",
+      "sha256": "9c2f6fd8301b35687631cc155844905f17fe820198cfc2c92b0d2ac66595a5dc"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/qc/fixture_single.single_cell_report_metrics.tsv",
+      "scenario": "stale_output",
+      "sha256": "d6677cf966852bc5dbb9ca0c36a88d3fb3525f9b4cc7742c872e6051874113a2"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/stale.marker",
+      "scenario": "stale_output",
+      "sha256": "786685c761a9afadfb571d2cfdbaef906785e8a5ffdfe68cda895d6f2d858ede"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/ReadIDs_UMI_BC_clean.csv",
+      "scenario": "stale_output",
+      "sha256": "c386e4ca671a67c72e63acf18ca4368df04223cd64a1646331fbd8bc6539fcb6"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/assign_stats.tsv",
+      "scenario": "stale_output",
+      "sha256": "1d9ea59fefb8767711555207a6b7ec85683944def7d9a6c518b2e4cc8d056954"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/barcode_counts_3p.tsv",
+      "scenario": "stale_output",
+      "sha256": "becca54d3ee6e69d6cd69d3572e09a43f6448678f9af5baf1ae627a11925d44d"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/barcode_counts_5p.tsv",
+      "scenario": "stale_output",
+      "sha256": "fcb6e95be250a79bbc75afcee3a4a6578f325f5abef9e383634eed81dbb2050b"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/barcode_to_cell.csv",
+      "scenario": "stale_output",
+      "sha256": "c43f5342a6d0126455002598ca044b2d19e71f88f3893b3f8b43f00c755ee222"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/barcode_validity_summary.tsv",
+      "scenario": "stale_output",
+      "sha256": "d748481489f4e46ad8ce06c7eb128c3dbd4738aa5af4ee478453e7e9e3ef1c8e"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/cell_read_stats.csv",
+      "scenario": "stale_output",
+      "sha256": "c63e44278b66e6b3a250a90263bbe98cf26e296af5a2761131669f0e4af99ac4"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/correction_map_3p.tsv",
+      "scenario": "stale_output",
+      "sha256": "79a82809c538bc374b42eda5ca88779cafa3373263f8b676185780e9efe81ddf"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/correction_map_5p.tsv",
+      "scenario": "stale_output",
+      "sha256": "7b3766bd39118fce12fb14f9da68fa6e3eb391ad650d8d3fcf6db6f36a1d7f6a"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/empty_bc_list_3p.csv",
+      "scenario": "stale_output",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/empty_bc_list_5p.csv",
+      "scenario": "stale_output",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/upstream/knee_plot_3p.png",
+      "scenario": "stale_output",
+      "sha256": "6487b297ac79a349e16ac86d1519d560d070bce427def6d2ff5ada34e5c28554"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/upstream/knee_plot_5p.png",
+      "scenario": "stale_output",
+      "sha256": "6487b297ac79a349e16ac86d1519d560d070bce427def6d2ff5ada34e5c28554"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/pair_counts_kept.csv",
+      "scenario": "stale_output",
+      "sha256": "846458165f413552f2482c6d8712e0b6d5534481c42199364b44de9874dffc4f"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/read_assigned_cell.csv",
+      "scenario": "stale_output",
+      "sha256": "73854ba778daa4ca315259d24a558770a25f0566d0de5d8db604e287b07f7501"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/whitelist_3p.csv",
+      "scenario": "stale_output",
+      "sha256": "976e443414ebc61775f3dda12f946ab794ecb726e68e34d720ae24552bfca203"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/whitelist_5p.csv",
+      "scenario": "stale_output",
+      "sha256": "18400be49271378bd0e6955da6c92e7a5b0d9bbeabd1537ff798f525beff0525"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "rust_stage_selection.log",
+      "scenario": "stale_output",
+      "sha256": "ee22c1e42811aa3f0ad44421b52ee38b0ae1db0b1eaf8ae3ce4007afebc6ff79"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "workflow.log",
+      "scenario": "stale_output",
+      "sha256": "12dab91ae87d8eba30003e3545ed2415c21fb9c8a3e81dc147056a915e55d59e"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/logs/00_glycine.log",
+      "scenario": "stale_output"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/upstream/matched_reads.fastq.gz",
+      "scenario": "stale_output"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/upstream/unmatched_reads.fastq.gz",
+      "scenario": "stale_output"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/upstream/cell_reads.fastq.gz",
+      "scenario": "stale_output"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/qc/barnyard_qc/per_cell_barnyard.tsv",
+      "scenario": "stale_output"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "exit_status.tsv",
+      "scenario": "upstream_only",
+      "sha256": "b95b177d120d2004f8942462eb8080cef667c55888f290f2f17eb60e7dc2ffcb"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/alignment/fixture_single.aligned.sorted.bam",
+      "require_index": true,
+      "required_tags": [],
+      "samtools": ".conda-env/bin/samtools",
+      "scenario": "upstream_only",
+      "sha256": "7e45dc77cfa5ae82bd0a55d9b0747f83cd26aac4c65f7cabed8a028a4efcf4d0"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/alignment/fixture_single.aligned.sorted.bam.bai",
+      "scenario": "upstream_only",
+      "sha256": "c247766a7779807a0d416bfcce50507759217655e07e874ce888c416c07795e0"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/barcode_whitelist_generation.log",
+      "scenario": "upstream_only",
+      "sha256": "83c70ed829e6430bfcff7abd4c84cca98df41cb309265e48fe00f5a1697d15f7"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/barcodes/barcode_3prime_26bp.txt",
+      "scenario": "upstream_only",
+      "sha256": "e03ff037a1acaaaa2b87b9b950ed174a22ed12c7b0ebe7f5c80c031d94362004"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/barcodes/barcode_5prime_26bp.txt",
+      "scenario": "upstream_only",
+      "sha256": "7ea13285bffc58816c09ba4efe1741e03b92965b18b8f1ad91b54021a42b61bb"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/logs/01_alignment.log",
+      "scenario": "upstream_only",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "output/logs/02_dual_barcode.log",
+      "scenario": "upstream_only",
+      "sha256": "9e4073fd209ec933048fcd4ea8319e9ebc8ced2c76c5ff7d22321a2d7abc06ec"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/ReadIDs_UMI_BC_clean.csv",
+      "scenario": "upstream_only",
+      "sha256": "c386e4ca671a67c72e63acf18ca4368df04223cd64a1646331fbd8bc6539fcb6"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/assign_stats.tsv",
+      "scenario": "upstream_only",
+      "sha256": "1d9ea59fefb8767711555207a6b7ec85683944def7d9a6c518b2e4cc8d056954"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/barcode_counts_3p.tsv",
+      "scenario": "upstream_only",
+      "sha256": "becca54d3ee6e69d6cd69d3572e09a43f6448678f9af5baf1ae627a11925d44d"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/barcode_counts_5p.tsv",
+      "scenario": "upstream_only",
+      "sha256": "fcb6e95be250a79bbc75afcee3a4a6578f325f5abef9e383634eed81dbb2050b"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/barcode_to_cell.csv",
+      "scenario": "upstream_only",
+      "sha256": "c43f5342a6d0126455002598ca044b2d19e71f88f3893b3f8b43f00c755ee222"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/barcode_validity_summary.tsv",
+      "scenario": "upstream_only",
+      "sha256": "d748481489f4e46ad8ce06c7eb128c3dbd4738aa5af4ee478453e7e9e3ef1c8e"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/cell_read_stats.csv",
+      "scenario": "upstream_only",
+      "sha256": "c63e44278b66e6b3a250a90263bbe98cf26e296af5a2761131669f0e4af99ac4"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/correction_map_3p.tsv",
+      "scenario": "upstream_only",
+      "sha256": "79a82809c538bc374b42eda5ca88779cafa3373263f8b676185780e9efe81ddf"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/correction_map_5p.tsv",
+      "scenario": "upstream_only",
+      "sha256": "7b3766bd39118fce12fb14f9da68fa6e3eb391ad650d8d3fcf6db6f36a1d7f6a"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/empty_bc_list_3p.csv",
+      "scenario": "upstream_only",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/empty_bc_list_5p.csv",
+      "scenario": "upstream_only",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/upstream/knee_plot_3p.png",
+      "scenario": "upstream_only",
+      "sha256": "6487b297ac79a349e16ac86d1519d560d070bce427def6d2ff5ada34e5c28554"
+    },
+    {
+      "classification": "byte_exact",
+      "path": "output/upstream/knee_plot_5p.png",
+      "scenario": "upstream_only",
+      "sha256": "6487b297ac79a349e16ac86d1519d560d070bce427def6d2ff5ada34e5c28554"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/pair_counts_kept.csv",
+      "scenario": "upstream_only",
+      "sha256": "846458165f413552f2482c6d8712e0b6d5534481c42199364b44de9874dffc4f"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/read_assigned_cell.csv",
+      "scenario": "upstream_only",
+      "sha256": "73854ba778daa4ca315259d24a558770a25f0566d0de5d8db604e287b07f7501"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/whitelist_3p.csv",
+      "scenario": "upstream_only",
+      "sha256": "976e443414ebc61775f3dda12f946ab794ecb726e68e34d720ae24552bfca203"
+    },
+    {
+      "classification": "parsed_exact",
+      "path": "output/upstream/whitelist_5p.csv",
+      "scenario": "upstream_only",
+      "sha256": "18400be49271378bd0e6955da6c92e7a5b0d9bbeabd1537ff798f525beff0525"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "rust_stage_selection.log",
+      "scenario": "upstream_only",
+      "sha256": "ee22c1e42811aa3f0ad44421b52ee38b0ae1db0b1eaf8ae3ce4007afebc6ff79"
+    },
+    {
+      "canonicalize": [
+        "workspace_root",
+        "elapsed_seconds"
+      ],
+      "classification": "canonicalized_html_log",
+      "path": "workflow.log",
+      "scenario": "upstream_only",
+      "sha256": "dc00a56cc8ed8202354f90762fce3ada5dbf921ae747ead088e96d68dba1fe7b"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/logs/00_glycine.log",
+      "scenario": "upstream_only"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/upstream/matched_reads.fastq.gz",
+      "scenario": "upstream_only"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/upstream/unmatched_reads.fastq.gz",
+      "scenario": "upstream_only"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/upstream/cell_reads.fastq.gz",
+      "scenario": "upstream_only"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/matrix/fixture_single.isoform_expression.tsv",
+      "scenario": "upstream_only"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/matrix/fixture_single.read_transcript_assigns.tsv",
+      "scenario": "upstream_only"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/qc/barnyard_qc/per_cell_barnyard.tsv",
+      "scenario": "upstream_only"
+    },
+    {
+      "classification": "intentionally_absent",
+      "path": "output/qc/fixture_single.single_cell_report.html",
+      "scenario": "upstream_only"
+    }
+  ],
+  "canonicalization": {
+    "elapsed_seconds": "legacy step and total elapsed fields only",
+    "workspace_root": "comparison roots and this repository root only"
+  },
+  "known_deviations": {
+    "legacy_full_output_orchestration": {
+      "approved": true,
+      "future_command": [
+        "flora",
+        "--full-output"
+      ],
+      "future_expected_exit": 0,
+      "future_required_outputs": [
+        "upstream/matched_reads.fastq.gz",
+        "upstream/unmatched_reads.fastq.gz",
+        "upstream/cell_reads.fastq.gz"
+      ],
+      "legacy_diagnostic_contains": "Missing cell_reads.fastq.gz",
+      "legacy_expected_exit": 1,
+      "legacy_scenario": "full",
+      "scope": "Legacy run_all orchestration only; do not reproduce in the new Rust workflow."
+    }
+  },
+  "numeric_tolerance": {
+    "absolute": 1e-09,
+    "relative": 1e-07
+  },
+  "oracle_source_commit": "9f41ae3",
+  "scenarios": {
+    "forced_failure": {
+      "oracle_root": "oracles/forced_failure"
+    },
+    "full": {
+      "oracle_root": "oracles/full"
+    },
+    "light": {
+      "oracle_root": "oracles/light"
+    },
+    "malformed_input": {
+      "oracle_root": "oracles/malformed_input"
+    },
+    "skip_glycine": {
+      "oracle_root": "oracles/skip_glycine"
+    },
+    "skip_isoform": {
+      "oracle_root": "oracles/skip_isoform"
+    },
+    "stale_output": {
+      "oracle_root": "oracles/stale_output"
+    },
+    "upstream_only": {
+      "oracle_root": "oracles/upstream_only"
+    }
+  },
+  "schema_version": 1,
+  "workflow": "single"
+}

@@ -1,0 +1,56 @@
+
+RNA QC Metrics
+Metric	Value
+Input reads	24
+Full length reads	24
+Estimated number of cells	1
+Raw FASTQ reads	24
+Aligned BAM reads	24
+Aligned BAM records	24
+Pass reads	24
+Mapped	24
+Unmapped	0
+Supplementary	0
+Barcode-valid reads	24
+Reads assigned to final cells	24
+Gene assigned reads	11
+Reads in final cells	24
+Reads aligned to reference genome in final cells	24
+Reads per cell (mean)	24.00
+Mean reads per cell	24.00
+Mean cell-associated reads per cell	24.00
+Mean UMI counts per cell	1.00
+Median UMI counts per cell	1.00
+Mean Genes per cell	1.00
+Median Genes per cell	1.00
+Genes per cell (median)	1.00
+Unique genes	1
+Total genes detected	1
+Fraction reads in cells	100.00%
+Percent full length reads	100.00%
+Percent barcode-valid reads of full length	100.00%
+Percent reads assigned to final cells of full length	100.00%
+Percent gene assigned reads of full length	45.83%
+Fraction reads aligned to reference genome in final cells	100.00%
+Transcript assigned reads	11
+Percent transcript assigned reads of full length	45.83%
+High-confidence known-transcript reads	11
+Fraction high-confidence known-transcript reads in final cells	45.83%
+Unique isoforms	1
+rna_violin_plot.png
+fraction	reads	reads_per_cell	genes_per_cell	umis_per_cell	saturation
+0.01	0	0.0	0.0	0.0	0.0
+0.02	0	0.0	0.0	0.0	0.0
+0.05	1	1.0	0.0	1.0	0.0
+0.1	2	2.0	0.0	1.0	0.5
+0.2	5	5.0	1.0	1.0	0.6
+0.3	7	7.0	1.0	1.0	0.7142857142857143
+0.4	10	10.0	1.0	1.0	0.8
+0.5	12	12.0	1.0	1.0	0.8333333333333334
+0.6	14	14.0	1.0	1.0	0.8571428571428572
+0.7	17	17.0	1.0	1.0	0.8823529411764706
+0.8	19	19.0	1.0	1.0	0.8947368421052632
+0.9	22	22.0	1.0	1.0	0.9090909090909091
+1.0	24	24.0	1.0	1.0	0.9166666666666666
+fixture_single.read_qc_summary.json
+Wrote report: fixture_single.single_cell_report.html

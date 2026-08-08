@@ -1,0 +1,43 @@
+Summary
+Total_base_count	Valid_base_count	Valid_base_proportion(%)
+6432	6432	100.00
+Type	Read_count	Read_proportion(%)
+Total	24	100.00
+Length-filtered	0	0.00
+QC-filtered	0	0.00
+Full-length+rescued	24	100.00
+Chimeric	24	100.00
+Non-chimeric	0	0.00
+Full-length	24	100.00
+
+Non-chimeric
+Type	Read_count	Read_proportion(%)
+Total	0	100.00
+Full-length	0	NaN
+High-confidence strand:+	0	NaN
+High-confidence strand:-	0	NaN
+Low-confidence strand:+	0	NaN
+Low-confidence strand:-	0	NaN
+Non-full-length	0	NaN
+Double-rtp-double-polya/t	0	NaN
+Non-tso-polya-rtp	0	NaN
+Rtp-polyt-non-tso	0	NaN
+Tso-rtp-non-polya/t	0	NaN
+Rtp-tso-non-polya/t	0	NaN
+Single-5'-tso	0	NaN
+Single-5'-rtp	0	NaN
+Single-3'-tso	0	NaN
+Single-3'-rtp	0	NaN
+Discarded	0	NaN
+Double-tso	0	NaN
+Double-rtp	0	NaN
+Non-primer	0	NaN
+
+Chimeric
+Chimeric_read_count	Rescued_read_count	Rescued_read_proportion(%)
+24	24	100.00
+Type	Read_count	Read_proportion(%)
+Total	24	100.00
+Rescued strand:+	24	100.00
+Rescued strand:-	0	0.00
+Irrescuable	0	0.00

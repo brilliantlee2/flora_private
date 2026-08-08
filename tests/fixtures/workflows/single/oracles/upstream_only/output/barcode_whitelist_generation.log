@@ -1,0 +1,5 @@
+Input 10bp barcode count: 2
+3p whitelist: <WORKFLOW_ROOT>/output/barcodes/barcode_3prime_26bp.txt (4 records)
+5p whitelist: <WORKFLOW_ROOT>/output/barcodes/barcode_5prime_26bp.txt (4 records)
+First 3 raw barcodes: ["ACGTACGTAC", "TGCATGCATG"]
+First 3 5p RC barcodes: ["GTACGTACGT", "CATGCATGCA"]

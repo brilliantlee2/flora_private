@@ -1,0 +1,57 @@
+
+RNA QC Metrics
+Metric	Value
+Input reads	40
+Full length reads	40
+Estimated number of cells	1
+Raw FASTQ reads	40
+Aligned BAM reads	40
+Aligned BAM records	40
+Pass reads	40
+Mapped	40
+Unmapped	0
+Supplementary	0
+Barcode-valid reads	40
+Reads assigned to final cells	40
+Gene assigned reads	34
+Reads in final cells	40
+Reads aligned to reference genome in final cells	40
+Reads per cell (mean)	40.00
+Mean reads per cell	40.00
+Mean cell-associated reads per cell	40.00
+Mean UMI counts per cell	1.00
+Median UMI counts per cell	1.00
+Mean Genes per cell	2.00
+Median Genes per cell	2.00
+Genes per cell (median)	2.00
+Unique genes	2
+Total genes detected	2
+Fraction reads in cells	100.00%
+Percent full length reads	100.00%
+Percent barcode-valid reads of full length	100.00%
+Percent reads assigned to final cells of full length	100.00%
+Percent gene assigned reads of full length	85.00%
+Fraction reads aligned to reference genome in final cells	100.00%
+rna_violin_plot.png
+fraction	reads	reads_per_cell	genes_per_cell	umis_per_cell	saturation
+0.01	0	0.0	0.0	0.0	0.0
+0.02	1	1.0	0.0	1.0	0.0
+0.05	2	2.0	1.0	1.0	0.0
+0.1	4	4.0	2.0	1.0	0.25
+0.2	8	8.0	2.0	1.0	0.625
+0.3	12	12.0	2.0	1.0	0.75
+0.4	16	16.0	2.0	1.0	0.8125
+0.5	20	20.0	2.0	1.0	0.85
+0.6	24	24.0	2.0	1.0	0.875
+0.7	28	28.0	2.0	1.0	0.8928571428571429
+0.8	32	32.0	2.0	1.0	0.90625
+0.9	36	36.0	2.0	1.0	0.9166666666666666
+1.0	40	40.0	2.0	1.0	0.925
+fixture_mixed.read_qc_summary.json
+<REPOSITORY_ROOT>/scripts/barnyard_qc.py:407: UserWarning: No artists with labels found to put in legend.  Note that artists whose label start with an underscore are ignored when legend() is called with no argument.
+  axes[1].legend(frameon=False, loc="lower right", fontsize=8)
+barnyard_qc/barnyard_summary.tsv
+barnyard_qc/barnyard_overall_purity.tsv
+barnyard_qc/barnyard_per_cell.tsv
+barnyard_qc/barnyard_scatter.png
+Wrote report: fixture_mixed.single_cell_report.html

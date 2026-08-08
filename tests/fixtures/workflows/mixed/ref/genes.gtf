@@ -1,0 +1,6 @@
+hs_chrSynthetic	fixture	gene	1	320	.	+	.	gene_id "hs_gene_fixture"; gene_name "hs_GENE_FIXTURE";
+hs_chrSynthetic	fixture	transcript	1	320	.	+	.	gene_id "hs_gene_fixture"; transcript_id "hs_tx_fixture"; gene_name "hs_GENE_FIXTURE";
+hs_chrSynthetic	fixture	exon	1	320	.	+	.	gene_id "hs_gene_fixture"; transcript_id "hs_tx_fixture"; exon_number "1"; gene_name "hs_GENE_FIXTURE";
+mm_chrSynthetic	fixture	gene	1	320	.	+	.	gene_id "mm_gene_fixture"; gene_name "mm_GENE_FIXTURE";
+mm_chrSynthetic	fixture	transcript	1	320	.	+	.	gene_id "mm_gene_fixture"; transcript_id "mm_tx_fixture"; gene_name "mm_GENE_FIXTURE";
+mm_chrSynthetic	fixture	exon	1	320	.	+	.	gene_id "mm_gene_fixture"; transcript_id "mm_tx_fixture"; exon_number "1"; gene_name "mm_GENE_FIXTURE";

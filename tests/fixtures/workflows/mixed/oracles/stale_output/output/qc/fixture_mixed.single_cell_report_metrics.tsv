@@ -1,0 +1,22 @@
+Section	Metric	Value	Formatted_value
+Experiment summary	Input reads	40	40
+Experiment summary	Estimated cells	1	1
+Experiment summary	Reads per cell (mean)	40	40.00
+Experiment summary	UMIs per cell (median)	1	1.00
+Experiment summary	Genes per cell (median)	2	2.00
+Alignment / feature summary	Pass reads	40	40
+Alignment / feature summary	Mapped	40	40
+Alignment / feature summary	Unmapped	0	0
+Alignment / feature summary	Supplementary	0	0
+Alignment / feature summary	Unique genes	2	2
+Alignment / feature summary	Unique isoforms	2	2
+Read assignment summary	Full length	40	40
+Read assignment summary	Barcode-valid	40	40
+Read assignment summary	Cell-assigned	40	40
+Read assignment summary	Gene assigned	34	34
+Read assignment summary	Transcript assigned	34	34
+Read assignment percentage	% full length reads	1	100.00%
+Read assignment percentage	% barcode-valid reads	1	100.00%
+Read assignment percentage	% cell-assigned reads	1	100.00%
+Read assignment percentage	% gene assigned reads	0.85	85.00%
+Read assignment percentage	% transcript assigned reads	0.85	85.00%

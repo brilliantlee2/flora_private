@@ -1,0 +1,48 @@
+[Flora] Step 1/7: streaming FASTQ and extracting putative 3p/5p barcode tables
+[timing] Step 1/7 elapsed: 0.00s
+[Flora] Step 2/7: reading whitelists and counting high-quality barcodes
+[timing] Step 2/7 elapsed: 0.00s
+[Flora] Step 3/7: correcting reads with unique-barcode caches
+[timing] Step 3/7 elapsed: 0.00s
+[Flora] Step 4/7: filtering corrected reads and stripping fixed barcode sequence
+[timing] Step 4/7 elapsed: 0.00s
+[Flora] Step 5/7: writing clean read and pair tables
+[timing] Step 5/7 elapsed: 0.00s
+[Flora] Step 6/7: assigning reads to graph components
+[timing] Step 6/7 elapsed: 0.00s
+[Flora] Step 7/7: optional FASTQ outputs
+[timing] Step 7/7 elapsed: 0.00s
+
+=== Flora Summary ===
+Output directory: <WORKFLOW_ROOT>/output/upstream
+FASTQ files: 1
+Reads total: 40
+Reads demultiplexed: 40
+
+Barcode validity in corrected reads:
+Any barcode valid: 40 (100.00%)
+Only 3' valid: 0 (0.00%)
+Only 5' valid: 0 (0.00%)
+Both ends valid: 40 (100.00%)
+Neither valid: 0 (0.00%)
+Merged putative rows: 40
+Filtered rows: 40
+Unique BC3_20bp_rc: 1
+Unique BC5_20bp: 1
+Unique union (BC3 ∪ BC5): 2
+Clean read rows: 40
+Pair rows kept: 1
+PAIR_MIN used: 1 (mode=manual)
+TOP1 alpha (reads/UMI): 0.1 / 0.3
+Core cells: 1 core barcodes: 2
+Assigned read rows: 40
+
+assign_stats:
+AssignStats { n_total_reads: 40, n_assigned_reads: 40, n_cells_before_min_reads: 1, n_cells_after_min_reads: 1, min_reads_per_cell: 20, n_core_barcodes: 2 }
+
+Top cell_read_stats:
+CellReadStat { cell_id: "cell_000001", n_reads: 40 }
+
+[Flora] Total elapsed: 0.00s
+<REPOSITORY_ROOT>/scripts/generate_knee_plots.py:66: UserWarning: Data has no positive values, and therefore cannot be log-scaled.
+  plt.axhline(y=threshold_value, color="r", linestyle="--", label="cell calling threshold")

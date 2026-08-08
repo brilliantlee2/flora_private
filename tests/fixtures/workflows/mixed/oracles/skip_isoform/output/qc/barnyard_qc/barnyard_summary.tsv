@@ -1,0 +1,20 @@
+metric	value
+total_cells	0.0
+human_singlet_cells	0.0
+mouse_singlet_cells	0.0
+mixed_cells	0.0
+unclassified_cells	0.0
+cross_species_doublet_rate_among_classified	
+human_singlet_mouse_fraction_median	
+human_singlet_mouse_fraction_p95	
+mouse_singlet_human_fraction_median	
+mouse_singlet_human_fraction_p95	
+mixed_human_fraction_median	
+mixed_mouse_fraction_median	
+mixed_near_50_50_cells	0.0
+mixed_near_50_50_fraction	
+mixed_mostly_90_10_cells	0.0
+mixed_mostly_90_10_fraction	
+human_singlet_umi_total_median	
+mouse_singlet_umi_total_median	
+mixed_umi_total_median	
