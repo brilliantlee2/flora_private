@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "id": "glycine",
+  "command": ["flora", "glycine"],
+  "description": "Standalone Glycine full-length cDNA identification and trimming contract.",
+  "sources": ["src/main.rs", "src/glycine/args.rs"],
+  "positionals": [],
+  "options": [
+    {"name":"--fastq","aliases":["-f"],"type":"path","required":true,"required_when":[],"default":null,"conflicts":[],"description":"Input FASTQ file."},
+    {"name":"--tso_seq","aliases":["-5"],"type":"string","required":true,"required_when":[],"default":null,"conflicts":[],"description":"Template-switching oligo sequence."},
+    {"name":"--rtp_seq","aliases":["-3"],"type":"string","required":true,"required_when":[],"default":null,"conflicts":[],"description":"Reverse-transcription primer sequence."},
+    {"name":"--outdir","aliases":["-o"],"type":"path","required":true,"required_when":[],"default":null,"conflicts":[],"description":"Output directory."},
+    {"name":"--sample","aliases":["-n"],"type":"string","required":true,"required_when":[],"default":null,"conflicts":[],"description":"Sample name."},
+    {"name":"--err","aliases":["-e"],"type":"string","required":false,"required_when":[],"default":"0.25,0.25","conflicts":[],"description":"One or two Levenshtein-distance or error-rate thresholds."},
+    {"name":"--shift","aliases":["-s"],"type":"string","required":false,"required_when":[],"default":"100,100","conflicts":[],"description":"One or two end-specific search shift lengths."},
+    {"name":"--min_len","aliases":["-L"],"type":"int","required":false,"required_when":[],"default":100,"conflicts":[],"description":"Minimum retained sequence length."},
+    {"name":"--min_qual","aliases":["-Q"],"type":"float","required":false,"required_when":[],"default":7.0,"conflicts":[],"description":"Minimum read quality."},
+    {"name":"--trim_len","aliases":["-u"],"type":"int","required":false,"required_when":[],"default":0,"conflicts":[],"description":"Length trimmed from the 3-prime primer."},
+    {"name":"--tail_len","aliases":["-l"],"type":"int","required":false,"required_when":[],"default":10,"conflicts":[],"description":"Poly-A tail length."},
+    {"name":"--umi_len","aliases":["-q"],"type":"int","required":false,"required_when":[],"default":0,"conflicts":[],"description":"UMI length between the poly-A tail and RTP."},
+    {"name":"--thread","aliases":["-t"],"type":"int","required":false,"required_when":[],"default":4,"conflicts":[],"description":"Worker thread count."},
+    {"name":"--keep-all-outputs","aliases":[],"type":"bool","required":false,"required_when":[],"default":false,"conflicts":[],"description":"Keep intermediate classification FASTQs."},
+    {"name":"--help","aliases":["-h"],"type":"bool","required":false,"required_when":[],"default":false,"conflicts":[],"description":"Print command help."},
+    {"name":"--version","aliases":["-V"],"type":"bool","required":false,"required_when":[],"default":false,"conflicts":[],"description":"Print Glycine version."}
+  ],
+  "conditional_requirements": [],
+  "execution": {"stages":["glycine"],"does_not_require":["reference","alignment","python"]},
+  "invocations": {
+    "accepted": [
+      {"argv":["flora","glycine","--fastq","raw.fq.gz","--tso_seq","AAAA","--rtp_seq","TTTT","--outdir","glycine","--sample","sample"],"reason":"Minimal standalone Glycine invocation."},
+      {"argv":["flora","glycine","-f","raw.fq.gz","-5","AAAA","-3","TTTT","-o","glycine","-n","sample","--keep-all-outputs"],"reason":"All required short aliases and the output-retention flag are accepted."}
+    ],
+    "rejected": [
+      {"argv":["flora","glycine","--fastq","raw.fq.gz","--outdir","glycine","--sample","sample"],"reason":"Both TSO and RTP sequences are required."},
+      {"argv":["flora","glycine","--fastq","raw.fq.gz","--tso_seq","AAAA","--rtp_seq","TTTT","--outdir","glycine","--sample","sample","--thread","many"],"reason":"Thread count must parse as an integer."}
+    ]
+  }
+}

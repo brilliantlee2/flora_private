@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "id": "analyze",
+  "command": ["flora", "analyze"],
+  "command_aliases": [["flora"]],
+  "description": "Standalone barcode, UMI, and cell-assignment contract, including the legacy top-level alias.",
+  "sources": ["src/main.rs"],
+  "positionals": [
+    {"name":"fastq_fns","type":"path","cardinality":"one_or_more","required":true,"description":"One or more full-length FASTQ files."}
+  ],
+  "options": [
+    {"name":"--full-bc-whitelist-3p","aliases":[],"type":"path","required":true,"required_when":[],"default":null,"conflicts":[],"description":"Full 3-prime barcode whitelist."},
+    {"name":"--full-bc-whitelist-5p","aliases":[],"type":"path","required":true,"required_when":[],"default":null,"conflicts":[],"description":"Full 5-prime barcode whitelist."},
+    {"name":"--no-revcomp-whitelist","aliases":[],"type":"bool","required":false,"required_when":[],"default":false,"conflicts":[],"description":"Disable reverse complementation of whitelist barcodes."},
+    {"name":"--out_dir","aliases":[],"type":"path","required":false,"required_when":[],"default":"Flora","conflicts":[],"description":"Output directory."},
+    {"name":"--threads","aliases":[],"type":"int","required":false,"required_when":[],"default":96,"conflicts":[],"description":"Worker thread count; zero leaves the global pool unchanged."},
+    {"name":"--batch_size","aliases":[],"type":"int","required":false,"required_when":[],"default":100000,"conflicts":[],"description":"FASTQ processing batch size."},
+    {"name":"--assign_batchsize","aliases":[],"type":"int","required":false,"required_when":[],"default":10000,"conflicts":[],"description":"Assignment batch size."},
+    {"name":"--minQ","aliases":[],"type":"int","required":false,"required_when":[],"default":2,"conflicts":[],"description":"Minimum barcode base quality."},
+    {"name":"--exp_cells","aliases":[],"type":"int","required":false,"required_when":[],"default":5000,"conflicts":[],"description":"Expected cell count."},
+    {"name":"--max_ed","aliases":[],"type":"int","required":false,"required_when":[],"default":2,"conflicts":[],"description":"Maximum barcode edit distance."},
+    {"name":"--PAIR_MIN","aliases":[],"type":"int","required":false,"required_when":[],"default":null,"conflicts":[],"description":"Fixed pair-support threshold; omission enables automatic resolution."},
+    {"name":"--auto_pair_min_floor","aliases":[],"type":"int","required":false,"required_when":[],"default":10,"conflicts":[],"description":"Floor for automatic pair threshold."},
+    {"name":"--auto_pair_min_quantile","aliases":[],"type":"float","required":false,"required_when":[],"default":0.1,"conflicts":[],"description":"Quantile for automatic pair threshold."},
+    {"name":"--dominance_min","aliases":[],"type":"float","required":false,"required_when":[],"default":0.8,"conflicts":[],"description":"Minimum dominant component ratio."},
+    {"name":"--drop_umiA_ratio_gt","aliases":[],"type":"float","required":false,"required_when":[],"default":0.5,"conflicts":[],"description":"Drop threshold for UMI-A ratio."},
+    {"name":"--TOP1_ALPHA","aliases":[],"type":"float","required":false,"required_when":[],"default":0.1,"conflicts":[],"description":"Read-support top-one alpha."},
+    {"name":"--TOP1_ALPHA_UMI","aliases":[],"type":"float","required":false,"required_when":[],"default":0.3,"conflicts":[],"description":"UMI-support top-one alpha."},
+    {"name":"--min_reads_per_cell","aliases":[],"type":"int","required":false,"required_when":[],"default":20,"conflicts":[],"description":"Minimum reads per called cell."},
+    {"name":"--BC_fixed_3p","aliases":[],"type":"string","required":false,"required_when":[],"default":"GGTAGC","conflicts":[],"description":"Fixed 3-prime barcode motif."},
+    {"name":"--umi_fixed_3p","aliases":[],"type":"string","required":false,"required_when":[],"default":"GATCT","conflicts":[],"description":"Fixed 3-prime UMI motif."},
+    {"name":"--BC_fixed_5p","aliases":[],"type":"string","required":false,"required_when":[],"default":"GGAAGG","conflicts":[],"description":"Fixed 5-prime barcode motif."},
+    {"name":"--umi_fixed_5p","aliases":[],"type":"string","required":false,"required_when":[],"default":"CAGCA","conflicts":[],"description":"Fixed 5-prime UMI motif."},
+    {"name":"--barcode_extract_mode","aliases":[],"type":"string","required":false,"required_when":[],"default":"fixed_seq","conflicts":[],"description":"Barcode extractor; only fixed_seq is accepted by the pipeline."},
+    {"name":"--light-output","aliases":[],"type":"bool","required":false,"required_when":[],"default":true,"conflicts":[],"description":"Suppress matched, unmatched, and cell FASTQs unless full-output is set."},
+    {"name":"--full-output","aliases":[],"type":"bool","required":false,"required_when":[],"default":false,"conflicts":[],"description":"Override light-output and retain all FASTQs."},
+    {"name":"--save-intermediate","aliases":[],"type":"bool","required":false,"required_when":[],"default":false,"conflicts":[],"description":"Retain pipeline intermediate outputs."},
+    {"name":"--save_merge_debug","aliases":[],"type":"bool","required":false,"required_when":[],"default":false,"conflicts":[],"description":"Accepted compatibility flag; currently not propagated into PipelineConfig."},
+    {"name":"--require_pass_both_ends","aliases":[],"type":"bool","required":false,"required_when":[],"default":false,"conflicts":[],"description":"Require both barcode ends to pass."},
+    {"name":"--include_other_components","aliases":[],"type":"bool","required":false,"required_when":[],"default":false,"conflicts":[],"description":"Include non-core graph components unless excluded explicitly."},
+    {"name":"--exclude_other_components","aliases":[],"type":"bool","required":false,"required_when":[],"default":false,"conflicts":[],"description":"Override include_other_components and exclude non-core components."},
+    {"name":"--max_other_component_barcodes","aliases":[],"type":"int","required":false,"required_when":[],"default":8,"conflicts":[],"description":"Maximum barcode count in included non-core components."},
+    {"name":"--absorb_unassigned_paired","aliases":[],"type":"bool","required":false,"required_when":[],"default":true,"conflicts":[],"description":"Absorb unassigned paired reads unless explicitly disabled."},
+    {"name":"--disable_absorb_unassigned_paired","aliases":[],"type":"bool","required":false,"required_when":[],"default":false,"conflicts":[],"description":"Override absorb_unassigned_paired."},
+    {"name":"--help","aliases":["-h"],"type":"bool","required":false,"required_when":[],"default":false,"conflicts":[],"description":"Print command help."},
+    {"name":"--version","aliases":["-V"],"type":"bool","required":false,"required_when":[],"default":false,"conflicts":[],"description":"Print Flora version."}
+  ],
+  "conditional_requirements": [],
+  "execution": {"stages":["barcode_assignment","umi_assignment","cell_assignment"],"does_not_require":["glycine","reference","alignment","python"]},
+  "resolution_rules": [
+    "full-output overrides the default-enabled light-output flag",
+    "exclude_other_components overrides include_other_components",
+    "disable_absorb_unassigned_paired overrides absorb_unassigned_paired"
+  ],
+  "invocations": {
+    "accepted": [
+      {"argv":["flora","analyze","reads.fq.gz","--full-bc-whitelist-3p","3p.txt","--full-bc-whitelist-5p","5p.txt"],"reason":"Minimal standalone assignment run."},
+      {"argv":["flora","analyze","reads-1.fq.gz","reads-2.fq.gz","--full-bc-whitelist-3p","3p.txt","--full-bc-whitelist-5p","5p.txt","--full-output","--disable_absorb_unassigned_paired"],"reason":"Multiple FASTQs and explicit boolean overrides are accepted."}
+    ],
+    "rejected": [
+      {"argv":["flora","analyze","reads.fq.gz"],"reason":"Both full barcode whitelists are required."},
+      {"argv":["flora","analyze","reads.fq.gz","--full-bc-whitelist-3p","3p.txt","--full-bc-whitelist-5p","5p.txt","--barcode_extract_mode","probe"],"reason":"The parser accepts the string, but execution rejects every mode except fixed_seq."}
+    ]
+  }
+}
