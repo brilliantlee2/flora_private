@@ -1,0 +1,67 @@
+# Rust and Python build products
+target/
+dist/
+*.tar.gz
+*.tar.gz.sha256
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+
+# Editors and operating-system metadata
+.DS_Store
+**/.DS_Store
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
+.idea/
+.vscode/
+*.swp
+
+# Local environments
+.conda/
+.venv/
+venv/
+env/
+
+# Sequencing, alignment, and reference data
+*.fastq
+*.fastq.gz
+*.fq
+*.fq.gz
+*.sam
+*.bam
+*.bai
+*.cram
+*.crai
+*.fa
+*.fa.gz
+*.fasta
+*.fasta.gz
+*.fai
+*.gtf
+*.gff
+*.gff3
+*.mmi
+*.bed
+chrom_sizes.tsv
+
+# Pipeline outputs and logs
+alignment/
+barcodes/
+glycine/
+logs/
+matrix/
+qc/
+upstream/
+output/
+outputs/
+results/
+*.log
+*.nohup.log
+*.single_cell_report.html
+
+# Development-only report captures and local vendor archive
+report_new/
+report_new_2/
+report_new_3/
+vendor.zip

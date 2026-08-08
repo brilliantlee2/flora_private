@@ -1,0 +1,811 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage:
+  bash run_all.sh \
+    --fastq /path/to/raw.fq.gz \
+    --tso-seq AAGACCGCTTGGCCTCCGACTTTCTGCG \
+    --rtp-seq GAGGTCCATGAAGTGAGCATCTTCTGCG \
+    --barcode-list-10bp /path/to/BC_1536.txt \
+    --ref-dir /path/to/ref_dir \
+    --out-dir /path/to/output_dir \
+    [--gene-fasta /path/to/genome.fa] \
+    [--junction-bed /path/to/genes.bed] \
+    [--chrom-sizes /path/to/chrom_sizes.tsv] \
+    [--gene-gtf /path/to/genes.gtf] \
+    [--isoform-gtf /path/to/transcripts.gtf] \
+    [--sample-id sample] \
+    [--threads 96] \
+    [--glycine-outdir /path/to/glycine_out] \
+    [--glycine-err 0.2,0.25] \
+    [--glycine-shift 200,200] \
+    [--min-len 300] \
+    [--umi-len 41] \
+    [--full-length-fastq /path/to/sample.full-length-plus-rescued.fq.gz] \
+    [--skip-glycine] \
+    [--skip-isoform] \
+    [--upstream-only] \
+    [--full-pipeline] \
+    [--light-output] \
+    [--full-output] \
+    [--no-revcomp-whitelist] \
+    [--cluster-threads 8] \
+    [--exp-cells 5000] \
+    [--min-q 2] \
+    [--max-ed 2] \
+    [--barcode-extract-mode fixed_seq|probe] \
+    [--pair-min 10] \
+    [--auto-pair-min-floor 10] \
+    [--auto-pair-min-quantile 0.1] \
+    [--top1-alpha 0.1] \
+    [--top1-alpha-umi 0.3] \
+    [--singlet-threshold 0.9] \
+    [--dominance-min 0.8] \
+    [--drop-umiA-ratio-gt 0.5] \
+    [--gene-assign-mapq 60] \
+    [--gene-assign-chunk-size 200000] \
+    [--transcript-assign-mapq 60] \
+    [--transcript-assign-chunk-size 200000] \
+    [--ref-interval 1000] \
+    [--cell-gene-max-reads 20000] \
+    [--save-merge-debug] \
+    [--save-intermediate] \
+    [--require-pass-both-ends]
+
+Notes:
+  1. If --skip-glycine is not set, Glycine runs first and the pipeline uses:
+     <glycine-outdir>/<sample-id>.full-length-plus-rescued.fq.gz
+  2. Glycine is built into the Flora executable; no separate installation is needed.
+  3. --barcode-list-10bp accepts a plain text/CSV/TSV/XLSX file with 10bp barcodes
+     and expands them into 26bp 3p/5p whitelists before Flora cell assignment.
+  4. If --barcode-list-10bp is omitted, the bundled
+     "BC_1536.txt" is used when present.
+  5. --ref-dir looks for genome.fa, genes.bed, chrom_sizes.tsv, and genes.gtf.
+  6. Explicit reference file arguments override files inferred from --ref-dir.
+  7. --gene-fasta is the minimap2 reference FASTA. --genome-fa is accepted as an alias.
+  8. If --isoform-gtf is omitted, --gene-gtf is reused for isoform assignment.
+  9. If --pair-min is omitted, PAIR_MIN is auto-resolved as:
+     max(--auto-pair-min-floor, quantile(pair support, --auto-pair-min-quantile)).
+  10. Flora keeps the validated dual-end barcode model, but writes Sockeye-style
+     BAM tags: CB/CR/UR plus dual-end custom tags C5/C3/U5/U3.
+  11. --barcode-extract-mode fixed_seq is the current validated mode. probe is
+     reserved for a future Sockeye-style local-alignment extractor and exits clearly.
+  12. Light output is enabled by default. Use --full-output to restore all
+     upstream FASTQ outputs.
+  13. --light-output skips large upstream FASTQ outputs that are not consumed by
+     the current Flora downstream alignment-first path:
+     matched_reads.fastq.gz, unmatched_reads.fastq.gz, and cell_reads.fastq.gz.
+  14. This mixed-species entrypoint expects a combined reference with prefixed
+      contigs/IDs/names, for example hs_chr1 and mm_chr1.
+  15. --skip-isoform skips transcript assignment and isoform matrix generation.
+      Gene-level expression, barnyard QC, RNA QC, and the HTML report still run.
+  16. Advanced knobs are available for assignment and memory control:
+      --gene-assign-mapq, --gene-assign-chunk-size,
+      --transcript-assign-mapq, --transcript-assign-chunk-size,
+      --ref-interval, and --cell-gene-max-reads.
+EOF
+}
+
+require_cmd() {
+  local cmd="$1"
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    echo "[ERROR] Command not found: $cmd" >&2
+    exit 1
+  fi
+}
+
+require_file() {
+  local path="$1"
+  local label="$2"
+  if [[ ! -f "$path" ]]; then
+    echo "[ERROR] Missing ${label}: $path" >&2
+    exit 1
+  fi
+}
+
+python_asset() {
+  local source_path="$1"
+  if [[ -f "${source_path}" ]]; then
+    printf '%s\n' "${source_path}"
+  elif [[ -f "${source_path}c" ]]; then
+    printf '%s\n' "${source_path}c"
+  else
+    echo "[ERROR] Missing Python runtime asset: ${source_path} or ${source_path}c" >&2
+    return 1
+  fi
+}
+
+log() {
+  echo "[run_all] $*"
+}
+
+SCRIPT_START_TS=$(date +%s)
+STEP_TS=0
+
+step_start() {
+  STEP_TS=$(date +%s)
+}
+
+step_end() {
+  local step_name="$1"
+  local step_end_ts
+  step_end_ts=$(date +%s)
+  log "${step_name} elapsed: $((step_end_ts - STEP_TS))s"
+}
+
+write_parameters_tsv() {
+  local out_tsv="$1"
+  {
+    printf "Parameter\tValue\n"
+    printf "sample_id\t%s\n" "${SAMPLE_ID}"
+    printf "skip_glycine\t%s\n" "${SKIP_GLYCINE}"
+    printf "skip_isoform\t%s\n" "${SKIP_ISOFORM}"
+    printf "upstream_only\t%s\n" "${UPSTREAM_ONLY}"
+    printf "light_output\t%s\n" "${LIGHT_OUTPUT}"
+    printf "skip_matched_fastq\t%s\n" "${SKIP_MATCHED_FASTQ}"
+    printf "skip_unmatched_fastq\t%s\n" "${SKIP_UNMATCHED_FASTQ}"
+    printf "skip_cell_fastq\t%s\n" "${SKIP_CELL_FASTQ}"
+    printf "fastq\t%s\n" "${FASTQ}"
+    printf "full_length_fastq\t%s\n" "${FULL_LENGTH_FASTQ}"
+    printf "glycine_outdir\t%s\n" "${GLYCINE_OUTDIR}"
+    printf "barcode_list_10bp\t%s\n" "${BARCODE_LIST_10BP}"
+    printf "tso_seq\t%s\n" "${TSO_SEQ}"
+    printf "rtp_seq\t%s\n" "${RTP_SEQ}"
+    printf "ref_dir\t%s\n" "${REF_DIR}"
+    printf "gene_fasta\t%s\n" "${GENE_FASTA}"
+    printf "junction_bed\t%s\n" "${JUNCTION_BED}"
+    printf "chrom_sizes\t%s\n" "${CHROM_SIZES}"
+    printf "gene_gtf\t%s\n" "${GENE_GTF}"
+    printf "isoform_gtf\t%s\n" "${ISOFORM_GTF}"
+    printf "out_dir\t%s\n" "${OUT_DIR}"
+    printf "threads\t%s\n" "${THREADS}"
+    printf "cluster_threads\t%s\n" "${CLUSTER_THREADS}"
+    printf "exp_cells\t%s\n" "${EXP_CELLS}"
+    printf "min_q\t%s\n" "${MIN_Q}"
+    printf "max_ed\t%s\n" "${MAX_ED}"
+    printf "barcode_extract_mode\t%s\n" "${BARCODE_EXTRACT_MODE}"
+    printf "pair_min\t%s\n" "${PAIR_MIN}"
+    printf "auto_pair_min_floor\t%s\n" "${AUTO_PAIR_MIN_FLOOR}"
+    printf "auto_pair_min_quantile\t%s\n" "${AUTO_PAIR_MIN_QUANTILE}"
+    printf "top1_alpha\t%s\n" "${TOP1_ALPHA}"
+    printf "top1_alpha_umi\t%s\n" "${TOP1_ALPHA_UMI}"
+    printf "singlet_threshold\t%s\n" "${SINGLET_THRESHOLD}"
+    printf "dominance_min\t%s\n" "${DOMINANCE_MIN}"
+    printf "drop_umiA_ratio_gt\t%s\n" "${DROP_UMIA_RATIO_GT}"
+    printf "require_pass_both_ends\t%s\n" "${REQUIRE_PASS_BOTH_ENDS}"
+    printf "glycine_err\t%s\n" "${GLYCINE_ERR}"
+    printf "glycine_shift\t%s\n" "${GLYCINE_SHIFT}"
+    printf "min_len\t%s\n" "${MIN_LEN}"
+    printf "umi_len\t%s\n" "${UMI_LEN}"
+    printf "gene_assign_mapq\t%s\n" "${GENE_ASSIGN_MAPQ}"
+    printf "gene_assign_chunk_size\t%s\n" "${GENE_ASSIGN_CHUNK_SIZE}"
+    printf "transcript_assign_mapq\t%s\n" "${TRANSCRIPT_ASSIGN_MAPQ}"
+    printf "transcript_assign_chunk_size\t%s\n" "${TRANSCRIPT_ASSIGN_CHUNK_SIZE}"
+    printf "ref_interval\t%s\n" "${REF_INTERVAL}"
+    printf "cell_gene_max_reads\t%s\n" "${CELL_GENE_MAX_READS}"
+  } > "${out_tsv}"
+}
+
+resolve_exec() {
+  local rust_name="$1"
+  local py_path="$2"
+  local rust_candidates=(
+    "${SCRIPT_DIR}/target/release/${rust_name}"
+  )
+  local rust_bin=""
+  for candidate in "${rust_candidates[@]}"; do
+    if [[ -x "${candidate}" ]]; then
+      rust_bin="${candidate}"
+      break
+    fi
+  done
+  if [[ -n "${rust_bin}" ]]; then
+    echo "${rust_bin}"
+    return 0
+  fi
+  py_path="$(python_asset "${py_path}")"
+  echo "python3 ${py_path}"
+}
+
+run_stage() {
+  local rust_name="$1"
+  local py_path="$2"
+  shift 2
+  local rust_candidates=(
+    "${SCRIPT_DIR}/target/release/${rust_name}"
+  )
+  local rust_bin=""
+  for candidate in "${rust_candidates[@]}"; do
+    if [[ -x "${candidate}" ]]; then
+      rust_bin="${candidate}"
+      break
+    fi
+  done
+  if [[ -n "${rust_bin}" ]]; then
+    "${rust_bin}" "$@"
+    return 0
+  fi
+    py_path="$(python_asset "${py_path}")"
+    python3 "${py_path}" "$@"
+}
+
+abspath_for_output() {
+  local path="$1"
+  mkdir -p "$(dirname "$path")"
+  echo "$(cd "$(dirname "$path")" && pwd)/$(basename "$path")"
+}
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DOWNSTREAM_DIR="${SCRIPT_DIR}/scripts"
+
+FASTQ=""
+FULL_LENGTH_FASTQ=""
+TSO_SEQ="AAGACCGCTTGGCCTCCGACTTTCTGCG"
+RTP_SEQ="GAGGTCCATGAAGTGAGCATCTTCTGCG"
+BARCODE_LIST_10BP=""
+REF_DIR=""
+GENE_FASTA=""
+JUNCTION_BED=""
+CHROM_SIZES=""
+GENE_GTF=""
+ISOFORM_GTF=""
+OUT_DIR=""
+SAMPLE_ID="sample"
+THREADS=96
+CLUSTER_THREADS=8
+EXP_CELLS=5000
+MIN_Q=2
+MAX_ED=2
+BARCODE_EXTRACT_MODE="fixed_seq"
+PAIR_MIN=""
+AUTO_PAIR_MIN_FLOOR=10
+AUTO_PAIR_MIN_QUANTILE=0.1
+TOP1_ALPHA=0.1
+TOP1_ALPHA_UMI=0.3
+SINGLET_THRESHOLD=0.9
+DOMINANCE_MIN=0.8
+DROP_UMIA_RATIO_GT=0.5
+GLYCINE_OUTDIR=""
+GLYCINE_ERR="0.2,0.25"
+GLYCINE_SHIFT="200,200"
+MIN_LEN=300
+UMI_LEN=41
+SKIP_GLYCINE=0
+SKIP_ISOFORM=0
+UPSTREAM_ONLY=0
+LIGHT_OUTPUT=1
+SKIP_MATCHED_FASTQ=0
+SKIP_UNMATCHED_FASTQ=0
+SKIP_CELL_FASTQ=0
+REVCOMP_WHITELIST=1
+SAVE_MERGE_DEBUG=0
+SAVE_INTERMEDIATE=0
+REQUIRE_PASS_BOTH_ENDS=0
+GENE_ASSIGN_MAPQ=60
+GENE_ASSIGN_CHUNK_SIZE=200000
+TRANSCRIPT_ASSIGN_MAPQ=60
+TRANSCRIPT_ASSIGN_CHUNK_SIZE=200000
+REF_INTERVAL=1000
+CELL_GENE_MAX_READS=20000
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --fastq) FASTQ="$2"; shift 2 ;;
+    --full-length-fastq) FULL_LENGTH_FASTQ="$2"; shift 2 ;;
+    --tso-seq|--tso_seq) TSO_SEQ="$2"; shift 2 ;;
+    --rtp-seq|--rtp_seq) RTP_SEQ="$2"; shift 2 ;;
+    --barcode-list-10bp|--barcode_list_10bp) BARCODE_LIST_10BP="$2"; shift 2 ;;
+    --whitelist-3p|--whitelist-5p)
+      echo "[ERROR] Flora does not accept --whitelist-3p/--whitelist-5p. Use --barcode-list-10bp instead." >&2
+      exit 1
+      ;;
+    --ref-dir|--ref_dir) REF_DIR="$2"; shift 2 ;;
+    --gene-fasta|--genome-fa) GENE_FASTA="$2"; shift 2 ;;
+    --junction-bed) JUNCTION_BED="$2"; shift 2 ;;
+    --chrom-sizes) CHROM_SIZES="$2"; shift 2 ;;
+    --gene-gtf) GENE_GTF="$2"; shift 2 ;;
+    --isoform-gtf) ISOFORM_GTF="$2"; shift 2 ;;
+    --out-dir|--outdir) OUT_DIR="$2"; shift 2 ;;
+    --sample-id|--sample) SAMPLE_ID="$2"; shift 2 ;;
+    --threads|--thread) THREADS="$2"; shift 2 ;;
+    --cluster-threads) CLUSTER_THREADS="$2"; shift 2 ;;
+    --exp-cells) EXP_CELLS="$2"; shift 2 ;;
+    --min-q) MIN_Q="$2"; shift 2 ;;
+    --max-ed) MAX_ED="$2"; shift 2 ;;
+    --barcode-extract-mode|--barcode_extract_mode) BARCODE_EXTRACT_MODE="$2"; shift 2 ;;
+    --pair-min) PAIR_MIN="$2"; shift 2 ;;
+    --auto-pair-min-floor) AUTO_PAIR_MIN_FLOOR="$2"; shift 2 ;;
+    --auto-pair-min-quantile) AUTO_PAIR_MIN_QUANTILE="$2"; shift 2 ;;
+    --top1-alpha) TOP1_ALPHA="$2"; shift 2 ;;
+    --top1-alpha-umi) TOP1_ALPHA_UMI="$2"; shift 2 ;;
+    --singlet-threshold) SINGLET_THRESHOLD="$2"; shift 2 ;;
+    --dominance-min) DOMINANCE_MIN="$2"; shift 2 ;;
+    --drop-umiA-ratio-gt) DROP_UMIA_RATIO_GT="$2"; shift 2 ;;
+    --glycine-outdir) GLYCINE_OUTDIR="$2"; shift 2 ;;
+    --glycine-err|--err) GLYCINE_ERR="$2"; shift 2 ;;
+    --glycine-shift|--shift) GLYCINE_SHIFT="$2"; shift 2 ;;
+    --min-len|--min_len) MIN_LEN="$2"; shift 2 ;;
+    --umi-len|--umi_len) UMI_LEN="$2"; shift 2 ;;
+    --skip-glycine) SKIP_GLYCINE=1; shift ;;
+    --skip-isoform) SKIP_ISOFORM=1; shift ;;
+    --upstream-only) UPSTREAM_ONLY=1; shift ;;
+    --full-pipeline) UPSTREAM_ONLY=0; shift ;;
+    --light-output) LIGHT_OUTPUT=1; shift ;;
+    --full-output) LIGHT_OUTPUT=0; shift ;;
+    --no-revcomp-whitelist) REVCOMP_WHITELIST=0; shift ;;
+    --save-merge-debug) SAVE_MERGE_DEBUG=1; shift ;;
+    --save-intermediate) SAVE_INTERMEDIATE=1; shift ;;
+    --require-pass-both-ends) REQUIRE_PASS_BOTH_ENDS=1; shift ;;
+    --gene-assign-mapq) GENE_ASSIGN_MAPQ="$2"; shift 2 ;;
+    --gene-assign-chunk-size) GENE_ASSIGN_CHUNK_SIZE="$2"; shift 2 ;;
+    --transcript-assign-mapq) TRANSCRIPT_ASSIGN_MAPQ="$2"; shift 2 ;;
+    --transcript-assign-chunk-size) TRANSCRIPT_ASSIGN_CHUNK_SIZE="$2"; shift 2 ;;
+    --ref-interval) REF_INTERVAL="$2"; shift 2 ;;
+    --cell-gene-max-reads) CELL_GENE_MAX_READS="$2"; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *)
+      echo "[ERROR] Unknown argument: $1" >&2
+      usage
+      exit 1
+      ;;
+  esac
+done
+
+if [[ "${LIGHT_OUTPUT}" -eq 1 ]]; then
+  SKIP_MATCHED_FASTQ=1
+  SKIP_UNMATCHED_FASTQ=1
+  SKIP_CELL_FASTQ=1
+else
+  SKIP_MATCHED_FASTQ=0
+  SKIP_UNMATCHED_FASTQ=0
+  SKIP_CELL_FASTQ=0
+fi
+
+if [[ "${BARCODE_EXTRACT_MODE}" != "fixed_seq" && "${BARCODE_EXTRACT_MODE}" != "probe" ]]; then
+  echo "[ERROR] --barcode-extract-mode must be fixed_seq or probe, got: ${BARCODE_EXTRACT_MODE}" >&2
+  exit 1
+fi
+
+if [[ -n "${REF_DIR}" ]]; then
+  if [[ ! -d "${REF_DIR}" ]]; then
+    echo "[ERROR] Missing reference directory: ${REF_DIR}" >&2
+    exit 1
+  fi
+  REF_DIR="$(cd "${REF_DIR}" && pwd)"
+  [[ -z "${GENE_FASTA}" ]] && GENE_FASTA="${REF_DIR}/genome.fa"
+  [[ -z "${JUNCTION_BED}" ]] && JUNCTION_BED="${REF_DIR}/genes.bed"
+  [[ -z "${CHROM_SIZES}" ]] && CHROM_SIZES="${REF_DIR}/chrom_sizes.tsv"
+  [[ -z "${GENE_GTF}" ]] && GENE_GTF="${REF_DIR}/genes.gtf"
+fi
+
+if [[ -z "${OUT_DIR}" || -z "${GENE_FASTA}" || -z "${JUNCTION_BED}" || -z "${CHROM_SIZES}" || -z "${GENE_GTF}" ]]; then
+  echo "[ERROR] Missing required arguments." >&2
+  usage
+  exit 1
+fi
+
+if [[ -z "${ISOFORM_GTF}" ]]; then
+  ISOFORM_GTF="${GENE_GTF}"
+fi
+
+OUT_DIR="$(abspath_for_output "${OUT_DIR}")"
+BARCODE_DIR="${OUT_DIR}/barcodes"
+require_cmd python3
+if [[ -z "${BARCODE_LIST_10BP}" ]]; then
+  DEFAULT_BARCODE_LIST="${SCRIPT_DIR}/BC_1536.txt"
+  if [[ -f "${DEFAULT_BARCODE_LIST}" ]]; then
+    BARCODE_LIST_10BP="${DEFAULT_BARCODE_LIST}"
+  fi
+fi
+if [[ -z "${BARCODE_LIST_10BP}" ]]; then
+  echo "[ERROR] Missing --barcode-list-10bp and bundled BC_1536.txt was not found." >&2
+  usage
+  exit 1
+fi
+mkdir -p "${BARCODE_DIR}"
+WHITELIST_3P="${BARCODE_DIR}/barcode_3prime_26bp.txt"
+WHITELIST_5P="${BARCODE_DIR}/barcode_5prime_26bp.txt"
+log "Generating 26bp barcode whitelists from 10bp list: ${BARCODE_LIST_10BP}"
+require_file "${BARCODE_LIST_10BP}" "10bp barcode list"
+run_stage generate_26bp_whitelists "${DOWNSTREAM_DIR}/generate_26bp_whitelists.py" \
+  --barcode-list-10bp "${BARCODE_LIST_10BP}" \
+  --out-3p "${WHITELIST_3P}" \
+  --out-5p "${WHITELIST_5P}" 2>&1 | tee "${OUT_DIR}/barcode_whitelist_generation.log"
+if [[ "${SKIP_GLYCINE}" -eq 0 ]]; then
+  if [[ -z "${GLYCINE_OUTDIR}" ]]; then
+    GLYCINE_OUTDIR="${OUT_DIR}/glycine"
+  else
+    GLYCINE_OUTDIR="$(abspath_for_output "${GLYCINE_OUTDIR}")"
+  fi
+else
+  GLYCINE_OUTDIR=""
+fi
+
+UPSTREAM_DIR="${OUT_DIR}/upstream"
+ALIGN_DIR="${OUT_DIR}/alignment"
+MATRIX_DIR="${OUT_DIR}/matrix"
+QC_DIR="${OUT_DIR}/qc"
+LOG_DIR="${OUT_DIR}/logs"
+mkdir -p "${UPSTREAM_DIR}" "${ALIGN_DIR}" "${MATRIX_DIR}" "${QC_DIR}" "${LOG_DIR}"
+if [[ "${SKIP_GLYCINE}" -eq 0 ]]; then
+  mkdir -p "${GLYCINE_OUTDIR}"
+fi
+
+require_cmd python3
+require_cmd samtools
+require_cmd minimap2
+require_cmd bedtools
+require_file "${WHITELIST_3P}" "3p whitelist"
+require_file "${WHITELIST_5P}" "5p whitelist"
+require_file "${GENE_FASTA}" "gene FASTA"
+require_file "${JUNCTION_BED}" "junction BED"
+require_file "${CHROM_SIZES}" "chrom sizes"
+require_file "${GENE_GTF}" "gene GTF"
+require_file "${ISOFORM_GTF}" "isoform GTF"
+python_asset "${SCRIPT_DIR}/main.py" >/dev/null
+
+for script in prepare_read_tags.py add_cb_ur_tags.py assign_genes.py add_gene_tags.py cluster_umis_allbam.py cell_umi_gene_table.py gene_expression.py rna_cluster_analysis.py assign_transcripts.py isoform_expression.py rna_qc_metrics_mixed.py Saturation.py read_qc_summary.py build_report.py barnyard_qc.py generate_26bp_whitelists.py build_mixed_species_reference.py generate_knee_plots.py; do
+  python_asset "${DOWNSTREAM_DIR}/${script}" >/dev/null
+done
+require_file "${DOWNSTREAM_DIR}/report_template.html" "report_template.html"
+require_file "${DOWNSTREAM_DIR}/plotly-2.26.0.min.js" "plotly-2.26.0.min.js"
+
+if [[ -f "${SCRIPT_DIR}/Cargo.toml" ]] && command -v cargo >/dev/null 2>&1; then
+  log "Flora Rust project detected, attempting cargo build --release"
+  (
+    cd "${SCRIPT_DIR}"
+    cargo build --release
+  ) || log "cargo build failed; Python fallbacks remain available for supported downstream stages"
+fi
+
+FLORA_BIN="${SCRIPT_DIR}/target/release/flora"
+if [[ "${SKIP_GLYCINE}" -eq 0 && ! -x "${FLORA_BIN}" ]]; then
+  echo "[ERROR] Flora executable not found: ${FLORA_BIN}" >&2
+  echo "[ERROR] Run 'cargo build --release' in ${SCRIPT_DIR} before using integrated Glycine." >&2
+  exit 1
+fi
+
+if [[ "${SKIP_GLYCINE}" -eq 0 ]]; then
+  if [[ -z "${FASTQ}" || -z "${TSO_SEQ}" || -z "${RTP_SEQ}" ]]; then
+    echo "[ERROR] --fastq, --tso-seq, and --rtp-seq are required unless --skip-glycine is set." >&2
+    exit 1
+  fi
+  require_file "${FASTQ}" "raw FASTQ"
+  step_start
+  log "Step 0/6: running Glycine full-length identification"
+  "${FLORA_BIN}" glycine \
+    --fastq "${FASTQ}" \
+    --tso_seq "${TSO_SEQ}" \
+    --rtp_seq "${RTP_SEQ}" \
+    --outdir "${GLYCINE_OUTDIR}" \
+    --err "${GLYCINE_ERR}" \
+    --min_len "${MIN_LEN}" \
+    --shift "${GLYCINE_SHIFT}" \
+    --umi_len "${UMI_LEN}" \
+    --sample "${SAMPLE_ID}" \
+    --thread "${THREADS}" 2>&1 | tee "${LOG_DIR}/00_glycine.log"
+  step_end "Step 0/6"
+
+  FULL_LENGTH_FASTQ="${GLYCINE_OUTDIR}/${SAMPLE_ID}.full-length-plus-rescued.fq.gz"
+  GLYCINE_STATS="${GLYCINE_OUTDIR}/${SAMPLE_ID}.identifying_statistic.txt"
+  require_file "${GLYCINE_STATS}" "Glycine identifying statistics"
+else
+  if [[ -z "${FULL_LENGTH_FASTQ}" ]]; then
+    echo "[ERROR] --full-length-fastq is required with --skip-glycine." >&2
+    exit 1
+  fi
+fi
+require_file "${FULL_LENGTH_FASTQ}" "full-length FASTQ"
+
+ALIGN_LOG="${LOG_DIR}/01_alignment.log"
+UPSTREAM_LOG="${LOG_DIR}/02_dual_barcode.log"
+TAG_LOG="${LOG_DIR}/03_bam_tagging.log"
+GENE_LOG="${LOG_DIR}/04_gene.log"
+ISOFORM_LOG="${LOG_DIR}/05_isoform.log"
+QC_LOG="${LOG_DIR}/06_qc.log"
+
+step_start
+log "Step 1/6: alignment-first minimap2 reference alignment"
+pushd "${ALIGN_DIR}" >/dev/null
+
+minimap2 -ax splice -uf --MD -t "${THREADS}" \
+  --junc-bed "${JUNCTION_BED}" \
+  --secondary=no \
+  "${GENE_FASTA}" "${FULL_LENGTH_FASTQ}" \
+| samtools view --no-PG -b -t "${CHROM_SIZES}" - \
+| samtools sort --no-PG -@ "${THREADS}" -o "${SAMPLE_ID}.aligned.sorted.bam" - 2>&1 | tee "${ALIGN_LOG}"
+
+samtools index "${SAMPLE_ID}.aligned.sorted.bam" 2>&1 | tee -a "${ALIGN_LOG}"
+
+popd >/dev/null
+step_end "Step 1/6"
+
+step_start
+log "Step 2/6: Flora dual-end barcode split, correction, merge, and cell assignment"
+MAIN_ARGS=(
+  "${FULL_LENGTH_FASTQ}"
+  --full-bc-whitelist-3p "${WHITELIST_3P}"
+  --full-bc-whitelist-5p "${WHITELIST_5P}"
+  --out_dir "${UPSTREAM_DIR}"
+  --threads "${THREADS}"
+  --batch_size 100000
+  --assign_batchsize 10000
+  --exp_cells "${EXP_CELLS}"
+  --minQ "${MIN_Q}"
+  --max_ed "${MAX_ED}"
+  --barcode_extract_mode "${BARCODE_EXTRACT_MODE}"
+  --auto_pair_min_floor "${AUTO_PAIR_MIN_FLOOR}"
+  --auto_pair_min_quantile "${AUTO_PAIR_MIN_QUANTILE}"
+  --TOP1_ALPHA "${TOP1_ALPHA}"
+  --TOP1_ALPHA_UMI "${TOP1_ALPHA_UMI}"
+  --dominance_min "${DOMINANCE_MIN}"
+  --drop_umiA_ratio_gt "${DROP_UMIA_RATIO_GT}"
+)
+if [[ -n "${PAIR_MIN}" ]]; then
+  MAIN_ARGS+=(--PAIR_MIN "${PAIR_MIN}")
+fi
+if [[ "${REVCOMP_WHITELIST}" -eq 0 ]]; then
+  MAIN_ARGS+=(--no-revcomp-whitelist)
+fi
+if [[ "${SAVE_MERGE_DEBUG}" -eq 1 ]]; then
+  MAIN_ARGS+=(--save_merge_debug)
+fi
+if [[ "${SAVE_INTERMEDIATE}" -eq 1 ]]; then
+  MAIN_ARGS+=(--save-intermediate)
+fi
+if [[ "${LIGHT_OUTPUT}" -eq 1 ]]; then
+  MAIN_ARGS+=(--light-output)
+fi
+if [[ "${REQUIRE_PASS_BOTH_ENDS}" -eq 1 ]]; then
+  MAIN_ARGS+=(--require_pass_both_ends)
+fi
+run_stage flora "${SCRIPT_DIR}/main.py" "${MAIN_ARGS[@]}" 2>&1 | tee "${UPSTREAM_LOG}"
+KNEE_ARGS=(
+  --counts-3p "${UPSTREAM_DIR}/barcode_counts_3p.tsv"
+  --counts-5p "${UPSTREAM_DIR}/barcode_counts_5p.tsv"
+  --full-whitelist-3p "${WHITELIST_3P}"
+  --full-whitelist-5p "${WHITELIST_5P}"
+  --exp-cells "${EXP_CELLS}"
+  --out-3p "${UPSTREAM_DIR}/knee_plot_3p.png"
+  --out-5p "${UPSTREAM_DIR}/knee_plot_5p.png"
+)
+if [[ "${REVCOMP_WHITELIST}" -eq 0 ]]; then
+  KNEE_ARGS+=(--no-revcomp-whitelist)
+fi
+python3 "$(python_asset "${DOWNSTREAM_DIR}/generate_knee_plots.py")" "${KNEE_ARGS[@]}" 2>&1 | tee -a "${UPSTREAM_LOG}"
+step_end "Step 2/6"
+
+READ_ASSIGNED_CELL="${UPSTREAM_DIR}/read_assigned_cell.csv"
+BARCODE_VALIDITY_SUMMARY="${UPSTREAM_DIR}/barcode_validity_summary.tsv"
+CELL_READS_FASTQ="${UPSTREAM_DIR}/cell_reads.fastq.gz"
+MATCHED_READS_FASTQ="${UPSTREAM_DIR}/matched_reads.fastq.gz"
+require_file "${READ_ASSIGNED_CELL}" "read_assigned_cell.csv"
+require_file "${BARCODE_VALIDITY_SUMMARY}" "barcode_validity_summary.tsv"
+if [[ "${SKIP_CELL_FASTQ}" -eq 0 ]]; then
+  require_file "${CELL_READS_FASTQ}" "cell_reads.fastq.gz"
+fi
+if [[ "${SKIP_MATCHED_FASTQ}" -eq 0 ]]; then
+  require_file "${MATCHED_READS_FASTQ}" "matched_reads.fastq.gz"
+fi
+
+if [[ "${UPSTREAM_ONLY}" -eq 1 ]]; then
+  log "Upstream-only mode enabled; stopping after barcode merge / cell assignment."
+  echo
+  echo "[run_all] Upstream outputs:"
+  echo "  upstream dir              : ${UPSTREAM_DIR}"
+  echo "  barcode validity summary  : ${BARCODE_VALIDITY_SUMMARY}"
+  echo "  assign stats              : ${UPSTREAM_DIR}/assign_stats.tsv"
+  echo "  assigned reads            : ${READ_ASSIGNED_CELL}"
+  echo "  cell read stats           : ${UPSTREAM_DIR}/cell_read_stats.csv"
+  echo "  pair counts kept          : ${UPSTREAM_DIR}/pair_counts_kept.csv"
+  if [[ "${SAVE_MERGE_DEBUG}" -eq 1 ]]; then
+    echo "  pair counts all           : ${UPSTREAM_DIR}/pair_counts_all.csv"
+    echo "  pair counts pairmin kept  : ${UPSTREAM_DIR}/pair_counts_pairmin_kept.csv"
+    echo "  dropped pairs             : ${UPSTREAM_DIR}/dropped_pairs.csv"
+    echo "  core cells debug          : ${UPSTREAM_DIR}/core_cells_debug.csv"
+    echo "  assigned reads debug      : ${UPSTREAM_DIR}/read_assigned_debug.csv"
+  fi
+  exit 0
+fi
+
+step_start
+log "Step 3/6: Sockeye-style dual-end barcode/UMI tags on aligned BAM"
+pushd "${ALIGN_DIR}" >/dev/null
+
+run_stage prepare_read_tags "${DOWNSTREAM_DIR}/prepare_read_tags.py" \
+  --input "${READ_ASSIGNED_CELL}" \
+  --output "${SAMPLE_ID}.read_tags.tsv" 2>&1 | tee "${TAG_LOG}"
+
+run_stage add_cb_ur_tags "${DOWNSTREAM_DIR}/add_cb_ur_tags.py" \
+  --bam "${SAMPLE_ID}.aligned.sorted.bam" \
+  --tags "${SAMPLE_ID}.read_tags.tsv" \
+  --output "${SAMPLE_ID}.filtered.cb_ur.sorted.bam" 2>&1 | tee -a "${TAG_LOG}"
+
+bedtools bamtobed -i "${SAMPLE_ID}.filtered.cb_ur.sorted.bam" > "${SAMPLE_ID}.filtered.cb_ur.bed"
+
+popd >/dev/null
+step_end "Step 3/6"
+
+step_start
+log "Step 4/6: Sockeye-style gene tagging, directional UMI clustering, and matrix generation"
+pushd "${MATRIX_DIR}" >/dev/null
+
+run_stage assign_genes "${DOWNSTREAM_DIR}/assign_genes.py" \
+  --output "${SAMPLE_ID}.filtered.read_gene_assigns.tsv" \
+  --mapq "${GENE_ASSIGN_MAPQ}" \
+  --chunk_size "${GENE_ASSIGN_CHUNK_SIZE}" \
+  "${ALIGN_DIR}/${SAMPLE_ID}.filtered.cb_ur.bed" \
+  "${GENE_GTF}" 2>&1 | tee "${GENE_LOG}"
+
+run_stage add_gene_tags "${DOWNSTREAM_DIR}/add_gene_tags.py" \
+  --output "${SAMPLE_ID}.filtered.cb_ur.gn.sorted.bam" \
+  "${ALIGN_DIR}/${SAMPLE_ID}.filtered.cb_ur.sorted.bam" \
+  "${SAMPLE_ID}.filtered.read_gene_assigns.tsv" 2>&1 | tee -a "${GENE_LOG}"
+
+samtools index "${SAMPLE_ID}.filtered.cb_ur.gn.sorted.bam"
+
+run_stage cluster_umis_allbam "${DOWNSTREAM_DIR}/cluster_umis_allbam.py" \
+  --output "${SAMPLE_ID}.filtered.tagged.sorted.bam" \
+  --ref_interval "${REF_INTERVAL}" \
+  --cell_gene_max_reads "${CELL_GENE_MAX_READS}" \
+  --threads "${CLUSTER_THREADS}" \
+  "${SAMPLE_ID}.filtered.cb_ur.gn.sorted.bam" 2>&1 | tee -a "${GENE_LOG}"
+
+run_stage cell_umi_gene_table "${DOWNSTREAM_DIR}/cell_umi_gene_table.py" \
+  --output "${SAMPLE_ID}.cell_umi_gene.tsv" \
+  "${SAMPLE_ID}.filtered.tagged.sorted.bam" 2>&1 | tee -a "${GENE_LOG}"
+
+run_stage gene_expression "${DOWNSTREAM_DIR}/gene_expression.py" \
+  --output "${SAMPLE_ID}.gene_expression.tsv" \
+  "${SAMPLE_ID}.filtered.tagged.sorted.bam" 2>&1 | tee -a "${GENE_LOG}"
+
+python3 "$(python_asset "${DOWNSTREAM_DIR}/rna_cluster_analysis.py")" \
+  --input "${SAMPLE_ID}.gene_expression.tsv" \
+  --output "${SAMPLE_ID}.rna_cluster.tsv" 2>&1 | tee -a "${GENE_LOG}"
+
+popd >/dev/null
+step_end "Step 4/6"
+
+step_start
+if [[ "${SKIP_ISOFORM}" -eq 1 ]]; then
+  log "Step 5/6: transcript assignment and isoform matrix generation skipped (--skip-isoform)"
+  : > "${ISOFORM_LOG}"
+else
+  log "Step 5/6: transcript assignment and isoform matrix generation"
+  pushd "${MATRIX_DIR}" >/dev/null
+
+  run_stage assign_transcripts "${DOWNSTREAM_DIR}/assign_transcripts.py" \
+    --output "${SAMPLE_ID}.read_transcript_assigns.tsv" \
+    --mapq "${TRANSCRIPT_ASSIGN_MAPQ}" \
+    --chunk_size "${TRANSCRIPT_ASSIGN_CHUNK_SIZE}" \
+    "${SAMPLE_ID}.filtered.tagged.sorted.bam" \
+    "${ISOFORM_GTF}" 2>&1 | tee "${ISOFORM_LOG}"
+
+  run_stage isoform_expression "${DOWNSTREAM_DIR}/isoform_expression.py" \
+    --output "${SAMPLE_ID}.isoform_expression.tsv" \
+    "${SAMPLE_ID}.filtered.tagged.sorted.bam" \
+    "${SAMPLE_ID}.read_transcript_assigns.tsv" 2>&1 | tee -a "${ISOFORM_LOG}"
+
+  popd >/dev/null
+fi
+step_end "Step 5/6"
+
+step_start
+log "Step 6/6: RNA QC and saturation analysis"
+pushd "${QC_DIR}" >/dev/null
+
+PARAMETERS_TSV="${SAMPLE_ID}.parameters.tsv"
+write_parameters_tsv "${PARAMETERS_TSV}"
+
+ln -sf "${MATRIX_DIR}/${SAMPLE_ID}.cell_umi_gene.tsv" cell_umi_gene.tsv
+ln -sf "${ALIGN_DIR}/${SAMPLE_ID}.aligned.sorted.bam" filtered.sorted.bam
+ln -sf "${ALIGN_DIR}/${SAMPLE_ID}.aligned.sorted.bam.bai" filtered.sorted.bam.bai
+
+if [[ "${SKIP_GLYCINE}" -eq 0 ]]; then
+  RAW_FASTQ_FOR_QC="${FASTQ}"
+else
+  RAW_FASTQ_FOR_QC="${FULL_LENGTH_FASTQ}"
+fi
+
+QC_ARGS=(
+  --cell-umi-gene-tsv cell_umi_gene.tsv
+  --bam filtered.sorted.bam
+  --raw-fastq "${RAW_FASTQ_FOR_QC}"
+  --full-length-fastq "${FULL_LENGTH_FASTQ}"
+  --mixed-species
+  --read-tags "${ALIGN_DIR}/${SAMPLE_ID}.read_tags.tsv"
+  --barcode-validity-tsv "${BARCODE_VALIDITY_SUMMARY}"
+)
+if [[ "${SKIP_ISOFORM}" -eq 0 ]]; then
+  QC_ARGS+=(--transcript-assigns "${MATRIX_DIR}/${SAMPLE_ID}.read_transcript_assigns.tsv")
+fi
+if [[ "${SKIP_GLYCINE}" -eq 0 ]]; then
+  QC_ARGS+=(--glycine-log "${LOG_DIR}/00_glycine.log")
+fi
+
+run_stage rna_qc_metrics "${DOWNSTREAM_DIR}/rna_qc_metrics_mixed.py" \
+  "${QC_ARGS[@]}" 2>&1 | tee "${QC_LOG}"
+if [[ ! -f rna_violin_plot.png ]]; then
+  python3 "$(python_asset "${DOWNSTREAM_DIR}/rna_violin_plot.py")" \
+    --input per_cell_qc.tsv \
+    --output rna_violin_plot.png 2>&1 | tee -a "${QC_LOG}"
+fi
+mv -f rna_qc_metrics.tsv "${SAMPLE_ID}.rna_qc_metrics.tsv"
+mv -f single_cell_report_metrics.tsv "${SAMPLE_ID}.single_cell_report_metrics.tsv"
+mv -f per_cell_qc.tsv "${SAMPLE_ID}.per_cell_qc.tsv"
+mv -f rna_violin_plot.png "${SAMPLE_ID}.rna_violin_plot.png"
+
+run_stage saturation "${DOWNSTREAM_DIR}/Saturation.py" \
+  --input cell_umi_gene.tsv \
+  --output-tsv "${SAMPLE_ID}.saturation.tsv" \
+  --output-png "${SAMPLE_ID}.saturation_curves.png" 2>&1 | tee -a "${QC_LOG}"
+
+run_stage read_qc_summary "${DOWNSTREAM_DIR}/read_qc_summary.py" \
+  --fastq "${FULL_LENGTH_FASTQ}" \
+  --output-json "${SAMPLE_ID}.read_qc_summary.json" 2>&1 | tee -a "${QC_LOG}"
+
+run_stage barnyard_qc "${DOWNSTREAM_DIR}/barnyard_qc.py" \
+  --input cell_umi_gene.tsv \
+  --out-dir barnyard_qc \
+  --ambient-umi-threshold 1000 \
+  --singlet-threshold "${SINGLET_THRESHOLD}" 2>&1 | tee -a "${QC_LOG}"
+
+BUILD_REPORT_ARGS=(
+  --sample-id "${SAMPLE_ID}"
+  --output-html "${SAMPLE_ID}.single_cell_report.html"
+  --report-metrics-tsv "${SAMPLE_ID}.single_cell_report_metrics.tsv"
+  --rna-qc-metrics-tsv "${SAMPLE_ID}.rna_qc_metrics.tsv"
+  --saturation-tsv "${SAMPLE_ID}.saturation.tsv"
+  --read-qc-json "${SAMPLE_ID}.read_qc_summary.json"
+  --parameters-tsv "${PARAMETERS_TSV}"
+  --per-cell-qc-tsv "${SAMPLE_ID}.per_cell_qc.tsv"
+  --rna-cluster-tsv "${MATRIX_DIR}/${SAMPLE_ID}.rna_cluster.tsv"
+  --barcode-counts-3p-tsv "${UPSTREAM_DIR}/barcode_counts_3p.tsv"
+  --barcode-counts-5p-tsv "${UPSTREAM_DIR}/barcode_counts_5p.tsv"
+  --whitelist-3p "${UPSTREAM_DIR}/whitelist_3p.csv"
+  --whitelist-5p "${UPSTREAM_DIR}/whitelist_5p.csv"
+  --read-assigned-cell "${READ_ASSIGNED_CELL}"
+  --knee-plot-3p "${UPSTREAM_DIR}/knee_plot_3p.png"
+  --knee-plot-5p "${UPSTREAM_DIR}/knee_plot_5p.png"
+  --saturation-png "${SAMPLE_ID}.saturation_curves.png"
+  --rna-violin-png "${SAMPLE_ID}.rna_violin_plot.png"
+)
+if [[ "${SKIP_GLYCINE}" -eq 1 ]]; then
+  BUILD_REPORT_ARGS+=(--skip-glycine)
+else
+  BUILD_REPORT_ARGS+=(--glycine-stats "${GLYCINE_STATS}")
+fi
+run_stage build_report "${DOWNSTREAM_DIR}/build_report.py" \
+  "${BUILD_REPORT_ARGS[@]}" 2>&1 | tee -a "${QC_LOG}"
+
+popd >/dev/null
+step_end "Step 6/6"
+
+log "Pipeline completed successfully."
+SCRIPT_END_TS=$(date +%s)
+log "Total elapsed: $((SCRIPT_END_TS - SCRIPT_START_TS))s"
+log "Key outputs:"
+echo "  full-length fastq        : ${FULL_LENGTH_FASTQ}"
+echo "  aligned mother BAM       : ${ALIGN_DIR}/${SAMPLE_ID}.aligned.sorted.bam"
+echo "  upstream read assignments: ${READ_ASSIGNED_CELL}"
+echo "  Sockeye-style read tags   : ${ALIGN_DIR}/${SAMPLE_ID}.read_tags.tsv"
+if [[ "${SKIP_CELL_FASTQ}" -eq 0 ]]; then
+  echo "  cell reads fastq         : ${CELL_READS_FASTQ}"
+fi
+if [[ "${SKIP_MATCHED_FASTQ}" -eq 0 ]]; then
+  echo "  matched reads fastq      : ${MATCHED_READS_FASTQ}"
+fi
+echo "  tagged bam              : ${MATRIX_DIR}/${SAMPLE_ID}.filtered.tagged.sorted.bam"
+echo "  gene expression         : ${MATRIX_DIR}/${SAMPLE_ID}.gene_expression.tsv"
+echo "  RNA cluster table       : ${MATRIX_DIR}/${SAMPLE_ID}.rna_cluster.tsv"
+if [[ "${SKIP_ISOFORM}" -eq 0 ]]; then
+  echo "  isoform expression      : ${MATRIX_DIR}/${SAMPLE_ID}.isoform_expression.tsv"
+else
+  echo "  isoform expression      : skipped (--skip-isoform)"
+fi
+echo "  RNA QC                  : ${QC_DIR}/${SAMPLE_ID}.rna_qc_metrics.tsv"
+echo "  report metrics         : ${QC_DIR}/${SAMPLE_ID}.single_cell_report_metrics.tsv"
+echo "  html report            : ${QC_DIR}/${SAMPLE_ID}.single_cell_report.html"
+echo "  saturation table        : ${QC_DIR}/${SAMPLE_ID}.saturation.tsv"

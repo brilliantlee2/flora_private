@@ -1,0 +1,84 @@
+[package]
+name = "flora"
+version = "0.1.0"
+edition = "2021"
+description = "End-to-end full-length single-cell transcriptomics analysis"
+repository = "https://github.com/brilliantlee2/Flora"
+
+[[bin]]
+name = "flora"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+csv = "1.3"
+edlib_rs = "0.1.2"
+flate2 = "1.0"
+fxread = "0.2.12"
+ndarray = "0.16.1"
+rayon = "1.10"
+rustc-hash = "1.1"
+rust-htslib = "0.51.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+threadpool = "1.8.1"
+zip = { version = "2.2", default-features = false, features = ["deflate"] }
+
+[[bin]]
+name = "prepare_read_tags"
+path = "src/bin/prepare_read_tags.rs"
+
+[[bin]]
+name = "read_qc_summary"
+path = "src/bin/read_qc_summary.rs"
+
+[[bin]]
+name = "generate_26bp_whitelists"
+path = "src/bin/generate_26bp_whitelists.rs"
+
+[[bin]]
+name = "assign_genes"
+path = "src/bin/assign_genes.rs"
+
+[[bin]]
+name = "assign_transcripts"
+path = "src/bin/assign_transcripts.rs"
+
+[[bin]]
+name = "cell_umi_gene_table"
+path = "src/bin/cell_umi_gene_table.rs"
+
+[[bin]]
+name = "gene_expression"
+path = "src/bin/gene_expression.rs"
+
+[[bin]]
+name = "isoform_expression"
+path = "src/bin/isoform_expression.rs"
+
+[[bin]]
+name = "add_cb_ur_tags"
+path = "src/bin/add_cb_ur_tags.rs"
+
+[[bin]]
+name = "add_gene_tags"
+path = "src/bin/add_gene_tags.rs"
+
+[[bin]]
+name = "cluster_umis_allbam"
+path = "src/bin/cluster_umis_allbam.rs"
+
+[[bin]]
+name = "rna_qc_metrics"
+path = "src/bin/rna_qc_metrics.rs"
+
+[dev-dependencies]
+tempfile = "3.10"
+
+[patch.crates-io]
+edlib_rs = { path = "vendor/edlib_rs-0.1.2" }
+rust-htslib = { path = "vendor/rust-htslib" }
+
+[profile.release]
+strip = "symbols"

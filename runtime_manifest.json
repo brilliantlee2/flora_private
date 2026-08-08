@@ -1,0 +1,24 @@
+{
+  "python": {
+    "implementation": "cpython",
+    "major_minor": "3.11"
+  },
+  "packages": {
+    "anndata": ">=0.12,<0.13",
+    "bioframe": ">=0.8,<0.9",
+    "editdistance": ">=0.8,<0.9",
+    "fast_edit_distance": ">=1.2,<1.3",
+    "igraph": ">=1.0,<1.1",
+    "leidenalg": ">=0.12,<0.13",
+    "matplotlib": ">=3.11,<3.12",
+    "networkx": ">=3.6,<3.7",
+    "numba": ">=0.66,<0.67",
+    "numpy": ">=2.4,<2.5",
+    "pandas": ">=2.3,<2.4",
+    "pysam": ">=0.24,<0.25",
+    "scanpy": ">=1.11,<1.12",
+    "scipy": ">=1.17,<1.18",
+    "seaborn": ">=0.13,<0.14",
+    "tqdm": ">=4.70,<4.71"
+  }
+}
