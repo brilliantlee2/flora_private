@@ -128,6 +128,24 @@ class ReleaseLayoutTests(unittest.TestCase):
 
         for pattern in ["target/", "*.fastq.gz", "*.bam", "report_new/", "report_new_2/", "vendor.zip"]:
             self.assertIn(pattern, gitignore)
+        self.assertIn("/glycine/", gitignore)
+        self.assertNotIn("\nglycine/", gitignore)
+
+    def test_integrated_glycine_source_is_complete(self):
+        for source_name in [
+            "args.rs",
+            "file_system.rs",
+            "identifier.rs",
+            "mod.rs",
+            "qc.rs",
+            "reader.rs",
+            "utils.rs",
+            "writer.rs",
+        ]:
+            self.assertTrue(
+                (PROJECT_ROOT / "src" / "glycine" / source_name).is_file(),
+                source_name,
+            )
 
     def test_flora_package_metadata_are_consistent(self):
         cargo_toml = (PROJECT_ROOT / "Cargo.toml").read_text(encoding="utf-8")

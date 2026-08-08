@@ -48,7 +48,7 @@ chrom_sizes.tsv
 # Pipeline outputs and logs
 alignment/
 barcodes/
-glycine/
+/glycine/
 logs/
 matrix/
 qc/
