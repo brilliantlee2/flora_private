@@ -81,9 +81,9 @@
       {"argv":["flora","mixed","--skip-glycine","--full-length-fastq","full.fq.gz","--barcode_list_10bp","BC.txt","--gene-fasta","combined.fa","--junction-bed","genes.bed","--chrom-sizes","sizes.tsv","--gene-gtf","genes.gtf","--outdir","out","--python","/opt/python","--singlet-threshold","1.5"],"reason":"Skip-Glycine mixed path accepts an out-of-range float and interpreter override."}
     ],
     "rejected": [
-      {"argv":["flora","mixed","--fastq","raw.fq.gz","--ref-dir","ref","--out-dir","out","--glycine-bin-dir","bin"],"reason":"glycine-bin-dir is forbidden and must produce an unknown-option error."},
-      {"argv":["flora","mixed","--skip-glycine","--ref-dir","ref","--out-dir","out"],"reason":"full-length-fastq is required when Glycine is skipped."},
-      {"argv":["flora","mixed","--fastq","raw.fq.gz","--ref-dir","ref","--out-dir","out","--singlet-threshold","not-a-float"],"reason":"Only strings rejected by Python float parsing are invalid singlet thresholds."}
+      {"argv":["flora","mixed","--fastq","raw.fq.gz","--ref-dir","ref","--out-dir","out","--glycine-bin-dir","bin"],"reason":"glycine-bin-dir is forbidden and must produce an unknown-option error.","violation":{"code":"unknown_option","option":"--glycine-bin-dir"}},
+      {"argv":["flora","mixed","--skip-glycine","--ref-dir","ref","--out-dir","out"],"reason":"full-length-fastq is required when Glycine is skipped.","violation":{"code":"missing_conditional","option":"--full-length-fastq"}},
+      {"argv":["flora","mixed","--fastq","raw.fq.gz","--ref-dir","ref","--out-dir","out","--singlet-threshold","not-a-float"],"reason":"Only strings rejected by Python float parsing are invalid singlet thresholds.","violation":{"code":"invalid_type","option":"--singlet-threshold"}}
     ]
   }
 }

@@ -31,7 +31,7 @@
     {"name":"--umi_fixed_3p","aliases":[],"type":"string","required":false,"required_when":[],"default":"GATCT","conflicts":[],"description":"Fixed 3-prime UMI motif."},
     {"name":"--BC_fixed_5p","aliases":[],"type":"string","required":false,"required_when":[],"default":"GGAAGG","conflicts":[],"description":"Fixed 5-prime barcode motif."},
     {"name":"--umi_fixed_5p","aliases":[],"type":"string","required":false,"required_when":[],"default":"CAGCA","conflicts":[],"description":"Fixed 5-prime UMI motif."},
-    {"name":"--barcode_extract_mode","aliases":[],"type":"string","required":false,"required_when":[],"default":"fixed_seq","conflicts":[],"description":"Barcode extractor; only fixed_seq is accepted by the pipeline."},
+    {"name":"--barcode_extract_mode","aliases":[],"type":"string","required":false,"required_when":[],"default":"fixed_seq","conflicts":[],"description":"Barcode extractor; only fixed_seq is accepted by the pipeline.","choices":["fixed_seq"]},
     {"name":"--light-output","aliases":[],"type":"bool","required":false,"required_when":[],"default":true,"conflicts":[],"description":"Suppress matched, unmatched, and cell FASTQs unless full-output is set."},
     {"name":"--full-output","aliases":[],"type":"bool","required":false,"required_when":[],"default":false,"conflicts":[],"description":"Override light-output and retain all FASTQs."},
     {"name":"--save-intermediate","aliases":[],"type":"bool","required":false,"required_when":[],"default":false,"conflicts":[],"description":"Retain pipeline intermediate outputs."},
@@ -58,8 +58,8 @@
       {"argv":["flora","analyze","reads-1.fq.gz","reads-2.fq.gz","--full-bc-whitelist-3p","3p.txt","--full-bc-whitelist-5p","5p.txt","--full-output","--disable_absorb_unassigned_paired"],"reason":"Multiple FASTQs and explicit boolean overrides are accepted."}
     ],
     "rejected": [
-      {"argv":["flora","analyze","reads.fq.gz"],"reason":"Both full barcode whitelists are required."},
-      {"argv":["flora","analyze","reads.fq.gz","--full-bc-whitelist-3p","3p.txt","--full-bc-whitelist-5p","5p.txt","--barcode_extract_mode","probe"],"reason":"The parser accepts the string, but execution rejects every mode except fixed_seq."}
+      {"argv":["flora","analyze","reads.fq.gz"],"reason":"Both full barcode whitelists are required.","violation":{"code":"missing_required","option":"--full-bc-whitelist-3p"}},
+      {"argv":["flora","analyze","reads.fq.gz","--full-bc-whitelist-3p","3p.txt","--full-bc-whitelist-5p","5p.txt","--barcode_extract_mode","probe"],"reason":"The parser accepts the string, but execution rejects every mode except fixed_seq.","violation":{"code":"invalid_value","option":"--barcode_extract_mode"}}
     ]
   }
 }

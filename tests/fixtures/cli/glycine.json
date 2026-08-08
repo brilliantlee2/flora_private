@@ -31,8 +31,8 @@
       {"argv":["flora","glycine","-f","raw.fq.gz","-5","AAAA","-3","TTTT","-o","glycine","-n","sample","--keep-all-outputs"],"reason":"All required short aliases and the output-retention flag are accepted."}
     ],
     "rejected": [
-      {"argv":["flora","glycine","--fastq","raw.fq.gz","--outdir","glycine","--sample","sample"],"reason":"Both TSO and RTP sequences are required."},
-      {"argv":["flora","glycine","--fastq","raw.fq.gz","--tso_seq","AAAA","--rtp_seq","TTTT","--outdir","glycine","--sample","sample","--thread","many"],"reason":"Thread count must parse as an integer."}
+      {"argv":["flora","glycine","--fastq","raw.fq.gz","--outdir","glycine","--sample","sample"],"reason":"Both TSO and RTP sequences are required.","violation":{"code":"missing_required","option":"--tso_seq"}},
+      {"argv":["flora","glycine","--fastq","raw.fq.gz","--tso_seq","AAAA","--rtp_seq","TTTT","--outdir","glycine","--sample","sample","--thread","many"],"reason":"Thread count must parse as an integer.","violation":{"code":"invalid_type","option":"--thread"}}
     ]
   }
 }

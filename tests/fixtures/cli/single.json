@@ -79,9 +79,9 @@
       {"argv":["flora","--skip-glycine","--full-length-fastq","full.fq.gz","--barcode_list_10bp","BC.txt","--gene-fasta","genome.fa","--junction-bed","genes.bed","--chrom-sizes","sizes.tsv","--gene-gtf","genes.gtf","--outdir","out","--python","/opt/python"],"reason":"Skip-Glycine path with legacy aliases, explicit references, and interpreter override."}
     ],
     "rejected": [
-      {"argv":["flora","--fastq","raw.fq.gz","--ref-dir","ref","--out-dir","out","--glycine-bin-dir","bin"],"reason":"glycine-bin-dir is forbidden and must produce an unknown-option error."},
-      {"argv":["flora","--skip-glycine","--ref-dir","ref","--out-dir","out"],"reason":"full-length-fastq is required when Glycine is skipped."},
-      {"argv":["flora","--fastq","raw.fq.gz","--out-dir","out"],"reason":"Reference inputs cannot be resolved."}
+      {"argv":["flora","--fastq","raw.fq.gz","--ref-dir","ref","--out-dir","out","--glycine-bin-dir","bin"],"reason":"glycine-bin-dir is forbidden and must produce an unknown-option error.","violation":{"code":"unknown_option","option":"--glycine-bin-dir"}},
+      {"argv":["flora","--skip-glycine","--ref-dir","ref","--out-dir","out"],"reason":"full-length-fastq is required when Glycine is skipped.","violation":{"code":"missing_conditional","option":"--full-length-fastq"}},
+      {"argv":["flora","--fastq","raw.fq.gz","--out-dir","out"],"reason":"Reference inputs cannot be resolved.","violation":{"code":"missing_conditional","option":"--gene-fasta"}}
     ]
   }
 }
