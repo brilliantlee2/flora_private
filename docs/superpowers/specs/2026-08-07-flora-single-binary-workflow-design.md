@@ -3,23 +3,25 @@
 ## Goal
 
 Replace the public `run_all.sh` and `run_all_mixed_species.sh` entrypoints with
-`flora run` and `flora run-mixed`, while preserving the current analysis
+the default `flora` command and `flora mixed`, while preserving the current analysis
 algorithms, command-line defaults, output files, logs, and result semantics.
-The public archive must contain one Rust executable plus required Python
-bytecode and report assets. The legacy shell scripts remain only in the private
-source repository as regression references.
+The public archive must contain one Rust executable as its only runtime code;
+Python bytecode, the report template, and browser assets are compiled into that
+executable. The legacy shell scripts remain only in the private source repository
+as regression references.
 
 ## Scope
 
 ### Included
 
-- Add complete single-species and mixed-species workflow subcommands to `flora`.
+- Make the default `flora` invocation the complete single-species workflow and
+  add `flora mixed` for the complete mixed-species workflow.
 - Move argument parsing, path resolution, validation, stage orchestration,
   logging, and external command pipelines from Bash into Rust.
 - Refactor existing Rust stage binaries so the workflow can invoke their shared
   library functions directly without changing their algorithms.
-- Retain Python-only stages as packaged `.pyc` assets invoked by the Rust
-  workflow.
+- Retain Python-only stages as embedded, hash-verified bytecode invoked by the
+  Rust workflow through a private temporary runtime directory.
 - Remove `run_all.sh`, `run_all_mixed_species.sh`, and independent Rust stage
   executables from the public binary archive.
 - Preserve legacy scripts and optional standalone Rust binaries in the private
@@ -41,12 +43,12 @@ The public interface is:
 ```text
 flora glycine ...
 flora analyze ...
-flora run ...
-flora run-mixed ...
+flora ...
+flora mixed ...
 ```
 
-`flora run` accepts the same options, defaults, aliases, and validation rules as
-the current `run_all.sh`. `flora run-mixed` does the same for
+The default `flora` command accepts the same options, defaults, aliases, and
+validation rules as the current `run_all.sh`. `flora mixed` does the same for
 `run_all_mixed_species.sh`, including `--singlet-threshold` and mixed-species
 QC. Existing `glycine` and `analyze` behavior remains backward compatible.
 
@@ -58,17 +60,22 @@ may change, but errors remain on stderr with a nonzero exit status. A generated
 CLI contract fixture records every option, alias, type, default, conflict,
 required condition, and legacy accepted/rejected example for both workflows.
 
-The executable resolves its installation root from `current_exe()`. A packaged
-layout with `flora` at the archive root is preferred. `FLORA_HOME` is supported
-as an explicit override for development and unusual installation layouts.
+Glycine is linked into `flora` and called through its Rust library API. The full
+workflows therefore do not accept `--glycine-bin-dir`, do not search `PATH` for
+a Glycine executable, and do not resolve a relative Glycine installation path.
+Glycine algorithm options such as `--glycine-outdir`, `--glycine-err`, and
+`--glycine-shift` remain supported. `--skip-glycine` continues to require
+`--full-length-fastq`.
 
 ## Architecture
 
 ### Top-Level CLI
 
-`src/main.rs` dispatches typed Clap subcommands. The current `analyze` parser is
-moved behind a reusable command module rather than duplicated. Top-level help
-lists all four public modes.
+`src/main.rs` uses typed Clap parsing with a default single-species workflow,
+the `mixed`, `glycine`, and `analyze` subcommands, and no ambiguous positional
+fallback. The current `analyze` parser is moved behind a reusable command module
+rather than duplicated. `flora --help` is the single-species workflow help and
+also identifies the three explicit subcommands.
 
 ### Workflow Modules
 
@@ -92,12 +99,16 @@ or condition-heavy orchestration.
 Logic currently implemented directly in `src/bin/*.rs` is extracted into
 library modules with typed configuration structs and `run(...) -> Result<()>`
 entrypoints. Standalone binary files become thin private wrappers around those
-same functions. `flora run` calls the library functions directly, so the public
+same functions. The full workflows call the library functions directly, so the public
 archive does not need separate Rust executables and does not duplicate statically
 linked dependencies.
 
 The refactor is mechanical: parsing and `main()` move to wrappers; computation
 and file-format behavior remain unchanged.
+
+The embedded Glycine stage is invoked directly as a library function by both
+full workflows. The public `flora glycine` command is a thin CLI adapter over
+that same function, so standalone and in-workflow Glycine behavior cannot drift.
 
 Stage APIs do not call `process::exit`, mutate process-wide environment or the
 working directory, install global thread pools, or write through unmanaged
@@ -111,16 +122,24 @@ library tests run each Rust stage both ways and compare outputs and diagnostics.
 
 Python-only stages continue to run through CPython 3.11. Interpreter selection
 is `--python` when supplied, then `FLORA_PYTHON`, then `python3` on `PATH`.
-The workflow selects hash-based `.pyc` assets from `<FLORA_HOME>/scripts` and
-verifies implementation, major/minor ABI, and imports/version constraints from
-the packaged `runtime_manifest.json` before starting expensive analysis. Its
-minimum schema contains `python.implementation`, `python.major_minor`, and a
-`packages` object mapping each required import name to a PEP 440 version
-specifier. Bytecode is
-compiled with deterministic public `co_filename` values such as
-`flora/scripts/build_report.py`; package-relative imports and `__file__` asset
-lookups are tested after archive extraction. HTML templates and the vendored
-Plotly JavaScript remain external runtime assets.
+At build time, Python bytecode is compiled with deterministic public
+`co_filename` values, compressed, hashed, and embedded into the Rust executable
+alongside `report_template.html`, the vendored Plotly JavaScript, and the runtime
+manifest. No `.py`, `.pyc`, HTML template, or JavaScript runtime asset is shipped
+as a separate installed file.
+
+Before a Python stage runs, Flora creates a process-private directory under the
+platform temporary directory with owner-only permissions, extracts only the
+required embedded assets, verifies every SHA-256 hash, and validates the Python
+implementation, major/minor ABI, and import/version constraints from the embedded
+manifest. The minimum manifest schema contains `python.implementation`,
+`python.major_minor`, and a `packages` object mapping each required import name
+to a PEP 440 version specifier. Package-relative imports and `__file__` template
+lookups are tested against this extracted runtime. Normal completion removes the
+directory; startup also removes stale Flora runtime directories owned by the
+current user and older than a bounded retention interval. A user with access to
+the running process can still recover extracted resources, so this is packaging
+and source-obscuring, not cryptographic secrecy.
 
 The Rust workflow invokes Python with an argument vector, never a shell command
 string. Paths containing spaces therefore remain valid and shell injection is
@@ -199,11 +218,6 @@ The public archive contains:
 ```text
 Flora-<version>-linux-x86_64/
   flora
-  scripts/*.pyc
-  scripts/report_template.html
-  scripts/plotly-2.26.0.min.js
-  PYTHON_ABI.txt
-  runtime_manifest.json
   environment.yml
   requirements.txt
   README.md
@@ -212,18 +226,19 @@ Flora-<version>-linux-x86_64/
   licenses/
 ```
 
-It does not contain shell workflow sources, Rust sources, Cargo metadata,
-standalone Rust stage binaries, tests, vendor sources, or private build scripts.
+It does not contain shell workflow sources, Rust sources, Python source or
+bytecode, extracted report assets, Cargo metadata, standalone Rust stage
+binaries, tests, vendor sources, or private build scripts.
 Release binaries are stripped and archives exclude macOS extended attributes.
 
 Packaging uses an allowlisted manifest rather than copying directories. It
 rejects symlinks and archive paths that escape the release root. Rust builds use
-path-prefix remapping, and bytecode compilation supplies deterministic public
-source filenames. Release validation scans archive names, ELF sections/strings,
-and Python code-object filenames for private absolute paths and source-tree
-names. The Linux x86-64 build targets the baseline x86-64 instruction set and
-glibc 2.17 or newer; dynamic dependencies are inspected and tested on a clean
-compatible host.
+path-prefix remapping, and the build-time resource generator supplies deterministic
+public Python code-object filenames. Release validation scans archive names, ELF
+sections/strings, and decoded embedded-resource metadata for private absolute
+paths and source-tree names. The Linux x86-64 build targets the baseline x86-64
+instruction set and glibc 2.17 or newer; dynamic dependencies are inspected and
+tested on a clean compatible host.
 
 The present archive is 28 MB compressed and 75 MB unpacked, including about
 71 MB of separate Rust executables. Consolidation is expected to reduce the
@@ -242,8 +257,8 @@ hard compatibility requirement.
 
 ### Integration Tests
 
-- Run legacy `run_all.sh` and `flora run` on the same small single-species input.
-- Run legacy `run_all_mixed_species.sh` and `flora run-mixed` on the same small
+- Run legacy `run_all.sh` and `flora` on the same small single-species input.
+- Run legacy `run_all_mixed_species.sh` and `flora mixed` on the same small
   mixed-species input.
 - Compare every artifact according to the manifest below. Nondeterministic
   metadata is allowed only where listed.
@@ -258,10 +273,10 @@ hard compatibility requirement.
 - Archive contains exactly one ELF executable named `flora`.
 - Archive contains no `.rs`, `.py`, `.sh`, `Cargo.toml`, `Cargo.lock`, `src`,
   `tests`, or `vendor` content.
-- `flora --help`, `flora run --help`, and `flora run-mixed --help` work after
-  extraction.
-- `runtime_manifest.json` is present, schema-valid, and agrees with the bytecode
-  ABI and documented dependency constraints.
+- `flora --help`, `flora mixed --help`, `flora glycine --help`, and
+  `flora analyze --help` work after extraction.
+- The embedded runtime manifest is schema-valid and agrees with the bytecode ABI
+  and documented dependency constraints.
 - The executable is Linux x86-64 and stripped.
 - The archive contains no extended-attribute headers and its SHA256 verifies.
 - No private source path appears in ELF strings, Python code-object filenames,
@@ -312,8 +327,8 @@ fixtures and checked into the private test suite.
 
 ## Acceptance Criteria
 
-- New full-workflow commands finish successfully on representative single and
-  mixed test data.
+- The default `flora` workflow and `flora mixed` finish successfully on
+  representative single- and mixed-species test data.
 - Scientifically meaningful outputs match the legacy workflows according to the
   Artifact Parity Manifest.
 - Existing `glycine` and `analyze` commands remain compatible.
