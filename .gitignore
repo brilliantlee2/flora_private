@@ -68,3 +68,4 @@ vendor.zip
 
 # Isolated Codex development worktrees
 .worktrees/
+.conda-env/
