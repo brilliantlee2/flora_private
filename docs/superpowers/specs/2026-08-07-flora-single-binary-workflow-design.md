@@ -268,8 +268,9 @@ Flora-<version>-linux-x86_64/
 Release validation compares every archive entry against an exact generated
 allowlist: the files shown above plus individually enumerated license filenames.
 No unlisted extensionless file, `.pyc`, HTML template, JavaScript runtime asset,
-directory, or executable is permitted. `flora` must be the sole entry with any
-executable permission bit.
+directory, or executable is permitted. `flora` must be the sole regular-file
+entry with any executable permission bit; directory permissions are validated
+separately.
 
 It does not contain standalone archive entries or installed files containing
 shell workflow source, Rust source, Python source/bytecode, or extracted report
@@ -330,7 +331,8 @@ hard compatibility requirement.
 
 - Archive contains exactly one ELF executable named `flora`.
 - Every archive entry matches the exact release allowlist, and `flora` is the
-  sole executable-permission entry. The archive therefore contains no standalone
+  sole regular-file entry with any executable permission bit. Directory modes
+  are validated separately. The archive therefore contains no standalone
   `.rs`, `.py`, `.pyc`, `.sh`, HTML/JavaScript runtime asset, Cargo metadata,
   `src`, `tests`, `vendor`, or unlisted extensionless file.
 - `flora --help`, `flora mixed --help`, `flora glycine --help`, and
