@@ -7,6 +7,25 @@
 
 公开仓库只保留用户文档，编译后的压缩包通过 GitHub Releases 发布。
 
+## 克隆私有仓库
+
+你必须具有私有仓库 `brilliantlee2/flora_private` 的访问权限。使用 HTTPS 克隆：
+
+```bash
+git clone https://github.com/brilliantlee2/flora_private.git
+cd flora_private
+```
+
+或者在 GitHub 账户中添加 SSH key 后使用 SSH：
+
+```bash
+git clone git@github.com:brilliantlee2/flora_private.git
+cd flora_private
+```
+
+由于这是私有仓库，GitHub 可能要求浏览器授权、personal access token 或已授权的
+SSH key。修改过的 crate 已保存在 `vendor/` 中，不需要再执行 Git submodule 命令。
+
 ## 源码目录
 
 ```text
@@ -87,13 +106,17 @@ Flora 使用语义化版本，例如 `0.1.0`、`0.1.1` 和 `0.2.0`。
 
 ## 构建 Linux x86_64 发行包
 
-请在 Linux x86_64 上构建，最好使用目标 HPC 或版本较老的兼容 Linux。不要在 macOS 上构建 Linux 压缩包。
+请在 Linux x86_64 上构建，最好使用目标 HPC。不要在 macOS 上构建 Linux
+压缩包。下面是从新克隆仓库开始的完整流程。
+
+### 1. 进入仓库并检查主机
 
 ```bash
+cd /path/to/flora_private
+
 uname -s
 uname -m
 ldd --version | head -n 1
-python --version
 ```
 
 预期：
@@ -101,30 +124,99 @@ python --version
 ```text
 Linux
 x86_64
-Python 3.11.x
 ```
 
-构建和打包：
+### 2. 创建完整构建环境
 
 ```bash
-conda activate flora
-export LIBCLANG_PATH="$(dirname "$(find "$CONDA_PREFIX" -name 'libclang.so*' -print -quit)")"
+export LANG=C.UTF-8
+export LC_ALL=C.UTF-8
+export PYTHONUTF8=1
 
+conda env create -f environment.yml
+conda activate flora
+```
+
+如果环境已经存在，根据仓库中的环境文件更新：
+
+```bash
+conda env update -n flora -f environment.yml --prune
+conda activate flora
+```
+
+检查必要工具：
+
+```bash
+python --version
+rustc --version
+cargo --version
+cmake --version
+gcc --version
+clang --version
+samtools --version | head -n 2
+minimap2 --version
+bedtools --version
+
+export LIBCLANG_PATH="$(dirname "$(find "$CONDA_PREFIX" -name 'libclang.so*' -print -quit)")"
+test -n "$LIBCLANG_PATH"
+```
+
+Python 必须显示为 `3.11.x`。
+
+### 3. 检查源码与测试
+
+```bash
+cargo metadata --locked --no-deps --format-version 1 >/dev/null
 cargo test --locked
+bash -n run_all.sh
+bash -n run_all_mixed_species.sh
+bash -n packaging/build_binary_release.sh
+bash -n packaging/refresh_binary_release_metadata.sh
+python -m unittest discover -s tests -v
+```
+
+如果只需要开发构建：
+
+```bash
+cargo build --release --locked
+./target/release/flora --version
+./target/release/flora glycine --help
+./target/release/flora analyze --help
+```
+
+### 4. 构建并打包公开二进制发行包
+
+打包脚本会自行执行锁定版本的 release 构建，因此这里不需要先单独执行
+`cargo build`：
+
+```bash
 PYTHON_BIN="$CONDA_PREFIX/bin/python" \
   bash packaging/build_binary_release.sh
 ```
 
-输出：
+如果需要强制指定最高 glibc 需求：
+
+```bash
+FLORA_MAX_GLIBC=2.34 \
+PYTHON_BIN="$CONDA_PREFIX/bin/python" \
+  bash packaging/build_binary_release.sh
+```
+
+不要将 glibc 上限设置得低于构建主机和链接库所需的版本。检测到的需求会记录在
+`BUILD_INFO.txt` 中。
+
+### 5. 查看输出文件
 
 ```text
 dist/Flora-<version>-linux-x86_64.tar.gz
+dist/Flora-<version>-linux-x86_64.tar.gz.sha256
 ```
 
-打包脚本只构建 `flora` 一个程序，将 `environment.runtime.yml` 作为
-发行包的 `environment.yml`，使用公开 README 模板，将白名单中的 Python
-脚本编译为确定性 Python 3.11 字节码，并排除流程 Shell、独立阶段程序和
-Rust/Python 源码。
+脚本只构建 `flora`，将其放在压缩包根目录，将白名单中的 Python 脚本编译为确定性
+CPython 3.11 字节码，复制运行环境和公开文档，清理扩展属性，并自动生成与验证 SHA256。
+
+只有 `flora run --help` 和 `flora run-mixed --help` 都成功时才允许打包。在迁移尚未完成的
+阶段，这个失败是预期行为，用于防止发布不完整的二进制包。
 
 ## 检查发行包
 
@@ -133,7 +225,7 @@ ARCHIVE="dist/Flora-0.1.0-linux-x86_64.tar.gz"
 
 tar -tzf "$ARCHIVE" | head -50
 tar -tzf "$ARCHIVE" | \
-  grep -E '(^|/)(src|vendor|tests)/|Cargo\.(toml|lock)$|\.py$' && {
+  grep -E '(^|/)(src|vendor|tests)/|Cargo\.(toml|lock)$|run_all|\.(rs|py|sh)$' && {
     echo "ERROR: source file found in public archive" >&2
     exit 1
   } || true
@@ -159,6 +251,14 @@ cat BUILD_INFO.txt
 
 `file flora` 应显示 ELF x86-64 可执行文件且包含 `stripped`。如果显示
 `not stripped`，不要发布该压缩包。
+
+可执行文件数量必须正好为1：
+
+```bash
+find . -type f -perm /111 -print
+```
+
+唯一结果应当是 `./flora`。
 
 ## 生成 SHA256
 

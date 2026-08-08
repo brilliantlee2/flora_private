@@ -7,6 +7,27 @@ This repository contains the private source, tests, packaging tools, and release
 
 The public repository contains user documentation only. Compiled archives are distributed through GitHub Releases.
 
+## Clone the private repository
+
+You must have access to the private `brilliantlee2/flora_private` repository.
+Clone it with HTTPS:
+
+```bash
+git clone https://github.com/brilliantlee2/flora_private.git
+cd flora_private
+```
+
+Or use SSH after adding an SSH key to your GitHub account:
+
+```bash
+git clone git@github.com:brilliantlee2/flora_private.git
+cd flora_private
+```
+
+Because this is a private repository, GitHub may request browser authorization,
+a personal access token, or an authorized SSH key. The repository includes the
+patched crates under `vendor/`; no additional Git submodule command is needed.
+
 ## Source layout
 
 ```text
@@ -88,13 +109,17 @@ Flora follows semantic versioning. Use versions such as `0.1.0`, `0.1.1`, and `0
 
 ## Build the Linux x86_64 release
 
-Build on Linux x86_64, preferably the target HPC or an older compatible Linux system. Do not build the public Linux archive on macOS.
+Build on Linux x86_64, preferably the target HPC. Do not build the public Linux
+archive on macOS. The following sequence starts from a fresh clone.
+
+### 1. Enter the repository and check the host
 
 ```bash
+cd /path/to/flora_private
+
 uname -s
 uname -m
 ldd --version | head -n 1
-python --version
 ```
 
 Expected architecture:
@@ -102,31 +127,102 @@ Expected architecture:
 ```text
 Linux
 x86_64
-Python 3.11.x
 ```
 
-Build and package:
+### 2. Create the complete build environment
 
 ```bash
-conda activate flora
-export LIBCLANG_PATH="$(dirname "$(find "$CONDA_PREFIX" -name 'libclang.so*' -print -quit)")"
+export LANG=C.UTF-8
+export LC_ALL=C.UTF-8
+export PYTHONUTF8=1
 
+conda env create -f environment.yml
+conda activate flora
+```
+
+If the environment already exists, update it from the checked-in definition:
+
+```bash
+conda env update -n flora -f environment.yml --prune
+conda activate flora
+```
+
+Verify the required toolchain:
+
+```bash
+python --version
+rustc --version
+cargo --version
+cmake --version
+gcc --version
+clang --version
+samtools --version | head -n 2
+minimap2 --version
+bedtools --version
+
+export LIBCLANG_PATH="$(dirname "$(find "$CONDA_PREFIX" -name 'libclang.so*' -print -quit)")"
+test -n "$LIBCLANG_PATH"
+```
+
+Python must report `3.11.x`.
+
+### 3. Validate the source tree
+
+```bash
+cargo metadata --locked --no-deps --format-version 1 >/dev/null
 cargo test --locked
+bash -n run_all.sh
+bash -n run_all_mixed_species.sh
+bash -n packaging/build_binary_release.sh
+bash -n packaging/refresh_binary_release_metadata.sh
+python -m unittest discover -s tests -v
+```
+
+For a development-only build:
+
+```bash
+cargo build --release --locked
+./target/release/flora --version
+./target/release/flora glycine --help
+./target/release/flora analyze --help
+```
+
+### 4. Build and package the public binary release
+
+The packaging script performs its own locked release build, so a separate
+`cargo build` command is not required here:
+
+```bash
 PYTHON_BIN="$CONDA_PREFIX/bin/python" \
   bash packaging/build_binary_release.sh
 ```
 
-The archive is generated as:
+To enforce a specific maximum glibc requirement, set it explicitly:
+
+```bash
+FLORA_MAX_GLIBC=2.34 \
+PYTHON_BIN="$CONDA_PREFIX/bin/python" \
+  bash packaging/build_binary_release.sh
+```
+
+Do not set a glibc ceiling lower than the symbols provided by the build host and
+linked libraries. The detected requirement is recorded in `BUILD_INFO.txt`.
+
+### 5. Locate the generated files
 
 ```text
 dist/Flora-<version>-linux-x86_64.tar.gz
+dist/Flora-<version>-linux-x86_64.tar.gz.sha256
 ```
 
-The packaging script builds only the `flora` binary, copies
-`environment.runtime.yml` into the archive as `environment.yml`, uses the
-public README templates, compiles an allowlist of Python files to deterministic
-Python 3.11 bytecode, and excludes shell workflow sources, standalone stage
-binaries, and Rust/Python source.
+The script builds only `flora`, stages it at the archive root, compiles an
+allowlist of Python files as deterministic CPython 3.11 bytecode, copies the
+runtime environment and public documentation, removes extended attributes, and
+generates and verifies SHA256 automatically.
+
+The script deliberately refuses to package until both `flora run --help` and
+`flora run-mixed --help` succeed. During the migration period this failure is
+expected and prevents publication of an incomplete binary.
 
 ## Validate the release archive
 
@@ -135,7 +231,7 @@ ARCHIVE="dist/Flora-0.1.0-linux-x86_64.tar.gz"
 
 tar -tzf "$ARCHIVE" | head -50
 tar -tzf "$ARCHIVE" | \
-  grep -E '(^|/)(src|vendor|tests)/|Cargo\.(toml|lock)$|\.py$' && {
+  grep -E '(^|/)(src|vendor|tests)/|Cargo\.(toml|lock)$|run_all|\.(rs|py|sh)$' && {
     echo "ERROR: source file found in public archive" >&2
     exit 1
   } || true
@@ -161,6 +257,14 @@ cat BUILD_INFO.txt
 
 `file flora` should report an ELF x86-64 executable and `stripped`. Do not
 publish an archive whose main executable is reported as `not stripped`.
+
+The executable count must be exactly one:
+
+```bash
+find . -type f -perm /111 -print
+```
+
+The only result should be `./flora`.
 
 ## Generate the checksum
 
