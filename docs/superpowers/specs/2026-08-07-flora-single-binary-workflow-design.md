@@ -61,7 +61,10 @@ external executable. Both full workflows reject that option and never search
 for an external Glycine binary. Exact help layout and exact parser error wording
 may change, but errors remain on stderr with a nonzero exit status. A generated
 CLI contract fixture records every option, alias, type, default, conflict,
-required condition, and legacy accepted/rejected example for both workflows.
+required condition, and accepted/rejected example for all four public commands.
+For the default and mixed workflows it is generated from the corresponding
+legacy script contract; for `glycine` and `analyze` it locks the current public
+CLI behavior before orchestration refactoring begins.
 
 Glycine is linked into `flora` and called through its Rust library API. The full
 workflows therefore do not accept `--glycine-bin-dir`, do not search `PATH` for
@@ -262,6 +265,12 @@ Flora-<version>-linux-x86_64/
   licenses/
 ```
 
+Release validation compares every archive entry against an exact generated
+allowlist: the files shown above plus individually enumerated license filenames.
+No unlisted extensionless file, `.pyc`, HTML template, JavaScript runtime asset,
+directory, or executable is permitted. `flora` must be the sole entry with any
+executable permission bit.
+
 It does not contain standalone archive entries or installed files containing
 shell workflow source, Rust source, Python source/bytecode, or extracted report
 assets. Embedded Python bytecode and report assets inside `flora` are required
@@ -276,7 +285,11 @@ public Python code-object filenames. Release validation scans archive names, ELF
 sections/strings, and decoded embedded-resource metadata for private absolute
 paths and source-tree names. The Linux x86-64 build targets the baseline x86-64
 instruction set and glibc 2.17 or newer; dynamic dependencies are inspected and
-tested on a clean compatible host.
+tested on a clean compatible host. No referenced ELF symbol may require a GLIBC
+version newer than `GLIBC_2.17`; instruction inspection must find no ISA
+requirement beyond baseline x86-64. The extracted release is also executed in a
+pinned glibc 2.17, baseline-x86-64 test image rather than relying only on static
+inspection.
 
 The present archive is 28 MB compressed and 75 MB unpacked, including about
 71 MB of separate Rust executables. Consolidation is expected to reduce the
@@ -288,6 +301,8 @@ hard compatibility requirement.
 ### Unit Tests
 
 - CLI defaults and aliases match each legacy script.
+- CLI contracts for `flora glycine` and `flora analyze` preserve their current
+  options, aliases, defaults, validation, and accepted/rejected examples.
 - Reference and runtime asset resolution covers packaged and development paths.
 - Command construction preserves every legacy argument.
 - Pipeline status handling detects failure in each child position.
@@ -314,13 +329,18 @@ hard compatibility requirement.
 ### Release Tests
 
 - Archive contains exactly one ELF executable named `flora`.
-- Archive contains no `.rs`, `.py`, `.sh`, `Cargo.toml`, `Cargo.lock`, `src`,
-  `tests`, or `vendor` content.
+- Every archive entry matches the exact release allowlist, and `flora` is the
+  sole executable-permission entry. The archive therefore contains no standalone
+  `.rs`, `.py`, `.pyc`, `.sh`, HTML/JavaScript runtime asset, Cargo metadata,
+  `src`, `tests`, `vendor`, or unlisted extensionless file.
 - `flora --help`, `flora mixed --help`, `flora glycine --help`, and
   `flora analyze --help` work after extraction.
 - The embedded runtime manifest is schema-valid and agrees with the bytecode ABI
   and documented dependency constraints.
 - The executable is Linux x86-64 and stripped.
+- ELF inspection finds no referenced GLIBC symbol version newer than
+  `GLIBC_2.17` and no instruction-set requirement beyond baseline x86-64; the
+  extracted workflows execute in the pinned glibc 2.17 baseline test image.
 - The archive contains no extended-attribute headers and its SHA256 verifies.
 - No private source path appears in ELF strings, Python code-object filenames,
   HTML/JavaScript assets, documentation, or archive metadata.
