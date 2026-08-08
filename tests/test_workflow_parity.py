@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -226,7 +227,7 @@ class WorkflowOracleFixtureTests(unittest.TestCase):
         self.assertIn("current version", versions["libc"])
 
     def test_every_scenario_records_exact_rust_release_stage_selection(self):
-        expected_stages = {
+        full_pipeline_stages = {
             "flora",
             "generate_26bp_whitelists",
             "prepare_read_tags",
@@ -241,6 +242,26 @@ class WorkflowOracleFixtureTests(unittest.TestCase):
             "rna_qc_metrics",
             "read_qc_summary",
         }
+        expected_by_scenario = {
+            "light": full_pipeline_stages,
+            "skip_glycine": full_pipeline_stages,
+            "stale_output": full_pipeline_stages,
+            "skip_isoform": full_pipeline_stages
+            - {"assign_transcripts", "isoform_expression"},
+            "upstream_only": {"flora", "generate_26bp_whitelists"},
+            "full": {"flora", "generate_26bp_whitelists"},
+            "malformed_input": {
+                "flora",
+                "generate_26bp_whitelists",
+                "prepare_read_tags",
+            },
+            "forced_failure": {
+                "flora",
+                "generate_26bp_whitelists",
+                "prepare_read_tags",
+                "add_cb_ur_tags",
+            },
+        }
         for workflow, scenarios in REQUIRED_SCENARIOS.items():
             for scenario in scenarios:
                 selection_log = (
@@ -252,12 +273,24 @@ class WorkflowOracleFixtureTests(unittest.TestCase):
                 )
                 with self.subTest(workflow=workflow, scenario=scenario):
                     rows = selection_log.read_text(encoding="utf-8").splitlines()
-                    self.assertEqual("stage\trelease_binary\tsha256", rows[0])
-                    self.assertEqual(expected_stages, {row.split("\t")[0] for row in rows[1:]})
+                    self.assertEqual(
+                        "stage\trelease_binary\tsha256\tinvocation_count", rows[0]
+                    )
+                    self.assertEqual(
+                        expected_by_scenario[scenario],
+                        {row.split("\t")[0] for row in rows[1:]},
+                    )
                     for row in rows[1:]:
-                        stage, binary, digest = row.split("\t")
+                        stage, binary, digest, invocation_count = row.split("\t")
                         self.assertTrue(binary.endswith(f"/target/release/{stage}"))
                         self.assertRegex(digest, r"^[0-9a-f]{64}$")
+                        self.assertGreaterEqual(int(invocation_count), 1)
+                    self.assertEqual(
+                        "fallback\tcount\npython\t0",
+                        (
+                            selection_log.parent / "python_fallback_audit.tsv"
+                        ).read_text(encoding="utf-8").strip(),
+                    )
 
     def test_frozen_oracles_self_validate_for_every_scenario(self):
         comparator = load_comparator()
@@ -310,6 +343,9 @@ class WorkflowOracleFixtureTests(unittest.TestCase):
         self.assertIn("run_all.sh", script)
         self.assertIn("run_all_mixed_species.sh", script)
         self.assertIn("forbidden Python fallback", script)
+        self.assertIn("FLORA_ORACLE_INVOCATION_LOG", script)
+        self.assertIn("python_fallback_audit.tsv", script)
+        self.assertIn('exec "${real_binary}" "$@"', script)
         self.assertIn("tool_versions.tsv", script)
         for scenario in sorted(set().union(*REQUIRED_SCENARIOS.values())):
             self.assertIn(scenario, script)
@@ -318,6 +354,34 @@ class WorkflowOracleFixtureTests(unittest.TestCase):
             ["bash", "-n", str(script_path)], text=True, capture_output=True
         )
         self.assertEqual(0, syntax.returncode, syntax.stderr)
+
+    def test_numbered_qc_collision_artifacts_are_rejected_and_cleaned(self):
+        collision_name = re.compile(
+            r"^(?:(?:cell_umi_gene|filtered\.sorted|.+\.single_cell_report) [0-9]+"
+            r"(?:\.tsv|\.bam|\.html(?:\.gz)?)|filtered\.sorted\.bam [0-9]+\.bai)$"
+        )
+        collisions = [
+            str(path.relative_to(WORKFLOW_FIXTURES))
+            for path in WORKFLOW_FIXTURES.rglob("*")
+            if collision_name.search(path.name)
+        ]
+        self.assertEqual([], collisions)
+
+        script = (
+            WORKFLOW_FIXTURES / "generate_legacy_oracles.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn("remove_numbered_qc_collision_artifacts", script)
+        post_compression_cleanup = (
+            'remove_numbered_qc_collision_artifacts "${oracle_dir}"'
+        )
+        self.assertLess(
+            script.index("gzip -n -9"),
+            script.index(post_compression_cleanup),
+        )
+        self.assertLess(
+            script.index(post_compression_cleanup),
+            script.index('import hashlib\nimport json'),
+        )
 
 
 class WorkflowComparatorSecurityTests(unittest.TestCase):

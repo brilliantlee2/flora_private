@@ -5,23 +5,19 @@ Input 10bp barcode count: 2
 First 3 raw barcodes: ["ACGTACGTAC", "TGCATGCATG"]
 First 3 5p RC barcodes: ["GTACGTACGT", "CATGCATGCA"]
 [run_all] Flora Rust project detected, attempting cargo build --release
-   Compiling edlib_rs v0.1.2 (<REPOSITORY_ROOT>/vendor/edlib_rs-0.1.2)
-   Compiling flora v0.1.0 (<REPOSITORY_ROOT>)
-    Finished `release` profile [optimized] target(s) in 4.31s
-warning: the following packages contain code that will be rejected by a future version of Rust: buf_redux v0.8.4
-note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+[oracle] release binaries already built; preserving invocation wrappers
 [run_all] Step 1/6: alignment-first minimap2 reference alignment
-[M::mm_idx_gen::0.000*14.79] collected minimizers
-[M::mm_idx_gen::0.000*8.30] sorted minimizers
-[M::main::0.000*7.92] loaded/built the index for 2 target sequence(s)
-[M::mm_mapopt_update::0.000*7.43] mid_occ = 77
+[M::mm_idx_gen::0.000*10.64] collected minimizers
+[M::mm_idx_gen::0.000*6.98] sorted minimizers
+[M::main::0.000*6.73] loaded/built the index for 2 target sequence(s)
+[M::mm_mapopt_update::0.000*6.44] mid_occ = 77
 [M::mm_idx_stat] kmer size: 15; skip: 5; is_hpc: 0; #seq: 2
-[M::mm_idx_stat::0.000*6.96] distinct minimizers: 5 (0.00% are singletons); average occurrences: 55.400; average spacing: 2.426; total length: 672
+[M::mm_idx_stat::0.000*6.12] distinct minimizers: 5 (0.00% are singletons); average occurrences: 55.400; average spacing: 2.426; total length: 672
 [mm_idx_bed_read_merge] read 2 introns, 2 of which are non-redundant
-[M::worker_pipeline::0.046*1.04] mapped 40 sequences
+[M::worker_pipeline::0.049*1.04] mapped 40 sequences
 [M::main] Version: 2.31-r1302
 [M::main] CMD: minimap2 -ax splice -uf --MD -t 1 --junc-bed <REPOSITORY_ROOT>/tests/fixtures/workflows/mixed/ref/genes.bed --secondary=no <REPOSITORY_ROOT>/tests/fixtures/workflows/mixed/ref/genome.fa <REPOSITORY_ROOT>/tests/fixtures/workflows/mixed/reads.fastq
-[M::main] Real time: 0.046 sec; CPU: 0.048 sec; Peak RSS: 0.003 GB
+[M::main] Real time: 0.049 sec; CPU: 0.051 sec; Peak RSS: 0.003 GB
 [run_all] Step 1/6 elapsed: 0s
 [run_all] Step 2/6: Flora dual-end barcode split, correction, merge, and cell assignment
 [Flora] Step 1/7: streaming FASTQ and extracting putative 3p/5p barcode tables
@@ -80,12 +76,12 @@ unmatched_alignments	0
 total_alignment_records	40
 tagged_alignment_records	40
 unmatched_alignment_records	0
-[run_all] Step 3/6 elapsed: 1s
+[run_all] Step 3/6 elapsed: 0s
 [run_all] Step 4/6: Sockeye-style gene tagging, directional UMI clustering, and matrix generation
 RNA clustering complete: cells=1, analyzed=1, output=fixture_mixed.rna_cluster.tsv
 [run_all] Step 4/6 elapsed: 1s
 [run_all] Step 5/6: transcript assignment and isoform matrix generation
-[run_all] Step 5/6 elapsed: 1s
+[run_all] Step 5/6 elapsed: 0s
 [run_all] Step 6/6: RNA QC and saturation analysis
 
 RNA QC Metrics
@@ -149,9 +145,9 @@ barnyard_qc/barnyard_overall_purity.tsv
 barnyard_qc/barnyard_per_cell.tsv
 barnyard_qc/barnyard_scatter.png
 Wrote report: fixture_mixed.single_cell_report.html
-[run_all] Step 6/6 elapsed: 5s
+[run_all] Step 6/6 elapsed: 4s
 [run_all] Pipeline completed successfully.
-[run_all] Total elapsed: 13s
+[run_all] Total elapsed: 6s
 [run_all] Key outputs:
   full-length fastq        : <REPOSITORY_ROOT>/tests/fixtures/workflows/mixed/reads.fastq
   aligned mother BAM       : <WORKFLOW_ROOT>/output/alignment/fixture_mixed.aligned.sorted.bam

@@ -96,7 +96,7 @@
       "classification": "canonicalized_html_log",
       "path": "output/logs/02_dual_barcode.log",
       "scenario": "forced_failure",
-      "sha256": "9e4073fd209ec933048fcd4ea8319e9ebc8ced2c76c5ff7d22321a2d7abc06ec"
+      "sha256": "fe43f237f5b6f7e24d91efc0b9d4bf7bd6a335e0d19c300c661e353c56e7dfaa"
     },
     {
       "canonicalize": [
@@ -211,6 +211,12 @@
       "sha256": "18400be49271378bd0e6955da6c92e7a5b0d9bbeabd1537ff798f525beff0525"
     },
     {
+      "classification": "parsed_exact",
+      "path": "python_fallback_audit.tsv",
+      "scenario": "forced_failure",
+      "sha256": "53d5098624d00c0874ca31861ff68488b479af7fae6e1183cf2ed88c6540ec3d"
+    },
+    {
       "canonicalize": [
         "workspace_root",
         "elapsed_seconds"
@@ -218,7 +224,7 @@
       "classification": "canonicalized_html_log",
       "path": "rust_stage_selection.log",
       "scenario": "forced_failure",
-      "sha256": "ee22c1e42811aa3f0ad44421b52ee38b0ae1db0b1eaf8ae3ce4007afebc6ff79"
+      "sha256": "115e54f06f4c232aea5d9975892afad91404132d7f8d6e4ffc0849d54521c088"
     },
     {
       "canonicalize": [
@@ -228,7 +234,7 @@
       "classification": "canonicalized_html_log",
       "path": "workflow.log",
       "scenario": "forced_failure",
-      "sha256": "9317ce173a10f786f1ff98fb9ac49f599497d50c5148d6e03c336777f69d994c"
+      "sha256": "fa0585528a7ff33c727d77b236c84a7a0af9aeb3eaf441b8b550d3a5bf2bd7dd"
     },
     {
       "classification": "intentionally_absent",
@@ -331,7 +337,7 @@
       "classification": "canonicalized_html_log",
       "path": "output/logs/02_dual_barcode.log",
       "scenario": "full",
-      "sha256": "9e4073fd209ec933048fcd4ea8319e9ebc8ced2c76c5ff7d22321a2d7abc06ec"
+      "sha256": "fe43f237f5b6f7e24d91efc0b9d4bf7bd6a335e0d19c300c661e353c56e7dfaa"
     },
     {
       "classification": "parsed_exact",
@@ -436,6 +442,12 @@
       "sha256": "18400be49271378bd0e6955da6c92e7a5b0d9bbeabd1537ff798f525beff0525"
     },
     {
+      "classification": "parsed_exact",
+      "path": "python_fallback_audit.tsv",
+      "scenario": "full",
+      "sha256": "53d5098624d00c0874ca31861ff68488b479af7fae6e1183cf2ed88c6540ec3d"
+    },
+    {
       "canonicalize": [
         "workspace_root",
         "elapsed_seconds"
@@ -443,7 +455,7 @@
       "classification": "canonicalized_html_log",
       "path": "rust_stage_selection.log",
       "scenario": "full",
-      "sha256": "ee22c1e42811aa3f0ad44421b52ee38b0ae1db0b1eaf8ae3ce4007afebc6ff79"
+      "sha256": "43e16d24318a2967312c87172df37a052285c85299580a81d2bd746c7f78ccbc"
     },
     {
       "canonicalize": [
@@ -453,7 +465,7 @@
       "classification": "canonicalized_html_log",
       "path": "workflow.log",
       "scenario": "full",
-      "sha256": "a0e1b8b4f2702c82b99db60e740e56ffc0ca0a4d61a59ec62c23a86ea677e605"
+      "sha256": "c96dbab0e40d9f19320842033d2c7e8471d08e2eec71b99d1bfc577c74ce0abe"
     },
     {
       "classification": "intentionally_absent",
@@ -508,7 +520,7 @@
       "required_tags": [],
       "samtools": ".conda-env/bin/samtools",
       "scenario": "light",
-      "sha256": "55bf70d1b17fe3fd5920fe0930b2e5e6e4464a06b2d9a4bf2292d1bcfb746e43"
+      "sha256": "8479a1d249bba105cbd0e95059df005f5dd02df411f7357ce313128432d76988"
     },
     {
       "classification": "byte_exact",
@@ -537,7 +549,7 @@
       ],
       "samtools": ".conda-env/bin/samtools",
       "scenario": "light",
-      "sha256": "f1ac999fa09b51352eeb993429a7e58c393d0f4639ded2d920d9826c5ac19d70"
+      "sha256": "6574ea16133fa82e11910258dc4d2dc5ee028397da2108ab181d2d1a9e905610"
     },
     {
       "classification": "byte_exact",
@@ -677,7 +689,7 @@
       ],
       "samtools": ".conda-env/bin/samtools",
       "scenario": "light",
-      "sha256": "cdb459748d7296523a7045b56f1270c9841d9c25b8f0fbeb0cd844e24bf26303"
+      "sha256": "aba97a1e424200e98bae369ad8f6028575398fee3615038042cf3aaa3d895ae3"
     },
     {
       "classification": "byte_exact",
@@ -708,7 +720,7 @@
       ],
       "samtools": ".conda-env/bin/samtools",
       "scenario": "light",
-      "sha256": "d578e8e14de693f0ea83b93be5987e3908ac9aceb9dfa4748c91551a6b67c43f"
+      "sha256": "df56ca1579822936425d4646d170e8b4994efce5955cffc3d13d8e65150ae766"
     },
     {
       "classification": "byte_exact",
@@ -924,6 +936,12 @@
       "sha256": "18400be49271378bd0e6955da6c92e7a5b0d9bbeabd1537ff798f525beff0525"
     },
     {
+      "classification": "parsed_exact",
+      "path": "python_fallback_audit.tsv",
+      "scenario": "light",
+      "sha256": "53d5098624d00c0874ca31861ff68488b479af7fae6e1183cf2ed88c6540ec3d"
+    },
+    {
       "canonicalize": [
         "workspace_root",
         "elapsed_seconds"
@@ -931,7 +949,7 @@
       "classification": "canonicalized_html_log",
       "path": "rust_stage_selection.log",
       "scenario": "light",
-      "sha256": "ee22c1e42811aa3f0ad44421b52ee38b0ae1db0b1eaf8ae3ce4007afebc6ff79"
+      "sha256": "5c4f7c8192c1bd6346d20de9e5cbafc881dfee616122a8cff6fe398a5fe0fbb1"
     },
     {
       "canonicalize": [
@@ -941,7 +959,7 @@
       "classification": "canonicalized_html_log",
       "path": "workflow.log",
       "scenario": "light",
-      "sha256": "250cd93424ceec06bae2518596ba44bffaab70d0416b7f3ad02506ea1e491685"
+      "sha256": "70bd5fe8c6f28d046c78d4093542d12d06d2945ec2746bbabc76d3dc2eb66c08"
     },
     {
       "classification": "intentionally_absent",
@@ -982,7 +1000,7 @@
       "required_tags": [],
       "samtools": ".conda-env/bin/samtools",
       "scenario": "malformed_input",
-      "sha256": "fe4883be6e488b6d95911a046284d3c6f914d258a1c7d6712aa5d3e97843b8ec"
+      "sha256": "afaed69eb63a2cae714652c499b4bb249b6a7664616a3f27c7b6e08766fe22a3"
     },
     {
       "classification": "byte_exact",
@@ -1145,6 +1163,12 @@
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
+      "classification": "parsed_exact",
+      "path": "python_fallback_audit.tsv",
+      "scenario": "malformed_input",
+      "sha256": "53d5098624d00c0874ca31861ff68488b479af7fae6e1183cf2ed88c6540ec3d"
+    },
+    {
       "canonicalize": [
         "workspace_root",
         "elapsed_seconds"
@@ -1152,7 +1176,7 @@
       "classification": "canonicalized_html_log",
       "path": "rust_stage_selection.log",
       "scenario": "malformed_input",
-      "sha256": "ee22c1e42811aa3f0ad44421b52ee38b0ae1db0b1eaf8ae3ce4007afebc6ff79"
+      "sha256": "cd1f07e9de9baa4079294d9d9a8f78fd07390b6747ec178c7cc8de76c1458d82"
     },
     {
       "canonicalize": [
@@ -1162,7 +1186,7 @@
       "classification": "canonicalized_html_log",
       "path": "workflow.log",
       "scenario": "malformed_input",
-      "sha256": "1afefec658a60526552cbb9878ba1ad0c36059d2ed17ed5e6fcfbce53f5e2695"
+      "sha256": "cd9b16dbe11b585a90b38ce110a2595c229e011480323a8fb8dafb191d0e60ae"
     },
     {
       "classification": "intentionally_absent",
@@ -1611,6 +1635,12 @@
       "sha256": "18400be49271378bd0e6955da6c92e7a5b0d9bbeabd1537ff798f525beff0525"
     },
     {
+      "classification": "parsed_exact",
+      "path": "python_fallback_audit.tsv",
+      "scenario": "skip_glycine",
+      "sha256": "53d5098624d00c0874ca31861ff68488b479af7fae6e1183cf2ed88c6540ec3d"
+    },
+    {
       "canonicalize": [
         "workspace_root",
         "elapsed_seconds"
@@ -1618,7 +1648,7 @@
       "classification": "canonicalized_html_log",
       "path": "rust_stage_selection.log",
       "scenario": "skip_glycine",
-      "sha256": "ee22c1e42811aa3f0ad44421b52ee38b0ae1db0b1eaf8ae3ce4007afebc6ff79"
+      "sha256": "49cf06f3657a9044ac4191e056ecedea2dd950f12f27025651c8672570548e0e"
     },
     {
       "canonicalize": [
@@ -1628,7 +1658,7 @@
       "classification": "canonicalized_html_log",
       "path": "workflow.log",
       "scenario": "skip_glycine",
-      "sha256": "c513326f374f89fb70e1de88dfff4dcd511e52d35937d6ff3d59ac8e7d607988"
+      "sha256": "ca3ae4fa37dc49d348eb53b608f90098084a0505844bcce10ea8a32936724ff8"
     },
     {
       "classification": "intentionally_absent",
@@ -2050,6 +2080,12 @@
       "sha256": "18400be49271378bd0e6955da6c92e7a5b0d9bbeabd1537ff798f525beff0525"
     },
     {
+      "classification": "parsed_exact",
+      "path": "python_fallback_audit.tsv",
+      "scenario": "skip_isoform",
+      "sha256": "53d5098624d00c0874ca31861ff68488b479af7fae6e1183cf2ed88c6540ec3d"
+    },
+    {
       "canonicalize": [
         "workspace_root",
         "elapsed_seconds"
@@ -2057,7 +2093,7 @@
       "classification": "canonicalized_html_log",
       "path": "rust_stage_selection.log",
       "scenario": "skip_isoform",
-      "sha256": "ee22c1e42811aa3f0ad44421b52ee38b0ae1db0b1eaf8ae3ce4007afebc6ff79"
+      "sha256": "e5a877e83826f4c776082e52e884880da362b976e9d0ff27d1f5d47c0cd68856"
     },
     {
       "canonicalize": [
@@ -2067,7 +2103,7 @@
       "classification": "canonicalized_html_log",
       "path": "workflow.log",
       "scenario": "skip_isoform",
-      "sha256": "4b47d3459341ca8844337952c4935876d70a725664f19e180c5f946ecbe3edc6"
+      "sha256": "73ba6164e3bd4561368f6f98a739be9bd7474bfec5ce8075c1806cc753111ebb"
     },
     {
       "classification": "intentionally_absent",
@@ -2200,7 +2236,7 @@
       "classification": "canonicalized_html_log",
       "path": "output/logs/02_dual_barcode.log",
       "scenario": "stale_output",
-      "sha256": "9e4073fd209ec933048fcd4ea8319e9ebc8ced2c76c5ff7d22321a2d7abc06ec"
+      "sha256": "fe43f237f5b6f7e24d91efc0b9d4bf7bd6a335e0d19c300c661e353c56e7dfaa"
     },
     {
       "canonicalize": [
@@ -2517,6 +2553,12 @@
       "sha256": "18400be49271378bd0e6955da6c92e7a5b0d9bbeabd1537ff798f525beff0525"
     },
     {
+      "classification": "parsed_exact",
+      "path": "python_fallback_audit.tsv",
+      "scenario": "stale_output",
+      "sha256": "53d5098624d00c0874ca31861ff68488b479af7fae6e1183cf2ed88c6540ec3d"
+    },
+    {
       "canonicalize": [
         "workspace_root",
         "elapsed_seconds"
@@ -2524,7 +2566,7 @@
       "classification": "canonicalized_html_log",
       "path": "rust_stage_selection.log",
       "scenario": "stale_output",
-      "sha256": "ee22c1e42811aa3f0ad44421b52ee38b0ae1db0b1eaf8ae3ce4007afebc6ff79"
+      "sha256": "49cf06f3657a9044ac4191e056ecedea2dd950f12f27025651c8672570548e0e"
     },
     {
       "canonicalize": [
@@ -2534,7 +2576,7 @@
       "classification": "canonicalized_html_log",
       "path": "workflow.log",
       "scenario": "stale_output",
-      "sha256": "12dab91ae87d8eba30003e3545ed2415c21fb9c8a3e81dc147056a915e55d59e"
+      "sha256": "3424af8f558badbc3cbf5d4a0b5be561edd02f44f55b88eb5240d5321ff4b42c"
     },
     {
       "classification": "intentionally_absent",
@@ -2727,6 +2769,12 @@
       "sha256": "18400be49271378bd0e6955da6c92e7a5b0d9bbeabd1537ff798f525beff0525"
     },
     {
+      "classification": "parsed_exact",
+      "path": "python_fallback_audit.tsv",
+      "scenario": "upstream_only",
+      "sha256": "53d5098624d00c0874ca31861ff68488b479af7fae6e1183cf2ed88c6540ec3d"
+    },
+    {
       "canonicalize": [
         "workspace_root",
         "elapsed_seconds"
@@ -2734,7 +2782,7 @@
       "classification": "canonicalized_html_log",
       "path": "rust_stage_selection.log",
       "scenario": "upstream_only",
-      "sha256": "ee22c1e42811aa3f0ad44421b52ee38b0ae1db0b1eaf8ae3ce4007afebc6ff79"
+      "sha256": "43e16d24318a2967312c87172df37a052285c85299580a81d2bd746c7f78ccbc"
     },
     {
       "canonicalize": [
@@ -2744,7 +2792,7 @@
       "classification": "canonicalized_html_log",
       "path": "workflow.log",
       "scenario": "upstream_only",
-      "sha256": "dc00a56cc8ed8202354f90762fce3ada5dbf921ae747ead088e96d68dba1fe7b"
+      "sha256": "8e799f8f2af1b5ff836b16b005c195dec39f1fd51051c1430701d8b902c6aa35"
     },
     {
       "classification": "intentionally_absent",

@@ -43,6 +43,6 @@ AssignStats { n_total_reads: 24, n_assigned_reads: 24, n_cells_before_min_reads:
 Top cell_read_stats:
 CellReadStat { cell_id: "cell_000001", n_reads: 24 }
 
-[Flora] Total elapsed: 0.01s
+[Flora] Total elapsed: 0.00s
 <REPOSITORY_ROOT>/scripts/generate_knee_plots.py:66: UserWarning: Data has no positive values, and therefore cannot be log-scaled.
   plt.axhline(y=threshold_value, color="r", linestyle="--", label="cell calling threshold")

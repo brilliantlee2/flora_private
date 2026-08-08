@@ -5,23 +5,19 @@ Input 10bp barcode count: 2
 First 3 raw barcodes: ["ACGTACGTAC", "TGCATGCATG"]
 First 3 5p RC barcodes: ["GTACGTACGT", "CATGCATGCA"]
 [run_all] Flora Rust project detected, attempting cargo build --release
-   Compiling edlib_rs v0.1.2 (<REPOSITORY_ROOT>/vendor/edlib_rs-0.1.2)
-   Compiling flora v0.1.0 (<REPOSITORY_ROOT>)
-    Finished `release` profile [optimized] target(s) in 4.26s
-warning: the following packages contain code that will be rejected by a future version of Rust: buf_redux v0.8.4
-note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+[oracle] release binaries already built; preserving invocation wrappers
 [run_all] Step 1/6: alignment-first minimap2 reference alignment
-[M::mm_idx_gen::0.000*18.02] collected minimizers
-[M::mm_idx_gen::0.000*9.01] sorted minimizers
-[M::main::0.000*8.46] loaded/built the index for 1 target sequence(s)
-[M::mm_mapopt_update::0.000*7.83] mid_occ = 77
+[M::mm_idx_gen::0.000*18.35] collected minimizers
+[M::mm_idx_gen::0.000*9.81] sorted minimizers
+[M::main::0.000*9.50] loaded/built the index for 1 target sequence(s)
+[M::mm_mapopt_update::0.000*8.96] mid_occ = 77
 [M::mm_idx_stat] kmer size: 15; skip: 5; is_hpc: 0; #seq: 1
-[M::mm_idx_stat::0.000*7.34] distinct minimizers: 2 (0.00% are singletons); average occurrences: 76.000; average spacing: 2.105; total length: 320
+[M::mm_idx_stat::0.000*8.40] distinct minimizers: 2 (0.00% are singletons); average occurrences: 76.000; average spacing: 2.105; total length: 320
 [mm_idx_bed_read_merge] read 1 introns, 1 of which are non-redundant
-[M::worker_pipeline::0.039*1.05] mapped 24 sequences
+[M::worker_pipeline::0.042*1.05] mapped 24 sequences
 [M::main] Version: 2.31-r1302
 [M::main] CMD: minimap2 -ax splice -uf --MD -t 1 --junc-bed <REPOSITORY_ROOT>/tests/fixtures/workflows/single/ref/genes.bed --secondary=no <REPOSITORY_ROOT>/tests/fixtures/workflows/single/ref/genome.fa <REPOSITORY_ROOT>/tests/fixtures/workflows/single/reads.fastq
-[M::main] Real time: 0.040 sec; CPU: 0.041 sec; Peak RSS: 0.003 GB
+[M::main] Real time: 0.042 sec; CPU: 0.044 sec; Peak RSS: 0.003 GB
 [run_all] Step 1/6 elapsed: 0s
 [run_all] Step 2/6: Flora dual-end barcode split, correction, merge, and cell assignment
 [Flora] Step 1/7: streaming FASTQ and extracting putative 3p/5p barcode tables

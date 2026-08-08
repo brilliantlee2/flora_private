@@ -51,7 +51,21 @@ if ! git -C "${ROOT}" diff --quiet "${LEGACY_COMMIT}" -- \
 fi
 
 TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/flora-legacy-oracles.XXXXXX")"
-trap 'chmod -R u+w "${TMP_ROOT}" 2>/dev/null || true; rm -rf "${TMP_ROOT}"' EXIT
+REAL_BIN_DIR=""
+cleanup() {
+  set +e
+  if [[ -n "${REAL_BIN_DIR}" && -d "${REAL_BIN_DIR}" ]]; then
+    for real_binary in "${REAL_BIN_DIR}"/*; do
+      [[ -f "${real_binary}" ]] || continue
+      stage="$(basename "${real_binary}")"
+      rm -f "${ROOT}/target/release/${stage}"
+      mv "${real_binary}" "${ROOT}/target/release/${stage}"
+    done
+  fi
+  chmod -R u+w "${TMP_ROOT}" 2>/dev/null || true
+  rm -rf "${TMP_ROOT}"
+}
+trap cleanup EXIT
 CURRENT_VERSIONS="${TMP_ROOT}/tool_versions.tsv"
 
 python_packages="$(${ENV_DIR}/bin/python - <<'PY'
@@ -112,6 +126,22 @@ for stage in "${RUST_STAGES[@]}"; do
   fi
 done
 
+REAL_BIN_DIR="${TMP_ROOT}/release-binaries"
+mkdir -p "${REAL_BIN_DIR}"
+for stage in "${RUST_STAGES[@]}"; do
+  mv "${ROOT}/target/release/${stage}" "${REAL_BIN_DIR}/${stage}"
+  cat > "${ROOT}/target/release/${stage}" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+stage="$(basename "$0")"
+real_binary="${FLORA_ORACLE_REAL_BIN_DIR}/${stage}"
+digest="$(shasum -a 256 "${real_binary}" | awk '{print $1}')"
+printf '%s\t%s\t%s\n' "${stage}" "${real_binary}" "${digest}" >> "${FLORA_ORACLE_INVOCATION_LOG}"
+exec "${real_binary}" "$@"
+EOF
+  chmod +x "${ROOT}/target/release/${stage}"
+done
+
 GUARD_BIN="${TMP_ROOT}/guard-bin"
 mkdir -p "${GUARD_BIN}"
 cat > "${GUARD_BIN}/python3" <<'EOF'
@@ -122,11 +152,24 @@ case "${1:-}" in
   */cell_umi_gene_table.py|*/gene_expression.py|*/assign_transcripts.py|\
   */isoform_expression.py|*/rna_qc_metrics.py|*/rna_qc_metrics_mixed.py|\
   */read_qc_summary.py)
+    printf '%s\n' "$1" >> "${FLORA_ORACLE_FALLBACK_LOG}"
     echo "[oracle] forbidden Python fallback selected: $1" >&2
     exit 97
     ;;
 esac
 exec "${FLORA_ORACLE_PYTHON}" "$@"
+EOF
+cat > "${GUARD_BIN}/cargo" <<'EOF'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "build" ]]; then
+  for argument in "$@"; do
+    if [[ "${argument}" == "--release" ]]; then
+      echo "[oracle] release binaries already built; preserving invocation wrappers" >&2
+      exit 0
+    fi
+  done
+fi
+exec "${FLORA_ORACLE_CARGO}" "$@"
 EOF
 cat > "${GUARD_BIN}/bedtools" <<'EOF'
 #!/usr/bin/env bash
@@ -136,9 +179,11 @@ if [[ "${FLORA_FORCE_BEDTOOLS_FAILURE:-0}" == "1" ]]; then
 fi
 exec "${FLORA_ORACLE_BEDTOOLS}" "$@"
 EOF
-chmod +x "${GUARD_BIN}/python3" "${GUARD_BIN}/bedtools"
+chmod +x "${GUARD_BIN}/python3" "${GUARD_BIN}/cargo" "${GUARD_BIN}/bedtools"
 export FLORA_ORACLE_PYTHON="${ENV_DIR}/bin/python"
+export FLORA_ORACLE_CARGO="${ENV_DIR}/bin/cargo"
 export FLORA_ORACLE_BEDTOOLS="${ENV_DIR}/bin/bedtools"
+export FLORA_ORACLE_REAL_BIN_DIR="${REAL_BIN_DIR}"
 export PATH="${GUARD_BIN}:${ENV_DIR}/bin:/usr/bin:/bin"
 
 STAGING="${TMP_ROOT}/staging"
@@ -154,15 +199,10 @@ run_case() {
   local entrypoint="${ROOT}/run_all.sh"
   [[ "${workflow}" == "mixed" ]] && entrypoint="${ROOT}/run_all_mixed_species.sh"
   mkdir -p "${output_dir}"
-  {
-    printf 'stage\trelease_binary\tsha256\n'
-    for stage in "${RUST_STAGES[@]}"; do
-      printf '%s\t%s\t%s\n' \
-        "${stage}" \
-        "${ROOT}/target/release/${stage}" \
-        "$(shasum -a 256 "${ROOT}/target/release/${stage}" | awk '{print $1}')"
-    done
-  } > "${case_dir}/rust_stage_selection.log"
+  export FLORA_ORACLE_INVOCATION_LOG="${case_dir}/rust_stage_invocations.raw.tsv"
+  export FLORA_ORACLE_FALLBACK_LOG="${case_dir}/python_fallbacks.raw.log"
+  : > "${FLORA_ORACLE_INVOCATION_LOG}"
+  : > "${FLORA_ORACLE_FALLBACK_LOG}"
   set +e
   bash "${entrypoint}" "$@" --out-dir "${output_dir}" > "${case_dir}/workflow.log" 2>&1
   local status=$?
@@ -177,10 +217,98 @@ run_case() {
     echo "[oracle] ${workflow}/${scenario}: a Rust release stage used Python fallback" >&2
     exit 1
   fi
-  if [[ "$(wc -l < "${case_dir}/rust_stage_selection.log")" -ne $(( ${#RUST_STAGES[@]} + 1 )) ]]; then
-    echo "[oracle] ${workflow}/${scenario}: incomplete Rust release stage audit" >&2
-    exit 1
-  fi
+  "${ENV_DIR}/bin/python" - \
+    "${scenario}" "${ROOT}" "${REAL_BIN_DIR}" \
+    "${FLORA_ORACLE_INVOCATION_LOG}" "${FLORA_ORACLE_FALLBACK_LOG}" \
+    "${case_dir}/rust_stage_selection.log" \
+    "${case_dir}/python_fallback_audit.tsv" <<'PY'
+import collections
+import hashlib
+import sys
+from pathlib import Path
+
+scenario, root, real_root, invocation_path, fallback_path, evidence_path, audit_path = sys.argv[1:]
+full = {
+    "flora", "generate_26bp_whitelists", "prepare_read_tags", "add_cb_ur_tags",
+    "assign_genes", "add_gene_tags", "cluster_umis_allbam", "cell_umi_gene_table",
+    "gene_expression", "assign_transcripts", "isoform_expression", "rna_qc_metrics",
+    "read_qc_summary",
+}
+expected = {
+    "light": full,
+    "skip_glycine": full,
+    "stale_output": full,
+    "skip_isoform": full - {"assign_transcripts", "isoform_expression"},
+    "upstream_only": {"flora", "generate_26bp_whitelists"},
+    "full": {"flora", "generate_26bp_whitelists"},
+    "malformed_input": {"flora", "generate_26bp_whitelists", "prepare_read_tags"},
+    "forced_failure": {"flora", "generate_26bp_whitelists", "prepare_read_tags", "add_cb_ur_tags"},
+}[scenario]
+
+rows = []
+for line in Path(invocation_path).read_text(encoding="utf-8").splitlines():
+    stage, real_binary, digest = line.split("\t")
+    binary = Path(real_binary)
+    required_binary = Path(real_root) / stage
+    if binary != required_binary or not binary.is_file():
+        raise SystemExit(f"untrusted Rust invocation: {stage} -> {real_binary}")
+    actual_digest = hashlib.sha256(binary.read_bytes()).hexdigest()
+    if digest != actual_digest:
+        raise SystemExit(f"Rust invocation checksum mismatch: {stage}")
+    rows.append((stage, digest))
+
+counts = collections.Counter(stage for stage, _ in rows)
+if set(counts) != expected:
+    raise SystemExit(
+        f"Rust stages differ for {scenario}: expected={sorted(expected)}, actual={sorted(counts)}"
+    )
+digests = {stage: digest for stage, digest in rows}
+lines = ["stage\trelease_binary\tsha256\tinvocation_count"]
+for stage in sorted(expected):
+    lines.append(
+        f"{stage}\t{root}/target/release/{stage}\t{digests[stage]}\t{counts[stage]}"
+    )
+Path(evidence_path).write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+fallbacks = Path(fallback_path).read_text(encoding="utf-8").splitlines()
+if fallbacks:
+    raise SystemExit(f"forbidden Python fallback invocations: {fallbacks}")
+Path(audit_path).write_text("fallback\tcount\npython\t0\n", encoding="utf-8")
+Path(invocation_path).unlink()
+Path(fallback_path).unlink()
+PY
+}
+
+remove_numbered_qc_collision_artifacts() {
+  "${ENV_DIR}/bin/python" - "$1" <<'PY'
+import os
+import re
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+patterns = (
+    re.compile(r"^(cell_umi_gene) [0-9]+(\.tsv)$"),
+    re.compile(r"^(filtered\.sorted) [0-9]+(\.bam)$"),
+    re.compile(r"^(filtered\.sorted\.bam) [0-9]+(\.bai)$"),
+    re.compile(r"^(.+\.single_cell_report) [0-9]+(\.html(?:\.gz)?)$"),
+)
+for qc_dir in root.glob("*/output/qc"):
+    for path in qc_dir.iterdir():
+        match = next((pattern.match(path.name) for pattern in patterns if pattern.match(path.name)), None)
+        if match is None:
+            continue
+        canonical = path.with_name(match.group(1) + match.group(2))
+        if not canonical.exists():
+            raise SystemExit(f"numbered QC artifact lacks canonical peer: {path}")
+        if path.is_symlink() or canonical.is_symlink():
+            identical = path.is_symlink() and canonical.is_symlink() and os.readlink(path) == os.readlink(canonical)
+        else:
+            identical = path.read_bytes() == canonical.read_bytes()
+        if not identical:
+            raise SystemExit(f"numbered QC artifact differs from canonical peer: {path}")
+        path.unlink()
+PY
 }
 
 for workflow in single mixed; do
@@ -222,6 +350,9 @@ for workflow in single mixed; do
     --skip-glycine --full-length-fastq "${fixture}/reads.fastq" "${common[@]}"
   unset FLORA_FORCE_BEDTOOLS_FAILURE
 done
+
+remove_numbered_qc_collision_artifacts "${STAGING}/single"
+remove_numbered_qc_collision_artifacts "${STAGING}/mixed"
 
 for workflow in single mixed; do
   oracle_dir="${SCRIPT_DIR}/${workflow}/oracles"
@@ -266,6 +397,7 @@ PY
   while IFS= read -r -d '' report; do
     gzip -n -9 "${report}"
   done < <(find "${oracle_dir}" -type f -name '*.html' -print0)
+  remove_numbered_qc_collision_artifacts "${oracle_dir}"
 done
 
 "${ENV_DIR}/bin/python" - "${ROOT}" "${SCRIPT_DIR}" <<'PY'
