@@ -414,6 +414,21 @@ class WorkflowComparatorSecurityTests(unittest.TestCase):
             with self.assertRaisesRegex(self.comparator.ComparisonError, "extra"):
                 self.comparator.compare_tree(expected, actual, manifest)
 
+    def test_missing_pinned_samtools_falls_back_to_active_environment(self):
+        configured = {"samtools": ".conda-env/bin/samtools"}
+        previous = os.environ.get("FLORA_SAMTOOLS")
+        os.environ["FLORA_SAMTOOLS"] = "/active/conda/bin/samtools"
+        try:
+            self.assertEqual(
+                "/active/conda/bin/samtools",
+                self.comparator._samtools(configured),
+            )
+        finally:
+            if previous is None:
+                os.environ.pop("FLORA_SAMTOOLS", None)
+            else:
+                os.environ["FLORA_SAMTOOLS"] = previous
+
     def test_rejects_traversal_and_escaping_symlink(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

@@ -171,12 +171,17 @@ def _canonical_text(path: Path, roots: tuple[Path, Path], approved: list[str]) -
 
 
 def _samtools(metadata: dict) -> str:
-    configured = metadata.get("samtools") or os.environ.get("FLORA_SAMTOOLS") or "samtools"
-    path = Path(configured)
-    if not path.is_absolute() and "/" in configured:
-        path = REPOSITORY_ROOT / path
-        return str(path)
-    return configured
+    configured = metadata.get("samtools")
+    if configured:
+        path = Path(configured)
+        if not path.is_absolute() and "/" in configured:
+            path = REPOSITORY_ROOT / path
+        elif not path.is_absolute():
+            return configured
+        if path.is_file():
+            return str(path)
+
+    return os.environ.get("FLORA_SAMTOOLS") or "samtools"
 
 
 def _bam_records(path: Path, metadata: dict) -> list[str]:
