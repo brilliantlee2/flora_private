@@ -92,10 +92,24 @@ install -m 0755 "${BUILD_BIN}" "${STAGE_DIR}/flora"
 } > "${STAGE_DIR}/BUILD_INFO.txt"
 
 # Refuse to publish a partial binary while the shell-to-Rust migration is incomplete.
-"${STAGE_DIR}/flora" run --help >/dev/null \
-  || die "flora run is unavailable; complete the Rust workflow migration before packaging"
-"${STAGE_DIR}/flora" run-mixed --help >/dev/null \
-  || die "flora run-mixed is unavailable; complete the Rust workflow migration before packaging"
+# Checking only the exit status is insufficient: clap may treat an unknown positional
+# command followed by --help as valid help for the analyze compatibility path.
+TOP_LEVEL_HELP="$("${STAGE_DIR}/flora" --help 2>&1)" \
+  || die "failed to inspect the staged flora CLI"
+printf '%s\n' "${TOP_LEVEL_HELP}" | grep -Eq '^  flora run([[:space:]]|$)' \
+  || die "flora run is not advertised by the CLI; complete the Rust workflow migration before packaging"
+printf '%s\n' "${TOP_LEVEL_HELP}" | grep -Eq '^  flora run-mixed([[:space:]]|$)' \
+  || die "flora run-mixed is not advertised by the CLI; complete the Rust workflow migration before packaging"
+
+RUN_HELP="$("${STAGE_DIR}/flora" run --help 2>&1)" \
+  || die "flora run help failed"
+printf '%s\n' "${RUN_HELP}" | grep -Eq '^Usage: flora run([[:space:]]|$)' \
+  || die "flora run resolved to a different command; refusing to package an incomplete workflow"
+
+RUN_MIXED_HELP="$("${STAGE_DIR}/flora" run-mixed --help 2>&1)" \
+  || die "flora run-mixed help failed"
+printf '%s\n' "${RUN_MIXED_HELP}" | grep -Eq '^Usage: flora run-mixed([[:space:]]|$)' \
+  || die "flora run-mixed resolved to a different command; refusing to package an incomplete workflow"
 
 PYTHON_SOURCES=()
 for asset in "${PYTHON_RUNTIME_ASSETS[@]}"; do
