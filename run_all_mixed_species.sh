@@ -17,7 +17,7 @@ Usage:
     [--gene-gtf /path/to/genes.gtf] \
     [--isoform-gtf /path/to/transcripts.gtf] \
     [--sample-id sample] \
-    [--threads 96] \
+    [--threads 32] \
     [--glycine-outdir /path/to/glycine_out] \
     [--glycine-err 0.2,0.25] \
     [--glycine-shift 200,200] \
@@ -31,7 +31,7 @@ Usage:
     [--light-output] \
     [--full-output] \
     [--no-revcomp-whitelist] \
-    [--cluster-threads 8] \
+    [--cluster-threads 16] \
     [--exp-cells 5000] \
     [--min-q 2] \
     [--max-ed 2] \
@@ -253,8 +253,8 @@ GENE_GTF=""
 ISOFORM_GTF=""
 OUT_DIR=""
 SAMPLE_ID="sample"
-THREADS=96
-CLUSTER_THREADS=8
+THREADS=32
+CLUSTER_THREADS=16
 EXP_CELLS=5000
 MIN_Q=2
 MAX_ED=2

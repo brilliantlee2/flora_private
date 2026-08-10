@@ -561,7 +561,8 @@ class WorkflowContractTest(unittest.TestCase):
             }
             with self.subTest(fixture=fixture_name):
                 self.assertEqual(workflow_aliases, aliases)
-                self.assertEqual(96, options["--threads"]["default"])
+                self.assertEqual(32, options["--threads"]["default"])
+                self.assertEqual(16, options["--cluster-threads"]["default"])
                 self.assertTrue(options["--light-output"]["default"])
                 self.assertFalse(options["--full-output"]["default"])
                 self.assertIsNone(options["--python"]["default"])
@@ -574,6 +575,7 @@ class WorkflowContractTest(unittest.TestCase):
 
         analyze = option_map(self.contracts["analyze"])
         self.assertEqual("Flora", analyze["--out_dir"]["default"])
+        self.assertEqual(32, analyze["--threads"]["default"])
         self.assertEqual("fixed_seq", analyze["--barcode_extract_mode"]["default"])
         self.assertEqual(20, analyze["--min_reads_per_cell"]["default"])
         self.assertTrue(analyze["--absorb_unassigned_paired"]["default"])

@@ -104,7 +104,7 @@ cut -f1,2 genome.fa.fai | sort -V > chrom_sizes.tsv
   --out-dir ./sample_output \
   --sample-id sample \
   --threads 32 \
-  --cluster-threads 8 \
+  --cluster-threads 16 \
   --top1-alpha 0.1 \
   --max-ed 2
 ```
@@ -120,7 +120,7 @@ cut -f1,2 genome.fa.fai | sort -V > chrom_sizes.tsv
   --out-dir ./sample_output \
   --sample-id sample \
   --threads 32 \
-  --cluster-threads 8 \
+  --cluster-threads 16 \
   --top1-alpha 0.1 \
   --max-ed 2
 ```
@@ -136,7 +136,7 @@ cut -f1,2 genome.fa.fai | sort -V > chrom_sizes.tsv
   --out-dir ./mixed_output \
   --sample-id mixed_sample \
   --threads 32 \
-  --cluster-threads 8
+  --cluster-threads 16
 ```
 
 ## 初始资源建议

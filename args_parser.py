@@ -93,7 +93,7 @@ def build_parser():
     )
     parser.add_argument("--batch_size", type=int, default=100000)
     parser.add_argument("--assign_batchsize", type=int, default=10000)
-    parser.add_argument("--threads", type=int, default=96)
+    parser.add_argument("--threads", type=int, default=32)
     parser.add_argument("--minQ", type=int, default=2)
     parser.add_argument("--exp_cells", type=int, default=5000)
     parser.add_argument("--max_ed", type=int, default=2)

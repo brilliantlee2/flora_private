@@ -25,7 +25,7 @@ struct Cli {
     #[arg(long = "out_dir", default_value = "Flora")]
     out_dir: PathBuf,
 
-    #[arg(long = "threads", default_value_t = 96)]
+    #[arg(long = "threads", default_value_t = 32)]
     threads: usize,
 
     #[arg(long = "batch_size", default_value_t = 100_000)]

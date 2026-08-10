@@ -104,7 +104,7 @@ The integrated Glycine stage runs automatically:
   --out-dir ./sample_output \
   --sample-id sample \
   --threads 32 \
-  --cluster-threads 8 \
+  --cluster-threads 16 \
   --top1-alpha 0.1 \
   --max-ed 2
 ```
@@ -120,7 +120,7 @@ The integrated Glycine stage runs automatically:
   --out-dir ./sample_output \
   --sample-id sample \
   --threads 32 \
-  --cluster-threads 8 \
+  --cluster-threads 16 \
   --top1-alpha 0.1 \
   --max-ed 2
 ```
@@ -136,7 +136,7 @@ The integrated Glycine stage runs automatically:
   --out-dir ./mixed_output \
   --sample-id mixed_sample \
   --threads 32 \
-  --cluster-threads 8
+  --cluster-threads 16
 ```
 
 ## Initial resource guidance

@@ -81,6 +81,20 @@ class ReleaseLayoutTests(unittest.TestCase):
             self.assertNotIn("--glycine-bin-dir", runner)
             self.assertNotIn("require_cmd glycine", runner)
 
+    def test_workflow_thread_defaults_are_resource_conservative(self):
+        for runner_name in ["run_all.sh", "run_all_mixed_species.sh"]:
+            runner = (PROJECT_ROOT / runner_name).read_text(encoding="utf-8")
+            self.assertIn("THREADS=32", runner)
+            self.assertIn("CLUSTER_THREADS=16", runner)
+            self.assertIn("[--threads 32]", runner)
+            self.assertIn("[--cluster-threads 16]", runner)
+
+        rust_main = (PROJECT_ROOT / "src/main.rs").read_text(encoding="utf-8")
+        self.assertIn('#[arg(long = "threads", default_value_t = 32)]', rust_main)
+
+        legacy_parser = (PROJECT_ROOT / "args_parser.py").read_text(encoding="utf-8")
+        self.assertIn('parser.add_argument("--threads", type=int, default=32)', legacy_parser)
+
     def test_readmes_have_language_switches_and_core_commands(self):
         public_docs = PROJECT_ROOT / "docs" / "repository-templates" / "public"
         english = (public_docs / "README.md").read_text(encoding="utf-8")
