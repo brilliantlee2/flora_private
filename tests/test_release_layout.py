@@ -95,6 +95,33 @@ class ReleaseLayoutTests(unittest.TestCase):
         legacy_parser = (PROJECT_ROOT / "args_parser.py").read_text(encoding="utf-8")
         self.assertIn('parser.add_argument("--threads", type=int, default=32)', legacy_parser)
 
+    def test_mixed_python_qc_fallback_accepts_runner_mode_flag(self):
+        mixed_qc = (PROJECT_ROOT / "scripts/rna_qc_metrics_mixed.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('"--mixed-species"', mixed_qc)
+
+    def test_mixed_python_dependencies_are_compiled_and_embedded(self):
+        runner = (PROJECT_ROOT / "run_all_mixed_species.sh").read_text(
+            encoding="utf-8"
+        )
+        build_script = (PROJECT_ROOT / "build.rs").read_text(encoding="utf-8")
+        runtime = (PROJECT_ROOT / "src/workflow_runtime.rs").read_text(
+            encoding="utf-8"
+        )
+        prefix = "for script in "
+        script_line = next(
+            line for line in runner.splitlines() if line.startswith(prefix)
+        )
+        script_names = script_line[len(prefix) :].removesuffix("; do").split()
+
+        self.assertGreater(len(script_names), 0)
+        for script_name in script_names:
+            with self.subTest(script=script_name):
+                self.assertTrue((PROJECT_ROOT / "scripts" / script_name).is_file())
+                self.assertIn(f'"scripts/{script_name}"', build_script)
+                self.assertIn(f'"{script_name}c"', runtime)
+
     def test_readmes_have_language_switches_and_core_commands(self):
         public_docs = PROJECT_ROOT / "docs" / "repository-templates" / "public"
         english = (public_docs / "README.md").read_text(encoding="utf-8")

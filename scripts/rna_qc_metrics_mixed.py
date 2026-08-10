@@ -51,6 +51,11 @@ def parse_args():
         default=None,
         help="Optional Glycine stdout/stderr log. When present, the top-level Glycine Full-length count is used for full-length/pass-read metrics.",
     )
+    parser.add_argument(
+        "--mixed-species",
+        action="store_true",
+        help="Compatibility flag supplied by the mixed-species workflow.",
+    )
     return parser.parse_args()
 
 
