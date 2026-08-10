@@ -12,6 +12,7 @@ fi
 mkdir -p "${DEST_DIR}/licenses"
 install -m 0644 "${ROOT_DIR}/docs/repository-templates/public/README.md" "${DEST_DIR}/README.md"
 install -m 0644 "${ROOT_DIR}/docs/repository-templates/public/README_zh-CN.md" "${DEST_DIR}/README_zh-CN.md"
+install -m 0644 "${ROOT_DIR}/docs/repository-templates/public/RELEASE_NOTES_v0.1.0.md" "${DEST_DIR}/RELEASE_NOTES_v0.1.0.md"
 install -m 0644 "${ROOT_DIR}/docs/repository-templates/public/.gitignore" "${DEST_DIR}/.gitignore"
 install -m 0644 "${ROOT_DIR}/THIRD_PARTY_NOTICES.md" "${DEST_DIR}/THIRD_PARTY_NOTICES.md"
 install -m 0644 "${ROOT_DIR}/licenses/Glycine-MIT.txt" "${DEST_DIR}/licenses/Glycine-MIT.txt"

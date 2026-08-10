@@ -239,11 +239,20 @@ pub fn run_pipeline(config: &PipelineConfig) -> Result<PipelineSummary> {
     let wl5: HashSet<String> = observed_wl5.into_iter().collect();
     let wl3_index = BarcodeIndex::new(wl3.into_iter());
     let wl5_index = BarcodeIndex::new(wl5.into_iter());
-    let correction_cache_3p = build_correction_cache(&putative, true, &wl3_index, config.max_ed, config.min_q);
-    let correction_cache_5p = build_correction_cache(&putative, false, &wl5_index, config.max_ed, config.min_q);
+    let correction_cache_3p =
+        build_correction_cache(&putative, true, &wl3_index, config.max_ed, config.min_q);
+    let correction_cache_5p =
+        build_correction_cache(&putative, false, &wl5_index, config.max_ed, config.min_q);
     let corrected: Vec<CorrectedRead> = putative
         .par_iter()
-        .map(|row| correct_from_caches(row, &correction_cache_3p, &correction_cache_5p, config.min_q))
+        .map(|row| {
+            correct_from_caches(
+                row,
+                &correction_cache_3p,
+                &correction_cache_5p,
+                config.min_q,
+            )
+        })
         .collect();
     if config.save_intermediate {
         write_corrected(config.out_dir.join("BC_corrected.csv"), &corrected)?;
@@ -307,7 +316,11 @@ pub fn run_pipeline(config: &PipelineConfig) -> Result<PipelineSummary> {
         config.dominance_min,
         config.absorb_unassigned_paired,
     );
-    let n_cells_before_min_reads = assigned_all.iter().map(|r| r.cell_id.as_str()).collect::<HashSet<_>>().len();
+    let n_cells_before_min_reads = assigned_all
+        .iter()
+        .map(|r| r.cell_id.as_str())
+        .collect::<HashSet<_>>()
+        .len();
     let assigned = filter_min_reads(assigned_all, config.min_reads_per_cell);
     write_csv(config.out_dir.join("read_assigned_cell.csv"), &assigned)?;
     let cell_read_stats = collect_cell_stats(&assigned);
@@ -331,7 +344,10 @@ pub fn run_pipeline(config: &PipelineConfig) -> Result<PipelineSummary> {
         n_core_barcodes: core_barcodes,
     };
     write_assign_stats(config.out_dir.join("assign_stats.tsv"), &assign_stats)?;
-    write_barcode_validity(config.out_dir.join("barcode_validity_summary.tsv"), &barcode_validity_stats)?;
+    write_barcode_validity(
+        config.out_dir.join("barcode_validity_summary.tsv"),
+        &barcode_validity_stats,
+    )?;
     log_step_elapsed(6, 7, step_t0);
 
     println!("[Flora] Step 7/7: optional FASTQ outputs");
@@ -420,7 +436,8 @@ fn extract_putative_rows(
 }
 
 fn write_csv<T: Serialize>(path: PathBuf, rows: &[T]) -> Result<()> {
-    let mut writer = csv::Writer::from_path(&path).with_context(|| format!("write {}", path.display()))?;
+    let mut writer =
+        csv::Writer::from_path(&path).with_context(|| format!("write {}", path.display()))?;
     for row in rows {
         writer.serialize(row)?;
     }
@@ -452,9 +469,23 @@ fn write_filtered_fastq_gz(
 
 fn write_corrected(path: PathBuf, rows: &[CorrectedRead]) -> Result<()> {
     let mut writer = csv::Writer::from_path(path)?;
-    writer.write_record(["read_id", "putative_umi", "strand", "BC3_corrected", "BC5_corrected", "putative_umi_5p"])?;
+    writer.write_record([
+        "read_id",
+        "putative_umi",
+        "strand",
+        "BC3_corrected",
+        "BC5_corrected",
+        "putative_umi_5p",
+    ])?;
     for r in rows {
-        writer.write_record([&r.read_id, &r.putative_umi, "+", &r.bc3_corrected, &r.bc5_corrected, &r.putative_umi_5p])?;
+        writer.write_record([
+            &r.read_id,
+            &r.putative_umi,
+            "+",
+            &r.bc3_corrected,
+            &r.bc5_corrected,
+            &r.putative_umi_5p,
+        ])?;
     }
     writer.flush()?;
     Ok(())
@@ -642,7 +673,11 @@ fn numpy_linear_quantile(values_sorted_asc: &[usize], q: f64) -> f64 {
     values_sorted_asc[lo] as f64 * (1.0 - frac) + values_sorted_asc[hi] as f64 * frac
 }
 
-fn select_observed_whitelist(counts: &HashMap<String, usize>, full: &HashSet<String>, exp_cells: usize) -> Vec<String> {
+fn select_observed_whitelist(
+    counts: &HashMap<String, usize>,
+    full: &HashSet<String>,
+    exp_cells: usize,
+) -> Vec<String> {
     let filtered: Vec<(&String, usize)> = counts
         .iter()
         .filter(|(bc, _)| full.contains(*bc))
@@ -770,7 +805,12 @@ fn canonical_edge_umi_key(r: &CleanRead) -> String {
     }
 }
 
-fn resolve_pair_min(mut counts: Vec<usize>, pair_min: Option<usize>, floor: usize, q: f64) -> (usize, String) {
+fn resolve_pair_min(
+    mut counts: Vec<usize>,
+    pair_min: Option<usize>,
+    floor: usize,
+    q: f64,
+) -> (usize, String) {
     if let Some(v) = pair_min {
         return (v, "manual".to_string());
     }
@@ -813,8 +853,12 @@ fn build_pair_counts(
             support_umis: umis_by_pair.get(&(a, b)).map_or(0, HashSet::len),
         })
         .collect();
-    let (min_support, pair_min_mode) =
-        resolve_pair_min(all_rows.iter().map(|x| x.support_reads).collect(), pair_min, floor, q);
+    let (min_support, pair_min_mode) = resolve_pair_min(
+        all_rows.iter().map(|x| x.support_reads).collect(),
+        pair_min,
+        floor,
+        q,
+    );
     let min_kept: Vec<_> = all_rows
         .into_iter()
         .filter(|row| row.support_reads >= min_support)
@@ -861,8 +905,15 @@ fn filter_pairs_three_stage(
     let (paired, single) = cleaned
         .into_iter()
         .partition::<Vec<_>, _>(|r| !r.bc5n.is_empty() && !r.bc3n.is_empty());
-    let (pair_counts, pair_stats, prune_stats) =
-        build_pair_counts(&paired, pair_min, floor, q, top1_alpha, top1_alpha_umi, require_pass_both_ends);
+    let (pair_counts, pair_stats, prune_stats) = build_pair_counts(
+        &paired,
+        pair_min,
+        floor,
+        q,
+        top1_alpha,
+        top1_alpha_umi,
+        require_pass_both_ends,
+    );
     let kept_pairs: HashSet<(String, String)> = pair_counts
         .iter()
         .map(|p| ordered_pair(&p.bc5n, &p.bc3n))
@@ -888,11 +939,9 @@ fn assign_cells(
             matches!(
                 component_category(component),
                 "self_only" | "pair_only" | "triangle_only" | "clique4_only" | "clique5_only"
-            ) || (
-                include_other_components
-                    && component_category(component) == "other"
-                    && component.nodes.len() <= max_other_component_barcodes
-            )
+            ) || (include_other_components
+                && component_category(component) == "other"
+                && component.nodes.len() <= max_other_component_barcodes)
         })
         .collect::<Vec<_>>();
     core_components.sort_by(|a, b| a.nodes.cmp(&b.nodes));
@@ -978,7 +1027,11 @@ fn graph_components(rows: &[PairCount]) -> Vec<GraphComponent> {
 fn component_category(component: &GraphComponent) -> &'static str {
     let n = component.nodes.len();
     let m = component.edges.len();
-    let m_self = component.edges.iter().filter(|edge| edge.u == edge.v).count();
+    let m_self = component
+        .edges
+        .iter()
+        .filter(|edge| edge.u == edge.v)
+        .count();
     let m_no_self = m - m_self;
     if n == 1 && m == 1 && m_self == 1 {
         "self_only"
@@ -998,9 +1051,15 @@ fn component_category(component: &GraphComponent) -> &'static str {
 fn top1_map_from_metric(rows: &[PairCount], read_metric: bool) -> HashMap<String, usize> {
     let mut out = HashMap::default();
     for row in rows {
-        let value = if read_metric { row.support_reads } else { row.support_umis };
-        *out.entry(row.bc5n.clone()).or_insert(0) = out.get(&row.bc5n).copied().unwrap_or(0).max(value);
-        *out.entry(row.bc3n.clone()).or_insert(0) = out.get(&row.bc3n).copied().unwrap_or(0).max(value);
+        let value = if read_metric {
+            row.support_reads
+        } else {
+            row.support_umis
+        };
+        *out.entry(row.bc5n.clone()).or_insert(0) =
+            out.get(&row.bc5n).copied().unwrap_or(0).max(value);
+        *out.entry(row.bc3n.clone()).or_insert(0) =
+            out.get(&row.bc3n).copied().unwrap_or(0).max(value);
     }
     out
 }
@@ -1013,8 +1072,16 @@ fn endpoint_pass_with_umi(
     alpha_reads: f64,
     alpha_umis: f64,
 ) -> bool {
-    let read_rel = if top_reads == 0 { 0.0 } else { edge_reads as f64 / top_reads as f64 };
-    let umi_rel = if top_umis == 0 { 0.0 } else { edge_umis as f64 / top_umis as f64 };
+    let read_rel = if top_reads == 0 {
+        0.0
+    } else {
+        edge_reads as f64 / top_reads as f64
+    };
+    let umi_rel = if top_umis == 0 {
+        0.0
+    } else {
+        edge_umis as f64 / top_umis as f64
+    };
     read_rel >= alpha_reads
         || (umi_rel >= alpha_umis && read_rel >= 0.5 * alpha_reads)
         || (read_rel >= 0.75 * alpha_reads && umi_rel >= 0.5 * alpha_umis)
@@ -1034,22 +1101,58 @@ fn motif_component_passes(component: &GraphComponent) -> bool {
     if category == "self_only" {
         return true;
     }
-    let self_edges = component.edges.iter().filter(|e| e.u == e.v).collect::<Vec<_>>();
-    let pair_edges = component.edges.iter().filter(|e| e.u != e.v).collect::<Vec<_>>();
+    let self_edges = component
+        .edges
+        .iter()
+        .filter(|e| e.u == e.v)
+        .collect::<Vec<_>>();
+    let pair_edges = component
+        .edges
+        .iter()
+        .filter(|e| e.u != e.v)
+        .collect::<Vec<_>>();
     let mut self_map: HashMap<&str, &EdgeRecord> = HashMap::default();
     for edge in &self_edges {
         self_map.insert(edge.u.as_str(), *edge);
     }
     let pairwise_fraction = |read_metric: bool| -> f64 {
-        let pair_sum: usize = pair_edges.iter().map(|e| if read_metric { e.support_reads } else { e.support_umis }).sum();
-        let self_sum: usize = self_edges.iter().map(|e| if read_metric { e.support_reads } else { e.support_umis }).sum();
+        let pair_sum: usize = pair_edges
+            .iter()
+            .map(|e| {
+                if read_metric {
+                    e.support_reads
+                } else {
+                    e.support_umis
+                }
+            })
+            .sum();
+        let self_sum: usize = self_edges
+            .iter()
+            .map(|e| {
+                if read_metric {
+                    e.support_reads
+                } else {
+                    e.support_umis
+                }
+            })
+            .sum();
         let total = pair_sum + self_sum;
-        if total == 0 { 0.0 } else { pair_sum as f64 / total as f64 }
+        if total == 0 {
+            0.0
+        } else {
+            pair_sum as f64 / total as f64
+        }
     };
     let weakest_to_median = |read_metric: bool| -> f64 {
         let mut vals = pair_edges
             .iter()
-            .map(|e| if read_metric { e.support_reads } else { e.support_umis })
+            .map(|e| {
+                if read_metric {
+                    e.support_reads
+                } else {
+                    e.support_umis
+                }
+            })
             .filter(|v| *v > 0)
             .collect::<Vec<_>>();
         if vals.is_empty() {
@@ -1057,26 +1160,52 @@ fn motif_component_passes(component: &GraphComponent) -> bool {
         }
         vals.sort_unstable();
         let med = median_usize(&vals);
-        if med <= 0.0 { 0.0 } else { vals[0] as f64 / med }
+        if med <= 0.0 {
+            0.0
+        } else {
+            vals[0] as f64 / med
+        }
     };
     let node_pair_fraction = |node: &str, read_metric: bool| -> f64 {
         let pair_sum: usize = pair_edges
             .iter()
             .filter(|e| e.u == node || e.v == node)
-            .map(|e| if read_metric { e.support_reads } else { e.support_umis })
+            .map(|e| {
+                if read_metric {
+                    e.support_reads
+                } else {
+                    e.support_umis
+                }
+            })
             .sum();
         let self_val = self_map
             .get(node)
-            .map(|e| if read_metric { e.support_reads } else { e.support_umis })
+            .map(|e| {
+                if read_metric {
+                    e.support_reads
+                } else {
+                    e.support_umis
+                }
+            })
             .unwrap_or(0);
         let denom = pair_sum + self_val;
-        if denom == 0 { 0.0 } else { pair_sum as f64 / denom as f64 }
+        if denom == 0 {
+            0.0
+        } else {
+            pair_sum as f64 / denom as f64
+        }
     };
     let nth_incident_pair_to_self = |node: &str, read_metric: bool, nth_largest: usize| -> f64 {
         let mut vals = pair_edges
             .iter()
             .filter(|e| e.u == node || e.v == node)
-            .map(|e| if read_metric { e.support_reads } else { e.support_umis })
+            .map(|e| {
+                if read_metric {
+                    e.support_reads
+                } else {
+                    e.support_umis
+                }
+            })
             .collect::<Vec<_>>();
         vals.sort_unstable_by(|a, b| b.cmp(a));
         if vals.len() <= nth_largest {
@@ -1084,7 +1213,13 @@ fn motif_component_passes(component: &GraphComponent) -> bool {
         }
         let self_val = self_map
             .get(node)
-            .map(|e| if read_metric { e.support_reads } else { e.support_umis })
+            .map(|e| {
+                if read_metric {
+                    e.support_reads
+                } else {
+                    e.support_umis
+                }
+            })
             .unwrap_or(0)
             .max(1);
         vals[nth_largest] as f64 / self_val as f64
@@ -1099,8 +1234,14 @@ fn motif_component_passes(component: &GraphComponent) -> bool {
             let per_node = [&edge.u, &edge.v]
                 .iter()
                 .map(|node| {
-                    let self_r = self_map.get(node.as_str()).map(|e| e.support_reads).unwrap_or(0);
-                    let self_u = self_map.get(node.as_str()).map(|e| e.support_umis).unwrap_or(0);
+                    let self_r = self_map
+                        .get(node.as_str())
+                        .map(|e| e.support_reads)
+                        .unwrap_or(0);
+                    let self_u = self_map
+                        .get(node.as_str())
+                        .map(|e| e.support_umis)
+                        .unwrap_or(0);
                     let read_frac = if edge.support_reads + self_r == 0 {
                         0.0
                     } else {
@@ -1120,14 +1261,18 @@ fn motif_component_passes(component: &GraphComponent) -> bool {
             pair_edges.len() == 3
                 && pairwise_fraction(true).max(pairwise_fraction(false)) >= 0.55
                 && weakest_to_median(true).max(weakest_to_median(false)) >= 0.25
-                && component.nodes.iter().all(|node| node_pair_fraction(node, true).max(node_pair_fraction(node, false)) >= 0.45)
+                && component.nodes.iter().all(|node| {
+                    node_pair_fraction(node, true).max(node_pair_fraction(node, false)) >= 0.45
+                })
         }
         "clique4_only" => {
             pair_edges.len() == 6
                 && pairwise_fraction(true).max(pairwise_fraction(false)) >= 0.65
                 && weakest_to_median(true).max(weakest_to_median(false)) >= 0.18
                 && component.nodes.iter().all(|node| {
-                    nth_incident_pair_to_self(node, true, 1).max(nth_incident_pair_to_self(node, false, 1)) >= 0.25
+                    nth_incident_pair_to_self(node, true, 1)
+                        .max(nth_incident_pair_to_self(node, false, 1))
+                        >= 0.25
                 })
         }
         "clique5_only" => {
@@ -1135,7 +1280,9 @@ fn motif_component_passes(component: &GraphComponent) -> bool {
                 && pairwise_fraction(true).max(pairwise_fraction(false)) >= 0.72
                 && weakest_to_median(true).max(weakest_to_median(false)) >= 0.15
                 && component.nodes.iter().all(|node| {
-                    nth_incident_pair_to_self(node, true, 2).max(nth_incident_pair_to_self(node, false, 2)) >= 0.18
+                    nth_incident_pair_to_self(node, true, 2)
+                        .max(nth_incident_pair_to_self(node, false, 2))
+                        >= 0.18
                 })
         }
         _ => false,
@@ -1160,7 +1307,10 @@ fn prune_edges_structure_aware(
     };
     for component in components {
         let category = component_category(&component);
-        let use_motif = matches!(category, "self_only" | "pair_only" | "triangle_only" | "clique4_only" | "clique5_only");
+        let use_motif = matches!(
+            category,
+            "self_only" | "pair_only" | "triangle_only" | "clique4_only" | "clique5_only"
+        );
         if use_motif {
             stats.small_components_seen += 1;
         }
@@ -1194,7 +1344,11 @@ fn prune_edges_structure_aware(
                 top1_alpha,
                 top1_alpha_umi,
             );
-            if if require_pass_both_ends { pass_u && pass_v } else { pass_u || pass_v } {
+            if if require_pass_both_ends {
+                pass_u && pass_v
+            } else {
+                pass_u || pass_v
+            } {
                 keep.insert(edge_key(&edge.u, &edge.v));
                 stats.edges_kept_by_fallback += 1;
             }
@@ -1230,7 +1384,11 @@ fn compute_top1_dominance(rows: &[PairCount]) -> HashMap<String, Top1Dominance> 
                 barcode,
                 Top1Dominance {
                     top1_partner: top1_partner.clone(),
-                    dominance: if sum_all == 0 { 0.0 } else { *top1_w as f64 / sum_all as f64 },
+                    dominance: if sum_all == 0 {
+                        0.0
+                    } else {
+                        *top1_w as f64 / sum_all as f64
+                    },
                 },
             );
         }
@@ -1245,7 +1403,8 @@ fn assign_reads(
     dominance_min: f64,
     absorb_unassigned_paired: bool,
 ) -> Vec<AssignedRead> {
-    reads.iter()
+    reads
+        .iter()
         .filter_map(|r| {
             let cell_a_5 = barcode_to_cell.get(&r.bc5n).cloned();
             let cell_a_3 = barcode_to_cell.get(&r.bc3n).cloned();
@@ -1265,7 +1424,11 @@ fn assign_reads(
             let cell = if let Some(cell) = cell_a {
                 Some(cell)
             } else if has5 ^ has3 {
-                if has5 { try_absorb(&r.bc5n) } else { try_absorb(&r.bc3n) }
+                if has5 {
+                    try_absorb(&r.bc5n)
+                } else {
+                    try_absorb(&r.bc3n)
+                }
             } else if absorb_unassigned_paired && has5 && has3 {
                 let cell_b5 = try_absorb(&r.bc5n);
                 let cell_b3 = try_absorb(&r.bc3n);
@@ -1369,11 +1532,26 @@ fn write_assign_stats(path: PathBuf, stats: &AssignStats) -> Result<()> {
 
 fn summarize_barcode_validity(rows: &[CorrectedRead]) -> BarcodeValidityStats {
     let total = rows.len();
-    let both = rows.iter().filter(|r| !r.bc3_corrected.is_empty() && !r.bc5_corrected.is_empty()).count();
-    let only3 = rows.iter().filter(|r| !r.bc3_corrected.is_empty() && r.bc5_corrected.is_empty()).count();
-    let only5 = rows.iter().filter(|r| r.bc3_corrected.is_empty() && !r.bc5_corrected.is_empty()).count();
+    let both = rows
+        .iter()
+        .filter(|r| !r.bc3_corrected.is_empty() && !r.bc5_corrected.is_empty())
+        .count();
+    let only3 = rows
+        .iter()
+        .filter(|r| !r.bc3_corrected.is_empty() && r.bc5_corrected.is_empty())
+        .count();
+    let only5 = rows
+        .iter()
+        .filter(|r| r.bc3_corrected.is_empty() && !r.bc5_corrected.is_empty())
+        .count();
     let neither = total - both - only3 - only5;
-    let ratio = |n: usize| if total == 0 { 0.0 } else { n as f64 / total as f64 };
+    let ratio = |n: usize| {
+        if total == 0 {
+            0.0
+        } else {
+            n as f64 / total as f64
+        }
+    };
     BarcodeValidityStats {
         total_rows: total,
         valid_any_n: total - neither,
@@ -1428,8 +1606,18 @@ mod tests {
     #[test]
     fn connected_pairs_assign_same_cell() {
         let pairs = vec![
-            PairCount { bc5n: "A".into(), bc3n: "B".into(), support_reads: 10, support_umis: 1 },
-            PairCount { bc5n: "B".into(), bc3n: "C".into(), support_reads: 10, support_umis: 1 },
+            PairCount {
+                bc5n: "A".into(),
+                bc3n: "B".into(),
+                support_reads: 10,
+                support_umis: 1,
+            },
+            PairCount {
+                bc5n: "B".into(),
+                bc3n: "C".into(),
+                support_reads: 10,
+                support_umis: 1,
+            },
         ];
         let map = assign_cells(&pairs, true, 8);
         assert_eq!(map["A"], map["C"]);

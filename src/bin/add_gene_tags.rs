@@ -16,13 +16,18 @@ struct Cli {
     output: PathBuf,
 }
 
-fn main() -> Result<()> {
+pub fn main() -> Result<()> {
     let cli = Cli::parse();
-    let mut bam = bam::Reader::from_path(&cli.bam).with_context(|| format!("open {}", cli.bam.display()))?;
+    let mut bam =
+        bam::Reader::from_path(&cli.bam).with_context(|| format!("open {}", cli.bam.display()))?;
     let header = bam::Header::from_template(bam.header());
     let mut out = bam::Writer::from_path(&cli.output, &header, bam::Format::Bam)
         .with_context(|| format!("create {}", cli.output.display()))?;
-    let mut lines = BufReader::new(File::open(&cli.gene_assigns).with_context(|| format!("open {}", cli.gene_assigns.display()))?).lines();
+    let mut lines = BufReader::new(
+        File::open(&cli.gene_assigns)
+            .with_context(|| format!("open {}", cli.gene_assigns.display()))?,
+    )
+    .lines();
 
     for rec in bam.records() {
         let mut rec = rec?;
@@ -32,7 +37,11 @@ fn main() -> Result<()> {
         if fields.len() >= 4 {
             let rid = String::from_utf8_lossy(rec.qname()).to_string();
             if rid != fields[0] {
-                anyhow::bail!("BAM and gene assignment reads not ordered: {} != {}", rid, fields[0]);
+                anyhow::bail!(
+                    "BAM and gene assignment reads not ordered: {} != {}",
+                    rid,
+                    fields[0]
+                );
             }
             rec.update_aux(b"GN", bam::record::Aux::String(fields[3]))?;
         }

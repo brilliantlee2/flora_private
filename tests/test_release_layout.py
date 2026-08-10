@@ -44,26 +44,29 @@ class ReleaseLayoutTests(unittest.TestCase):
 
         self.assertIn("--target x86_64-unknown-linux-gnu --bin flora", script)
         self.assertIn('"${STAGE_DIR}/flora"', script)
-        self.assertIn('"${STAGE_DIR}/flora" run --help', script)
-        self.assertIn('"${STAGE_DIR}/flora" run-mixed --help', script)
-        self.assertIn("'^  flora run([[:space:]]|$)'", script)
-        self.assertIn("'^  flora run-mixed([[:space:]]|$)'", script)
-        self.assertIn("'^Usage: flora run([[:space:]]|$)'", script)
-        self.assertIn("'^Usage: flora run-mixed([[:space:]]|$)'", script)
+        self.assertIn('"${STAGE_DIR}/flora" --help', script)
+        self.assertIn('"${STAGE_DIR}/flora" mixed --help', script)
+        self.assertIn("flora [OPTIONS]", script)
+        self.assertIn("flora mixed [OPTIONS]", script)
         self.assertNotIn("RUST_BINS=", script)
         self.assertNotIn('install -m 0755 "${ROOT_DIR}/run_all.sh"', script)
         self.assertNotIn('install -m 0755 "${ROOT_DIR}/run_all_mixed_species.sh"', script)
         self.assertNotIn('"${STAGE_DIR}/target/release"', script)
 
-    def test_binary_release_uses_allowlisted_python_assets(self):
+    def test_binary_release_does_not_stage_runtime_sources(self):
         script = (PROJECT_ROOT / "packaging/build_binary_release.sh").read_text(
             encoding="utf-8"
         )
 
-        self.assertIn("PYTHON_RUNTIME_ASSETS=(", script)
-        self.assertNotIn('for source_path in "${ROOT_DIR}"/scripts/*.py', script)
-        self.assertIn("runtime_manifest.json", script)
-        self.assertIn("compile_python_assets.py", script)
+        self.assertNotIn("PYTHON_RUNTIME_ASSETS=(", script)
+        self.assertNotIn("compile_python_assets.py", script)
+        self.assertNotIn('"${STAGE_DIR}/scripts"', script)
+        runtime = (PROJECT_ROOT / "src/workflow_runtime.rs").read_text(encoding="utf-8")
+        self.assertIn('include_bytes!("../run_all.sh")', runtime)
+        self.assertIn('pyc!("build_report.pyc")', runtime)
+        build_script = (PROJECT_ROOT / "build.rs").read_text(encoding="utf-8")
+        self.assertIn('"scripts/build_report.py"', build_script)
+        self.assertIn("Python 3.11", build_script)
 
     def test_runners_require_report_static_assets(self):
         for runner_name in ["run_all.sh", "run_all_mixed_species.sh"]:
@@ -87,8 +90,8 @@ class ReleaseLayoutTests(unittest.TestCase):
             self.assertIn("README.md", readme)
             self.assertIn("README_zh-CN.md", readme)
             self.assertIn("conda env create -f environment.yml", readme)
-            self.assertIn("bash run_all.sh", readme)
-            self.assertIn("bash run_all_mixed_species.sh", readme)
+            self.assertIn("./flora \\", readme)
+            self.assertIn("./flora mixed \\", readme)
 
         for private_name in ["README.md", "README_zh-CN.md"]:
             private_readme = (PROJECT_ROOT / private_name).read_text(encoding="utf-8")

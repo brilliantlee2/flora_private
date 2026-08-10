@@ -90,7 +90,13 @@ fn find_pos(s: &str, sub: &str) -> isize {
     s.find(sub).map(|pos| pos as isize).unwrap_or(-1)
 }
 
-pub fn extract_putative(rec: &FastqRecord, bc_fixed_3p: &str, umi_fixed_3p: &str, bc_fixed_5p: &str, umi_fixed_5p: &str) -> PutativeRow {
+pub fn extract_putative(
+    rec: &FastqRecord,
+    bc_fixed_3p: &str,
+    umi_fixed_3p: &str,
+    bc_fixed_5p: &str,
+    umi_fixed_5p: &str,
+) -> PutativeRow {
     let (bc3, bc3_loc, q3, umi3, umi3_loc, flanking3, poly_a_start, read_type) =
         extract_3p(rec, bc_fixed_3p, umi_fixed_3p);
     let (bc5, bc5_loc, q5, umi5, umi5_loc) = extract_5p(rec, bc_fixed_5p, umi_fixed_5p);
@@ -112,7 +118,13 @@ pub fn extract_putative(rec: &FastqRecord, bc_fixed_3p: &str, umi_fixed_3p: &str
     }
 }
 
-fn poly_a_trimming_idx(seq: &str, seed: &str, window: usize, min_a: usize, min_tail_len: usize) -> Option<usize> {
+fn poly_a_trimming_idx(
+    seq: &str,
+    seed: &str,
+    window: usize,
+    min_a: usize,
+    min_tail_len: usize,
+) -> Option<usize> {
     let s = seq.to_ascii_uppercase();
     let anchor = s.rfind(seed)?;
     let mut poly_a_start = anchor;
@@ -125,7 +137,10 @@ fn poly_a_trimming_idx(seq: &str, seed: &str, window: usize, min_a: usize, min_t
             continue;
         }
         let left = idx.saturating_sub(window.saturating_sub(1));
-        let a_count = s.as_bytes()[left..=idx].iter().filter(|b| **b == b'A').count();
+        let a_count = s.as_bytes()[left..=idx]
+            .iter()
+            .filter(|b| **b == b'A')
+            .count();
         if a_count >= min_a {
             poly_a_start = idx;
             i -= 1;
@@ -145,7 +160,20 @@ fn poly_a_start_before(rec: &FastqRecord, end: isize) -> Option<isize> {
     poly_a_trimming_idx_neg(&seq_poly_a).map(|idx| idx + end)
 }
 
-fn extract_3p(rec: &FastqRecord, bc_fixed: &str, umi_fixed: &str) -> (String, isize, Option<i32>, String, Option<isize>, String, Option<isize>, u8) {
+fn extract_3p(
+    rec: &FastqRecord,
+    bc_fixed: &str,
+    umi_fixed: &str,
+) -> (
+    String,
+    isize,
+    Option<i32>,
+    String,
+    Option<isize>,
+    String,
+    Option<isize>,
+    u8,
+) {
     let part_seq = slice(&rec.seq, -30, rec.seq.len() as isize);
     let bc_loc = rfind_with_negative(&part_seq, bc_fixed);
     let bc: String;
@@ -226,7 +254,11 @@ fn extract_3p(rec: &FastqRecord, bc_fixed: &str, umi_fixed: &str) -> (String, is
     (bc, bc_loc, q, umi, umi_loc, flank, poly_a_start, read_type)
 }
 
-fn extract_5p(rec: &FastqRecord, bc_fixed: &str, umi_fixed: &str) -> (String, isize, Option<i32>, String, Option<isize>) {
+fn extract_5p(
+    rec: &FastqRecord,
+    bc_fixed: &str,
+    umi_fixed: &str,
+) -> (String, isize, Option<i32>, String, Option<isize>) {
     let part_seq = slice(&rec.seq, 0, 30);
     let bc_loc = find_pos(&part_seq, bc_fixed);
     let bc;
@@ -442,7 +474,13 @@ pub fn correct_one_side_indexed(bc: &str, index: &BarcodeIndex, max_ed: usize) -
     }
 }
 
-pub fn correct_dual(row: &PutativeRow, wl3: &HashSet<String>, wl5: &HashSet<String>, max_ed: usize, min_q: i32) -> CorrectedRead {
+pub fn correct_dual(
+    row: &PutativeRow,
+    wl3: &HashSet<String>,
+    wl5: &HashSet<String>,
+    max_ed: usize,
+    min_q: i32,
+) -> CorrectedRead {
     let mut bc3 = row.putative_bc.clone();
     let mut bc5 = row.putative_bc_5p.clone();
     let mut umi3 = row.putative_umi.clone();
@@ -455,8 +493,16 @@ pub fn correct_dual(row: &PutativeRow, wl3: &HashSet<String>, wl5: &HashSet<Stri
         bc5.clear();
         umi5.clear();
     }
-    let c3 = if wl3.contains(&bc3) { bc3 } else { correct_one_side(&bc3, wl3, max_ed) };
-    let c5 = if wl5.contains(&bc5) { bc5 } else { correct_one_side(&bc5, wl5, max_ed) };
+    let c3 = if wl3.contains(&bc3) {
+        bc3
+    } else {
+        correct_one_side(&bc3, wl3, max_ed)
+    };
+    let c5 = if wl5.contains(&bc5) {
+        bc5
+    } else {
+        correct_one_side(&bc5, wl5, max_ed)
+    };
     CorrectedRead {
         read_id: row.read_id.clone(),
         putative_umi: if c3.is_empty() { String::new() } else { umi3 },
@@ -519,13 +565,17 @@ mod tests {
     fn indexed_correction_finds_nearby_barcode() {
         let index = BarcodeIndex::new(["AAAACCCC".to_string(), "TTTTGGGG".to_string()]);
         assert_eq!(correct_one_side_indexed("AAAACCCA", &index, 1), "AAAACCCC");
-        assert_eq!(correct_one_side_indexed("TAAAACCCCA", &index, 1), "AAAACCCC");
+        assert_eq!(
+            correct_one_side_indexed("TAAAACCCCA", &index, 1),
+            "AAAACCCC"
+        );
         assert_eq!(correct_one_side_indexed("CCCCCCCC", &index, 1), "");
     }
 
     #[test]
     fn extracts_exact_5p_and_3p_barcodes() {
-        let seq = "AAAAAAAAAACCTTCCGGGGGGGGGGCAGCATTTTTTTTTTAAAAAAAAGATCTCCCCCCCCCCGCTACCTTTTTTTTTT";
+        let seq =
+            "AAAAAAAAAACCTTCCGGGGGGGGGGCAGCATTTTTTTTTTAAAAAAAAGATCTCCCCCCCCCCGCTACCTTTTTTTTTT";
         let rec = FastqRecord {
             id: "read1".to_string(),
             seq: seq.to_string(),

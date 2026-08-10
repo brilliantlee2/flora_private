@@ -4,7 +4,10 @@ use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 
 use crate::barcode::bounded_levenshtein;
 
-pub fn cluster_directional(counts: &HashMap<String, usize>, threshold: usize) -> HashMap<String, String> {
+pub fn cluster_directional(
+    counts: &HashMap<String, usize>,
+    threshold: usize,
+) -> HashMap<String, String> {
     let graph = adjacency(counts, threshold);
     let components = connected_components(&graph, counts);
     create_map_to_correct_umi(components)
@@ -21,23 +24,23 @@ fn adjacency(counts: &HashMap<String, usize>, threshold: usize) -> HashMap<Strin
         if i >= j {
             continue;
         }
-            let a = &umis[i];
-            let b = &umis[j];
-            if bounded_levenshtein(a, b, threshold).is_none() {
-                continue;
+        let a = &umis[i];
+        let b = &umis[j];
+        if bounded_levenshtein(a, b, threshold).is_none() {
+            continue;
+        }
+        let ca = counts[a];
+        let cb = counts[b];
+        if ca >= (cb * 2).saturating_sub(1) {
+            if let Some(neighbors) = adj.get_mut(a) {
+                neighbors.push(b.clone());
             }
-            let ca = counts[a];
-            let cb = counts[b];
-            if ca >= (cb * 2).saturating_sub(1) {
-                if let Some(neighbors) = adj.get_mut(a) {
-                    neighbors.push(b.clone());
-                }
+        }
+        if cb >= (ca * 2).saturating_sub(1) {
+            if let Some(neighbors) = adj.get_mut(b) {
+                neighbors.push(a.clone());
             }
-            if cb >= (ca * 2).saturating_sub(1) {
-                if let Some(neighbors) = adj.get_mut(b) {
-                    neighbors.push(a.clone());
-                }
-            }
+        }
     }
     adj
 }
