@@ -2,12 +2,19 @@
 import argparse
 import base64
 import csv
+import hashlib
+import heapq
 import html
 import io
 import json
 import math
+import os
 import re
+import sqlite3
+import sys
+import tempfile
 from collections import Counter, defaultdict
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 import pandas as pd
@@ -15,6 +22,40 @@ import pandas as pd
 
 BARCODE_RANK_MAX_POINTS = 20000
 BEAD_CHUNK_ROWS = 1_000_000
+BARNYARD_ASSIGNMENTS = (
+    "human_singlet",
+    "mouse_singlet",
+    "mixed",
+    "unclassified",
+)
+BARNYARD_REQUIRED_COLUMNS = (
+    "cell_id",
+    "assignment",
+    "umi_human",
+    "umi_mouse",
+    "umi_total",
+)
+BARNYARD_MAX_POINTS = 100_000
+BARNYARD_MAX_POINTS_PER_CLASS = 25_000
+BARNYARD_CHUNK_ROWS = 100_000
+BARNYARD_JS_MAX_SAFE_INTEGER = 9_007_199_254_740_991
+_RUNTIME_INTEGER_DIGIT_LIMIT = sys.get_int_max_str_digits()
+BARNYARD_MAX_INTEGER_DIGITS = min(
+    _RUNTIME_INTEGER_DIGIT_LIMIT or sys.int_info.default_max_str_digits,
+    sys.int_info.default_max_str_digits,
+)
+BARNYARD_SUMMARY_METRICS = (
+    ("total_cells", "Cells after ambient filter", "count"),
+    ("human_singlet_cells", "Human singlets", "count"),
+    ("mouse_singlet_cells", "Mouse singlets", "count"),
+    ("mixed_cells", "Mixed cells", "count"),
+    ("unclassified_cells", "Unclassified cells", "count"),
+    (
+        "cross_species_doublet_rate_among_classified",
+        "Cross-species doublet rate",
+        "rate",
+    ),
+)
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPORT_TEMPLATE_PATH = SCRIPT_DIR / "report_template.html"
 PLOTLY_JS_PATH = SCRIPT_DIR / "plotly-2.26.0.min.js"
@@ -54,6 +95,8 @@ def parse_args():
     parser.add_argument("--knee-plot-5p", default=None)
     parser.add_argument("--saturation-png", default=None)
     parser.add_argument("--rna-violin-png", default=None)
+    parser.add_argument("--barnyard-summary-tsv", default=None)
+    parser.add_argument("--barnyard-per-cell-tsv", default=None)
     return parser.parse_args()
 
 
@@ -306,6 +349,44 @@ def help_dl(items):
     return "".join(parts)
 
 
+def barnyard_report_section(payload):
+    if payload is None:
+        return ""
+    help_html = help_dl([
+        ("UMI axes", "Human UMI is shown on the x-axis and Mouse UMI on the y-axis."),
+        ("Class colors", "Human singlets are green, mouse singlets are blue, mixed cells are red, and unclassified cells are gray."),
+        ("Ambient filtering", "Cells with both species' UMI counts below the configured ambient threshold are excluded before this summary."),
+        ("Singlets", "Cells whose UMI fraction meets the configured human- or mouse-dominance threshold."),
+        ("Mixed cells", "Classified cells containing both species that do not meet either singlet threshold."),
+        ("Cross-species doublet rate", "Mixed cells divided by classified human singlet, mouse singlet, and mixed cells."),
+        ("Display sampling", "For more than 100,000 valid cells, deterministic per-class display sampling limits browser memory while legend counts retain all valid cells."),
+    ])
+    summary_table = pbmc_metric_rows(payload.get("summaryRows", []))
+    if payload.get("displayed", 0):
+        plot_content = """
+          <div id="barnyard-umi" class="dynamic-plot-wide barnyard-plot"></div>
+          <div class="dynamic-note" id="barnyard-sampling-note"></div>
+        """
+    else:
+        plot_content = """
+          <div class="barnyard-empty-state" role="status">
+            No valid Barnyard cells were available for plotting.
+          </div>
+        """
+    return f"""
+    <section class="section-card report-section barnyard-section" data-library-content="gene-expression">
+      {pbmc_section_bar("Barnyard QC", "barnyard-detail", help_html, width_px=220)}
+      <div class="report-grid two barnyard-grid">
+        <div class="table-panel barnyard-summary-table">{summary_table}</div>
+        <div class="plot-panel barnyard-plot-panel">
+          <h4 class="plot-title">Barnyard by UMI</h4>
+          {plot_content}
+        </div>
+      </div>
+    </section>
+    """
+
+
 def build_sample_rows(params):
     rows = []
     for key in PARAMETER_DISPLAY_ORDER:
@@ -454,6 +535,251 @@ def barcode_rank_payload(path, whitelist_path):
         "original_points": total,
         "true_points": true_points,
         "noise_points": noise_points,
+    }
+
+
+def _barnyard_warning(message):
+    print(f"WARNING: {message}", file=sys.stderr)
+
+
+def _finite_nonnegative_integer(value):
+    try:
+        number = Decimal(str(value).strip())
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    if not number.is_finite() or number < 0 or number != number.to_integral_value():
+        return None
+    integer_digits = 1 if number.is_zero() else number.adjusted() + 1
+    if integer_digits > BARNYARD_MAX_INTEGER_DIGITS:
+        return None
+    return int(number)
+
+
+def barnyard_summary_rows(path):
+    path = Path(path) if path else None
+    if path is None or not path.is_file():
+        _barnyard_warning(f"Barnyard summary TSV is missing: {path}")
+        return None
+    try:
+        frame = pd.read_csv(path, sep="\t", dtype=str, keep_default_na=False)
+    except (OSError, UnicodeError, pd.errors.ParserError, ValueError) as exc:
+        _barnyard_warning(f"cannot read Barnyard summary TSV {path}: {exc}")
+        return None
+    if not {"metric", "value"}.issubset(frame.columns):
+        _barnyard_warning("Barnyard summary TSV must contain metric and value columns")
+        return None
+
+    selected_names = {name for name, _, _ in BARNYARD_SUMMARY_METRICS}
+    selected = frame[frame["metric"].astype(str).isin(selected_names)]
+    duplicate_names = sorted(
+        name for name, count in selected["metric"].value_counts().items() if count > 1
+    )
+    if duplicate_names:
+        _barnyard_warning(
+            "Barnyard summary contains duplicate selected metric(s): "
+            + ", ".join(duplicate_names)
+        )
+        return None
+
+    values = {
+        str(row.metric): row.value
+        for row in selected[["metric", "value"]].itertuples(index=False)
+    }
+    invalid_count = 0
+    rows = []
+    for name, label, value_type in BARNYARD_SUMMARY_METRICS:
+        raw_value = values.get(name)
+        if value_type == "count":
+            value = _finite_nonnegative_integer(raw_value)
+            formatted = f"{value:,}" if value is not None else "NA"
+        else:
+            try:
+                value = float(str(raw_value).strip())
+            except (TypeError, ValueError):
+                value = None
+            if value is None or not math.isfinite(value) or not 0 <= value <= 1:
+                formatted = "NA"
+            else:
+                formatted = format_percent(value)
+        if formatted == "NA":
+            invalid_count += 1
+        rows.append({"Metric": label, "Value": formatted})
+
+    if invalid_count:
+        _barnyard_warning(f"{invalid_count} invalid Barnyard summary values displayed as NA")
+    return rows
+
+
+class BarnyardPointSampler:
+    def __init__(self):
+        self._points = []
+        self._heaps = {assignment: [] for assignment in BARNYARD_ASSIGNMENTS}
+        self.class_counts = {assignment: 0 for assignment in BARNYARD_ASSIGNMENTS}
+        self.sampled = False
+        self.max_retained_count = 0
+
+    @staticmethod
+    def _priority(cell_id):
+        digest = hashlib.blake2b(cell_id.encode("utf-8"), digest_size=16).digest()
+        return int.from_bytes(digest, "big")
+
+    @property
+    def retained_count(self):
+        if self.sampled:
+            return sum(len(heap) for heap in self._heaps.values())
+        return len(self._points)
+
+    @property
+    def heap_sizes_by_class(self):
+        return {assignment: len(heap) for assignment, heap in self._heaps.items()}
+
+    def _heap_add(self, point):
+        cell_id, assignment, _, _, _ = point
+        priority = self._priority(cell_id)
+        heap = self._heaps[assignment]
+        entry = (-priority, point)
+        if len(heap) < BARNYARD_MAX_POINTS_PER_CLASS:
+            heapq.heappush(heap, entry)
+        elif priority < -heap[0][0]:
+            heapq.heapreplace(heap, entry)
+
+    def add(self, point):
+        assignment = point[1]
+        self.class_counts[assignment] += 1
+        if not self.sampled and len(self._points) < BARNYARD_MAX_POINTS:
+            self._points.append(point)
+        else:
+            if not self.sampled:
+                self.sampled = True
+                for retained_point in self._points:
+                    self._heap_add(retained_point)
+                self._points = []
+            self._heap_add(point)
+        self.max_retained_count = max(self.max_retained_count, self.retained_count)
+
+    def finish(self):
+        grouped = {assignment: [] for assignment in BARNYARD_ASSIGNMENTS}
+        if self.sampled:
+            for assignment, heap in self._heaps.items():
+                grouped[assignment] = [
+                    entry[1]
+                    for entry in sorted(heap, key=lambda entry: (-entry[0], entry[1][0]))
+                ]
+        else:
+            for point in self._points:
+                grouped[point[1]].append(point)
+
+        traces = {}
+        for assignment in BARNYARD_ASSIGNMENTS:
+            points = grouped[assignment]
+            traces[assignment] = {
+                "cell_id": [point[0] for point in points],
+                "umi_human": [point[2] for point in points],
+                "umi_mouse": [point[3] for point in points],
+                "umi_total": [point[4] for point in points],
+            }
+        return traces
+
+
+def barnyard_payload(summary_path, per_cell_path):
+    if not summary_path and not per_cell_path:
+        return None
+    if not summary_path or not per_cell_path:
+        _barnyard_warning("both Barnyard summary and per-cell TSVs are required")
+        return None
+
+    summary_rows = barnyard_summary_rows(summary_path)
+    if summary_rows is None:
+        return None
+
+    per_cell_path = Path(per_cell_path)
+    if not per_cell_path.is_file():
+        _barnyard_warning(f"Barnyard per-cell TSV is missing: {per_cell_path}")
+        return None
+
+    database_fd = None
+    database_path = None
+    connection = None
+    sampler = BarnyardPointSampler()
+    duplicate_count = 0
+    unknown_assignment_count = 0
+    invalid_row_count = 0
+    try:
+        database_fd, database_path = tempfile.mkstemp(
+            prefix="flora-barnyard-seen-", suffix=".sqlite3"
+        )
+        os.close(database_fd)
+        database_fd = None
+        connection = sqlite3.connect(database_path)
+        connection.execute("PRAGMA journal_mode=OFF")
+        connection.execute("PRAGMA synchronous=OFF")
+        connection.execute("CREATE TABLE seen (cell_id TEXT PRIMARY KEY)")
+
+        chunks = pd.read_csv(
+            per_cell_path,
+            sep="\t",
+            dtype=str,
+            keep_default_na=False,
+            usecols=list(BARNYARD_REQUIRED_COLUMNS),
+            chunksize=BARNYARD_CHUNK_ROWS,
+        )
+        for chunk in chunks:
+            for raw_point in chunk.itertuples(index=False, name=None):
+                row = dict(zip(chunk.columns, raw_point))
+                cell_id = str(row["cell_id"]).strip()
+                assignment = str(row["assignment"]).strip()
+                if not cell_id:
+                    invalid_row_count += 1
+                    continue
+                if assignment not in BARNYARD_ASSIGNMENTS:
+                    unknown_assignment_count += 1
+                    continue
+                umi_values = [
+                    _finite_nonnegative_integer(row[column])
+                    for column in ("umi_human", "umi_mouse", "umi_total")
+                ]
+                if any(
+                    value is None or value > BARNYARD_JS_MAX_SAFE_INTEGER
+                    for value in umi_values
+                ):
+                    invalid_row_count += 1
+                    continue
+
+                try:
+                    connection.execute("INSERT INTO seen(cell_id) VALUES (?)", (cell_id,))
+                except sqlite3.IntegrityError:
+                    duplicate_count += 1
+                    continue
+                sampler.add((cell_id, assignment, *umi_values))
+        connection.commit()
+    except (OSError, UnicodeError, ValueError, KeyError, sqlite3.Error, pd.errors.ParserError) as exc:
+        _barnyard_warning(f"cannot build Barnyard per-cell payload from {per_cell_path}: {exc}")
+        return None
+    finally:
+        if connection is not None:
+            connection.close()
+        if database_fd is not None:
+            os.close(database_fd)
+        if database_path is not None:
+            try:
+                os.unlink(database_path)
+            except FileNotFoundError:
+                pass
+
+    if duplicate_count:
+        _barnyard_warning(f"skipped {duplicate_count} duplicate cell IDs")
+    if unknown_assignment_count:
+        _barnyard_warning(f"skipped {unknown_assignment_count} unknown assignments")
+    if invalid_row_count:
+        _barnyard_warning(f"skipped {invalid_row_count} invalid per-cell rows")
+
+    return {
+        "summaryRows": summary_rows,
+        "traces": sampler.finish(),
+        "classCounts": sampler.class_counts,
+        "totalValid": sum(sampler.class_counts.values()),
+        "displayed": sampler.retained_count,
+        "sampled": sampler.sampled,
     }
 
 
@@ -761,6 +1087,21 @@ def new_report_markup(sections):
     color: var(--text-muted);
     font-size: 0.8rem;
   }}
+  .barnyard-summary-table .stats-table td,
+  .barnyard-summary-table .stats-table th {{
+    padding-top: 0.65rem;
+    padding-bottom: 0.65rem;
+  }}
+  .barnyard-plot-panel {{ min-width: 0; }}
+  .barnyard-empty-state {{
+    min-height: 320px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    color: var(--text-muted);
+    text-align: center;
+  }}
   .dynamic-plot,
   .dynamic-plot-wide,
   .dynamic-plot-lg {{
@@ -849,6 +1190,8 @@ def new_report_markup(sections):
       </div>
     </section>
 
+    {sections.get("barnyard_section", "")}
+
     <section class="section-card report-section" data-library-content="gene-expression">
       {sections["rna_cluster_bar"]}
       <div class="report-grid two">
@@ -891,7 +1234,88 @@ def new_report_markup(sections):
 """
 
 
+def barnyard_report_script(payload):
+    barnyard = payload.get("barnyard")
+    if not barnyard or not barnyard.get("displayed", 0):
+        return ""
+    return """
+  const barnyard = payload.barnyard;
+  const barnyardTraceType = barnyard.displayed > 2000 ? "scattergl" : "scatter";
+  const barnyardAssignments = ["human_singlet", "mouse_singlet", "mixed", "unclassified"];
+  const barnyardClassLabels = {
+    human_singlet: "Human singlet",
+    mouse_singlet: "Mouse singlet",
+    mixed: "Mixed",
+    unclassified: "Unclassified"
+  };
+  const barnyardClassColors = {
+    human_singlet: "#2E7D32",
+    mouse_singlet: "#1565C0",
+    mixed: "#C62828",
+    unclassified: "#757575"
+  };
+  const barnyardTraces = barnyardAssignments.map(assignment => {
+    const trace = barnyard.traces[assignment] || {cell_id: [], umi_human: [], umi_mouse: [], umi_total: []};
+    const fullCount = barnyard.classCounts[assignment] || 0;
+    return {
+      x: trace.umi_human,
+      y: trace.umi_mouse,
+      customdata: trace.cell_id.map((cellId, index) => [cellId, barnyardClassLabels[assignment], trace.umi_total[index]]),
+      type: barnyardTraceType,
+      mode: "markers",
+      name: `${barnyardClassLabels[assignment]} (${fullCount.toLocaleString()})`,
+      marker: {color: barnyardClassColors[assignment], size: 5, opacity: 0.68},
+      hovertemplate: "Cell ID: %{customdata[0]}<br>Assignment: %{customdata[1]}<br>Human UMI: %{x:,.0f}<br>Mouse UMI: %{y:,.0f}<br>Total UMI: %{customdata[2]:,.0f}<extra></extra>"
+    };
+  });
+  plotIf("barnyard-umi", barnyardTraces, {
+    height: 420,
+    margin: {l: 65, r: 25, t: 20, b: 60},
+    hovermode: "closest",
+    dragmode: "zoom",
+    xaxis: {
+      title: {text: "Human UMI", font: {size: 12}},
+      rangemode: "nonnegative",
+      gridcolor: "lightgray",
+      zeroline: true,
+      automargin: true
+    },
+    yaxis: {
+      title: {text: "Mouse UMI", font: {size: 12}},
+      rangemode: "nonnegative",
+      gridcolor: "lightgray",
+      zeroline: true,
+      automargin: true
+    },
+    legend: {
+      title: {text: "Assignment"},
+      font: {size: 10},
+      itemsizing: "constant",
+      orientation: "v",
+      x: 0.98,
+      y: 0.98,
+      xanchor: "right",
+      yanchor: "top",
+      bgcolor: "rgba(255,255,255,0.88)",
+      bordercolor: "rgba(44,62,80,0.25)",
+      borderwidth: 1
+    }
+  }, {
+    responsive: true,
+    displaylogo: false,
+    displayModeBar: true,
+    scrollZoom: true,
+    modeBarButtonsToRemove: ["toImage", "sendDataToCloud"]
+  });
+  const barnyardSamplingNote = document.getElementById("barnyard-sampling-note");
+  if (barnyardSamplingNote && barnyard.sampled) {
+    barnyardSamplingNote.textContent = `Showing ${barnyard.displayed.toLocaleString()} of ${barnyard.totalValid.toLocaleString()} valid unique cells using deterministic per-class display sampling.`;
+  }
+"""
+
+
 def build_html(args, payload, sections):
+    barnyard_script = barnyard_report_script(payload)
     report_body = new_report_markup(sections) + f"""
 <script>
   const payload = {script_safe_json(payload)};
@@ -951,10 +1375,11 @@ def build_html(args, payload, sections):
       setTimeout(() => window.dispatchEvent(new Event('resize')), 50);
     }});
   }});
-  function plotIf(id, data, layout) {{
+  function plotIf(id, data, layout, config) {{
     const el = document.getElementById(id);
     if (!el) return;
-    Plotly.newPlot(id, data, Object.assign({{}}, baseLayout, layout || {{}}), plotConfig);
+    const resolvedConfig = Object.assign({{}}, plotConfig, config || {{}});
+    Plotly.newPlot(id, data, Object.assign({{}}, baseLayout, layout || {{}}), resolvedConfig);
     requestAnimationFrame(() => {{
       if (el.offsetParent !== null) Plotly.Plots.resize(el);
     }});
@@ -1236,6 +1661,8 @@ def build_html(args, payload, sections):
   const beadsNote = document.getElementById("beads-note");
   if (beadsNote) beadsNote.textContent = `${{(payload.beads.n_cells || 0).toLocaleString()}} cells summarized from read_assigned_cell.csv.`;
 
+{barnyard_script}
+
   const rnaCells = payload.rnaCluster || [];
   const rnaTraceType = rnaCells.length > 2000 ? "scattergl" : "scatter";
   const clusterLabels = [...new Set(rnaCells.map(row => row.leiden))].sort((a, b) => {{
@@ -1360,6 +1787,10 @@ def main():
     params = read_parameters(args.parameters_tsv)
     read_qc = safe_read_json(args.read_qc_json)
     rna_clusters = rna_cluster_payload(args.rna_cluster_tsv)
+    barnyard = barnyard_payload(
+        args.barnyard_summary_tsv,
+        args.barnyard_per_cell_tsv,
+    )
 
     read_summary_rows, total_reads = build_read_summary(report_df, qc_df, args.skip_glycine, args.glycine_stats)
     per_cell = per_cell_payload(args.per_cell_qc_tsv)
@@ -1401,6 +1832,8 @@ def main():
         "beads": beads_per_droplet_payload(args.read_assigned_cell),
         "rnaCluster": rna_clusters,
     }
+    if barnyard is not None:
+        payload["barnyard"] = barnyard
 
     sections = {
         "sample_title": pbmc_title_block(
@@ -1488,6 +1921,8 @@ def main():
             width_px=190,
         ),
     }
+    if barnyard is not None:
+        sections["barnyard_section"] = barnyard_report_section(barnyard)
     html_text = build_html(args, payload, sections)
     Path(args.output_html).write_text(html_text, encoding="utf-8")
     print(f"Wrote report: {args.output_html}")

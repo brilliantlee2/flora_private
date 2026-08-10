@@ -1,11 +1,15 @@
 import importlib.util
+import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pandas as pd
 
@@ -28,6 +32,590 @@ class ReportTemplateContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.build_report = load_build_report_module()
+
+    def test_parse_args_accepts_barnyard_paths_with_spaces(self):
+        summary_path = "/tmp/report inputs/barnyard summary.tsv"
+        per_cell_path = "/tmp/report inputs/barnyard per cell.tsv"
+        argv = [
+            "build_report.py",
+            "--sample-id",
+            "sample",
+            "--output-html",
+            "report.html",
+            "--report-metrics-tsv",
+            "report_metrics.tsv",
+            "--rna-qc-metrics-tsv",
+            "rna_qc_metrics.tsv",
+            "--saturation-tsv",
+            "saturation.tsv",
+            "--read-qc-json",
+            "read_qc.json",
+            "--parameters-tsv",
+            "parameters.tsv",
+            "--per-cell-qc-tsv",
+            "per_cell_qc.tsv",
+            "--rna-cluster-tsv",
+            "rna_cluster.tsv",
+            "--barnyard-summary-tsv",
+            summary_path,
+            "--barnyard-per-cell-tsv",
+            per_cell_path,
+        ]
+
+        with patch.object(sys, "argv", argv):
+            try:
+                args = self.build_report.parse_args()
+            except SystemExit as exc:
+                self.fail(f"Barnyard report arguments were rejected: {exc}")
+
+        self.assertEqual(args.barnyard_summary_tsv, summary_path)
+        self.assertEqual(args.barnyard_per_cell_tsv, per_cell_path)
+
+    def write_barnyard_inputs(self, directory, summary_rows=None, per_cell_rows=None):
+        summary_path = Path(directory) / "barnyard_summary.tsv"
+        per_cell_path = Path(directory) / "barnyard_per_cell.tsv"
+        if summary_rows is None:
+            summary_rows = [
+                ("total_cells", "12"),
+                ("human_singlet_cells", "5"),
+                ("mouse_singlet_cells", "4"),
+                ("mixed_cells", "2"),
+                ("unclassified_cells", "1"),
+                ("cross_species_doublet_rate_among_classified", "0.1818"),
+            ]
+        if per_cell_rows is None:
+            per_cell_rows = [
+                ("CELL_A", "human_singlet", "7", "1", "9"),
+                ("CELL_B", "mouse_singlet", "0", "8", "10"),
+            ]
+        summary_path.write_text(
+            "metric\tvalue\n"
+            + "".join(f"{metric}\t{value}\n" for metric, value in summary_rows),
+            encoding="utf-8",
+        )
+        per_cell_path.write_text(
+            "cell_id\tassignment\tumi_human\tumi_mouse\tumi_total\n"
+            + "".join("\t".join(row) + "\n" for row in per_cell_rows),
+            encoding="utf-8",
+        )
+        return summary_path, per_cell_path
+
+    def report_sections(self, **overrides):
+        section_names = [
+            "sample_title",
+            "summary_cards",
+            "summary_bar",
+            "summary_rows",
+            "summary_violin_plots",
+            "read_qc_bar",
+            "beads_bar",
+            "rna_cluster_bar",
+            "sequencing_bar",
+            "read_summary_rows",
+            "mapping_bar",
+            "mapping_rows",
+            "saturation_bar",
+        ]
+        sections = {name: f"SECTION_{name}" for name in section_names}
+        sections.update(overrides)
+        return sections
+
+    def minimal_payload(self, **overrides):
+        payload = {
+            "readSummary": {"labels": [], "counts": []},
+            "readQc": {},
+            "perCell": {"reads": [], "umis": [], "genes": []},
+            "saturation": {},
+            "barcodeRank5p": {"rank": [], "count": [], "is_true": []},
+            "beads": {"x": [], "y": [], "n_cells": 0},
+            "rnaCluster": [],
+        }
+        payload.update(overrides)
+        return payload
+
+    def test_barnyard_summary_selects_and_strictly_formats_six_metrics(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            summary_path, _ = self.write_barnyard_inputs(
+                tmp,
+                summary_rows=[
+                    ("total_cells", "1234"),
+                    ("human_singlet_cells", "-1"),
+                    ("mouse_singlet_cells", "2.5"),
+                    ("mixed_cells", "7"),
+                    ("unclassified_cells", "nan"),
+                    ("cross_species_doublet_rate_among_classified", "1.2"),
+                ],
+            )
+            stderr = io.StringIO()
+            with redirect_stderr(stderr):
+                rows = self.build_report.barnyard_summary_rows(summary_path)
+
+        self.assertEqual(
+            rows,
+            [
+                {"Metric": "Cells after ambient filter", "Value": "1,234"},
+                {"Metric": "Human singlets", "Value": "NA"},
+                {"Metric": "Mouse singlets", "Value": "NA"},
+                {"Metric": "Mixed cells", "Value": "7"},
+                {"Metric": "Unclassified cells", "Value": "NA"},
+                {"Metric": "Cross-species doublet rate", "Value": "NA"},
+            ],
+        )
+        self.assertIn("4 invalid Barnyard summary values", stderr.getvalue())
+
+    def test_barnyard_summary_missing_values_are_na(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            summary_path, _ = self.write_barnyard_inputs(
+                tmp,
+                summary_rows=[("total_cells", "3")],
+            )
+            with redirect_stderr(io.StringIO()):
+                rows = self.build_report.barnyard_summary_rows(summary_path)
+
+        self.assertEqual(rows[0]["Value"], "3")
+        self.assertTrue(all(row["Value"] == "NA" for row in rows[1:]))
+
+    def test_barnyard_summary_formats_a_valid_rate_as_a_percentage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            summary_path, _ = self.write_barnyard_inputs(tmp)
+            rows = self.build_report.barnyard_summary_rows(summary_path)
+
+        self.assertEqual(rows[-1]["Value"], "18.18%")
+
+    def test_barnyard_summary_preserves_an_integer_larger_than_float_precision(self):
+        exact_count = "9007199254740993"
+        with tempfile.TemporaryDirectory() as tmp:
+            summary_path, _ = self.write_barnyard_inputs(
+                tmp,
+                summary_rows=[
+                    ("total_cells", exact_count),
+                    ("human_singlet_cells", "0"),
+                    ("mouse_singlet_cells", "0"),
+                    ("mixed_cells", "0"),
+                    ("unclassified_cells", "0"),
+                    ("cross_species_doublet_rate_among_classified", "0"),
+                ],
+            )
+            rows = self.build_report.barnyard_summary_rows(summary_path)
+
+        self.assertEqual(rows[0]["Value"], "9,007,199,254,740,993")
+
+    def test_barnyard_summary_treats_serialization_overflow_as_invalid(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            summary_path, per_cell_path = self.write_barnyard_inputs(
+                tmp,
+                summary_rows=[
+                    ("total_cells", "1e4300"),
+                    ("human_singlet_cells", "0"),
+                    ("mouse_singlet_cells", "0"),
+                    ("mixed_cells", "0"),
+                    ("unclassified_cells", "0"),
+                    ("cross_species_doublet_rate_among_classified", "0"),
+                ],
+            )
+            stderr = io.StringIO()
+            with redirect_stderr(stderr):
+                payload = self.build_report.barnyard_payload(summary_path, per_cell_path)
+
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload["summaryRows"][0]["Value"], "NA")
+        self.assertIn("1 invalid Barnyard summary values", stderr.getvalue())
+        json.dumps(payload)
+
+    def test_barnyard_integer_parser_is_exact_and_rejects_invalid_numbers(self):
+        parser = self.build_report._finite_nonnegative_integer
+
+        self.assertEqual(parser("9007199254740993"), 9007199254740993)
+        self.assertEqual(parser(" 7.0 "), 7)
+        self.assertEqual(parser("1e3"), 1000)
+        for invalid in ("1.5", "-1", "nan", "inf", "-inf", ""):
+            with self.subTest(value=invalid):
+                self.assertIsNone(parser(invalid))
+
+    def test_barnyard_payload_rejects_duplicate_selected_summary_metric(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            summary_path, per_cell_path = self.write_barnyard_inputs(tmp)
+            with summary_path.open("a", encoding="utf-8") as handle:
+                handle.write("total_cells\t12\n")
+            stderr = io.StringIO()
+            with redirect_stderr(stderr):
+                payload = self.build_report.barnyard_payload(summary_path, per_cell_path)
+
+        self.assertIsNone(payload)
+        self.assertIn("duplicate selected metric", stderr.getvalue())
+
+    def test_barnyard_payload_requires_both_existing_well_formed_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            summary_path, per_cell_path = self.write_barnyard_inputs(tmp)
+            malformed = Path(tmp) / "malformed.tsv"
+            malformed.write_text("wrong\theader\n1\t2\n", encoding="utf-8")
+            cases = [
+                (summary_path, None),
+                (None, per_cell_path),
+                (Path(tmp) / "missing.tsv", per_cell_path),
+                (malformed, per_cell_path),
+                (summary_path, malformed),
+            ]
+            for summary_arg, per_cell_arg in cases:
+                with self.subTest(summary=summary_arg, per_cell=per_cell_arg):
+                    stderr = io.StringIO()
+                    with redirect_stderr(stderr):
+                        payload = self.build_report.barnyard_payload(summary_arg, per_cell_arg)
+                    self.assertIsNone(payload)
+                    self.assertIn("WARNING", stderr.getvalue())
+
+    def test_barnyard_payload_validates_before_dedup_and_preserves_umi_total(self):
+        rows = [
+            ("CELL_A", "human_singlet", "bad", "1", "2"),
+            ("CELL_A", "human_singlet", "7", "1", "11"),
+            ("CELL_A", "mouse_singlet", "0", "9", "12"),
+            ("", "mixed", "1", "1", "2"),
+            ("CELL_UNKNOWN", "other", "1", "1", "2"),
+            ("CELL_NEG", "mixed", "-1", "2", "3"),
+            ("CELL_FRAC", "mixed", "1.5", "2", "4"),
+            ("CELL_INF", "mixed", "inf", "2", "4"),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            summary_path, per_cell_path = self.write_barnyard_inputs(
+                tmp, per_cell_rows=rows
+            )
+            stderr = io.StringIO()
+            with redirect_stderr(stderr):
+                payload = self.build_report.barnyard_payload(summary_path, per_cell_path)
+
+        trace = payload["traces"]["human_singlet"]
+        self.assertEqual(trace["cell_id"], ["CELL_A"])
+        self.assertEqual(trace["umi_human"], [7])
+        self.assertEqual(trace["umi_mouse"], [1])
+        self.assertEqual(trace["umi_total"], [11])
+        self.assertEqual(payload["classCounts"]["human_singlet"], 1)
+        self.assertEqual(payload["totalValid"], 1)
+        self.assertEqual(payload["displayed"], 1)
+        self.assertFalse(payload["sampled"])
+        warnings = stderr.getvalue()
+        self.assertIn("1 duplicate cell IDs", warnings)
+        self.assertIn("1 unknown assignments", warnings)
+        self.assertIn("5 invalid per-cell rows", warnings)
+
+    def test_barnyard_payload_preserves_large_per_cell_integers_exactly(self):
+        exact_total = "9007199254740991"
+        with tempfile.TemporaryDirectory() as tmp:
+            summary_path, per_cell_path = self.write_barnyard_inputs(
+                tmp,
+                per_cell_rows=[
+                    ("CELL_BIG", "human_singlet", exact_total, "1", exact_total),
+                ],
+            )
+            payload = self.build_report.barnyard_payload(summary_path, per_cell_path)
+
+        trace = payload["traces"]["human_singlet"]
+        self.assertEqual(trace["umi_human"], [9007199254740991])
+        self.assertEqual(trace["umi_total"], [9007199254740991])
+
+    def test_barnyard_payload_skips_js_unsafe_umi_before_dedup(self):
+        exact_total = "9007199254740991"
+        with tempfile.TemporaryDirectory() as tmp:
+            summary_path, per_cell_path = self.write_barnyard_inputs(
+                tmp,
+                per_cell_rows=[
+                    ("CELL_BIG", "human_singlet", "9007199254740992", "1", "9007199254740992"),
+                    ("CELL_BIG", "human_singlet", exact_total, "1", exact_total),
+                ],
+            )
+            stderr = io.StringIO()
+            with redirect_stderr(stderr):
+                payload = self.build_report.barnyard_payload(summary_path, per_cell_path)
+
+        self.assertIsNotNone(payload)
+        trace = payload["traces"]["human_singlet"]
+        self.assertEqual(trace["cell_id"], ["CELL_BIG"])
+        self.assertEqual(trace["umi_human"], [9007199254740991])
+        self.assertEqual(trace["umi_total"], [9007199254740991])
+        self.assertIn("1 invalid per-cell rows", stderr.getvalue())
+        self.assertNotIn("duplicate cell IDs", stderr.getvalue())
+        json.dumps(payload)
+
+    def test_barnyard_payload_rejects_js_unsafe_value_in_any_umi_column(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            summary_path, per_cell_path = self.write_barnyard_inputs(
+                tmp,
+                per_cell_rows=[
+                    ("CELL_H", "human_singlet", "9007199254740992", "1", "2"),
+                    ("CELL_M", "mouse_singlet", "1", "9007199254740992", "2"),
+                    ("CELL_T", "mixed", "1", "1", "9007199254740992"),
+                ],
+            )
+            stderr = io.StringIO()
+            with redirect_stderr(stderr):
+                payload = self.build_report.barnyard_payload(summary_path, per_cell_path)
+
+        self.assertEqual(payload["totalValid"], 0)
+        self.assertEqual(payload["displayed"], 0)
+        self.assertIn("3 invalid per-cell rows", stderr.getvalue())
+
+    def test_barnyard_header_only_input_is_valid(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            summary_path, per_cell_path = self.write_barnyard_inputs(
+                tmp, per_cell_rows=[]
+            )
+            payload = self.build_report.barnyard_payload(summary_path, per_cell_path)
+
+        self.assertEqual(payload["totalValid"], 0)
+        self.assertEqual(payload["displayed"], 0)
+        self.assertFalse(payload["sampled"])
+        self.assertTrue(all(not trace["cell_id"] for trace in payload["traces"].values()))
+
+    def test_barnyard_sampler_retains_all_through_exact_threshold(self):
+        sampler = self.build_report.BarnyardPointSampler()
+        for index in range(self.build_report.BARNYARD_MAX_POINTS):
+            sampler.add((f"CELL_{index}", "human_singlet", index, 0, index))
+
+        traces = sampler.finish()
+
+        self.assertEqual(sampler.retained_count, 100_000)
+        self.assertEqual(sampler.max_retained_count, 100_000)
+        self.assertFalse(sampler.sampled)
+        self.assertEqual(len(traces["human_singlet"]["cell_id"]), 100_000)
+
+    def test_barnyard_sampler_converts_at_100001_and_is_deterministic(self):
+        def sampled_cells():
+            sampler = self.build_report.BarnyardPointSampler()
+            for index in range(self.build_report.BARNYARD_MAX_POINTS + 1):
+                assignment = self.build_report.BARNYARD_ASSIGNMENTS[index % 4]
+                sampler.add((f"CELL_{index}", assignment, index, index + 1, index + 2))
+            return sampler, sampler.finish()
+
+        first_sampler, first = sampled_cells()
+        second_sampler, second = sampled_cells()
+
+        self.assertTrue(first_sampler.sampled)
+        self.assertLessEqual(first_sampler.retained_count, 100_000)
+        self.assertLessEqual(first_sampler.max_retained_count, 100_000)
+        self.assertTrue(
+            all(size <= 25_000 for size in first_sampler.heap_sizes_by_class.values())
+        )
+        self.assertEqual(first, second)
+        self.assertEqual(first_sampler.retained_count, second_sampler.retained_count)
+
+    def test_barnyard_sampler_caps_an_unbalanced_class_after_conversion(self):
+        sampler = self.build_report.BarnyardPointSampler()
+        for index in range(self.build_report.BARNYARD_MAX_POINTS + 1):
+            sampler.add((f"CELL_{index}", "human_singlet", index, 0, index))
+
+        traces = sampler.finish()
+
+        self.assertTrue(sampler.sampled)
+        self.assertEqual(sampler.class_counts["human_singlet"], 100_001)
+        self.assertEqual(sampler.retained_count, 25_000)
+        self.assertEqual(len(traces["human_singlet"]["cell_id"]), 25_000)
+        self.assertTrue(
+            all(
+                not traces[assignment]["cell_id"]
+                for assignment in self.build_report.BARNYARD_ASSIGNMENTS[1:]
+            )
+        )
+
+    def test_barnyard_payload_uses_chunked_selected_columns_and_cleans_sqlite(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            summary_path, per_cell_path = self.write_barnyard_inputs(tmp)
+            observed_reads = []
+            observed_databases = []
+            real_read_csv = self.build_report.pd.read_csv
+            real_mkstemp = self.build_report.tempfile.mkstemp
+
+            def recording_read_csv(*args, **kwargs):
+                if Path(args[0]) == per_cell_path:
+                    observed_reads.append(dict(kwargs))
+                return real_read_csv(*args, **kwargs)
+
+            def recording_mkstemp(*args, **kwargs):
+                descriptor, path = real_mkstemp(*args, **kwargs)
+                observed_databases.append(path)
+                return descriptor, path
+
+            with patch.object(self.build_report.pd, "read_csv", side_effect=recording_read_csv), patch.object(
+                self.build_report.tempfile, "mkstemp", side_effect=recording_mkstemp
+            ):
+                payload = self.build_report.barnyard_payload(summary_path, per_cell_path)
+
+        self.assertIsNotNone(payload)
+        self.assertTrue(observed_reads)
+        self.assertEqual(
+            set(observed_reads[0]["usecols"]),
+            {"cell_id", "assignment", "umi_human", "umi_mouse", "umi_total"},
+        )
+        self.assertEqual(observed_reads[0]["chunksize"], self.build_report.BARNYARD_CHUNK_ROWS)
+        self.assertTrue(observed_databases)
+        self.assertTrue(all(not os.path.exists(path) for path in observed_databases))
+        serialized = json.dumps(payload)
+        self.assertNotIn("max_retained_count", serialized)
+        self.assertNotIn("heap_sizes_by_class", serialized)
+
+    def test_barnyard_payload_cleans_sqlite_after_a_read_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            summary_path, per_cell_path = self.write_barnyard_inputs(tmp)
+            observed_databases = []
+            real_mkstemp = self.build_report.tempfile.mkstemp
+            real_read_csv = self.build_report.pd.read_csv
+
+            def recording_mkstemp(*args, **kwargs):
+                descriptor, path = real_mkstemp(*args, **kwargs)
+                observed_databases.append(path)
+                return descriptor, path
+
+            def failing_per_cell_read(*args, **kwargs):
+                if Path(args[0]) == per_cell_path:
+                    raise ValueError("broken TSV")
+                return real_read_csv(*args, **kwargs)
+
+            with patch.object(
+                self.build_report.tempfile, "mkstemp", side_effect=recording_mkstemp
+            ), patch.object(
+                self.build_report.pd, "read_csv", side_effect=failing_per_cell_read
+            ), redirect_stderr(io.StringIO()):
+                payload = self.build_report.barnyard_payload(summary_path, per_cell_path)
+
+        self.assertIsNone(payload)
+        self.assertTrue(observed_databases)
+        self.assertTrue(all(not os.path.exists(path) for path in observed_databases))
+
+    def test_valid_barnyard_section_is_between_beads_and_rna_cluster(self):
+        barnyard = {
+            "summaryRows": [
+                {"Metric": "Cells after ambient filter", "Value": "12"},
+                {"Metric": "Human singlets", "Value": "5"},
+                {"Metric": "Mouse singlets", "Value": "4"},
+                {"Metric": "Mixed cells", "Value": "2"},
+                {"Metric": "Unclassified cells", "Value": "1"},
+                {"Metric": "Cross-species doublet rate", "Value": "18.18%"},
+            ],
+            "traces": {
+                "human_singlet": {"cell_id": ["CELL_A"], "umi_human": [7], "umi_mouse": [1], "umi_total": [9]},
+                "mouse_singlet": {"cell_id": [], "umi_human": [], "umi_mouse": [], "umi_total": []},
+                "mixed": {"cell_id": [], "umi_human": [], "umi_mouse": [], "umi_total": []},
+                "unclassified": {"cell_id": [], "umi_human": [], "umi_mouse": [], "umi_total": []},
+            },
+            "classCounts": {"human_singlet": 5, "mouse_singlet": 4, "mixed": 2, "unclassified": 1},
+            "totalValid": 12,
+            "displayed": 1,
+            "sampled": True,
+        }
+        sections = self.report_sections(
+            barnyard_section=self.build_report.barnyard_report_section(barnyard)
+        )
+        rendered = self.build_report.build_html(
+            SimpleNamespace(sample_id="MIXED"),
+            self.minimal_payload(barnyard=barnyard),
+            sections,
+        )
+        cells_html = rendered.split('id="cells-tab"', 1)[1].split('id="library-tab"', 1)[0]
+
+        self.assertLess(cells_html.index("SECTION_beads_bar"), cells_html.index("Barnyard QC"))
+        self.assertLess(cells_html.index("Barnyard QC"), cells_html.index("SECTION_rna_cluster_bar"))
+        self.assertIn('id="barnyard-umi"', cells_html)
+        for label in [
+            "Cells after ambient filter",
+            "Human singlets",
+            "Mouse singlets",
+            "Mixed cells",
+            "Unclassified cells",
+            "Cross-species doublet rate",
+        ]:
+            self.assertIn(label, cells_html)
+        for help_text in [
+            "Ambient filtering",
+            "Singlets",
+            "Mixed cells",
+            "Cross-species doublet rate",
+            "Human UMI",
+            "Mouse UMI",
+            "Class colors",
+            "display sampling",
+        ]:
+            self.assertIn(help_text, cells_html)
+
+    def test_barnyard_renderer_has_expected_plotly_contract(self):
+        barnyard = {
+            "summaryRows": [],
+            "traces": {
+                assignment: {"cell_id": [], "umi_human": [], "umi_mouse": [], "umi_total": []}
+                for assignment in self.build_report.BARNYARD_ASSIGNMENTS
+            },
+            "classCounts": {"human_singlet": 8, "mouse_singlet": 7, "mixed": 3, "unclassified": 2},
+            "totalValid": 20,
+            "displayed": 2001,
+            "sampled": True,
+        }
+        rendered = self.build_report.build_html(
+            SimpleNamespace(sample_id="MIXED"),
+            self.minimal_payload(barnyard=barnyard),
+            self.report_sections(
+                barnyard_section=self.build_report.barnyard_report_section(barnyard)
+            ),
+        )
+
+        self.assertIn('const barnyardTraceType = barnyard.displayed > 2000 ? "scattergl" : "scatter";', rendered)
+        for color in ["#2E7D32", "#1565C0", "#C62828", "#757575"]:
+            self.assertIn(color, rendered)
+        self.assertIn('x: trace.umi_human', rendered)
+        self.assertIn('y: trace.umi_mouse', rendered)
+        self.assertIn('name: `${barnyardClassLabels[assignment]} (${fullCount.toLocaleString()})`', rendered)
+        self.assertIn('Cell ID: %{customdata[0]}', rendered)
+        self.assertIn('Assignment: %{customdata[1]}', rendered)
+        self.assertIn('Human UMI: %{x:,.0f}', rendered)
+        self.assertIn('Mouse UMI: %{y:,.0f}', rendered)
+        self.assertIn('Total UMI: %{customdata[2]:,.0f}', rendered)
+        self.assertIn('text: "Human UMI"', rendered)
+        self.assertIn('text: "Mouse UMI"', rendered)
+        self.assertIn('rangemode: "nonnegative"', rendered)
+        self.assertIn('displayModeBar: true', rendered)
+        self.assertIn('scrollZoom: true', rendered)
+        self.assertIn('modeBarButtonsToRemove:', rendered)
+        self.assertIn('orientation: "v"', rendered)
+        self.assertIn('x: 0.98', rendered)
+        self.assertIn('y: 0.98', rendered)
+        self.assertIn('xanchor: "right"', rendered)
+        self.assertIn('yanchor: "top"', rendered)
+        self.assertIn('bgcolor: "rgba(255,255,255,0.88)"', rendered)
+        self.assertIn('bordercolor: "rgba(44,62,80,0.25)"', rendered)
+        self.assertNotIn('y: 1.02', self.build_report.barnyard_report_script(self.minimal_payload(barnyard=barnyard)))
+        self.assertIn('${barnyard.displayed.toLocaleString()} of ${barnyard.totalValid.toLocaleString()}', rendered)
+        self.assertIn('function plotIf(id, data, layout, config)', rendered)
+        self.assertIn('Object.assign({}, plotConfig, config || {})', rendered)
+        self.assertIn('displayModeBar: false', rendered)
+
+    def test_header_only_barnyard_input_renders_empty_state_without_plot_call(self):
+        barnyard = {
+            "summaryRows": [],
+            "traces": {
+                assignment: {"cell_id": [], "umi_human": [], "umi_mouse": [], "umi_total": []}
+                for assignment in self.build_report.BARNYARD_ASSIGNMENTS
+            },
+            "classCounts": {assignment: 0 for assignment in self.build_report.BARNYARD_ASSIGNMENTS},
+            "totalValid": 0,
+            "displayed": 0,
+            "sampled": False,
+        }
+        rendered = self.build_report.build_html(
+            SimpleNamespace(sample_id="MIXED"),
+            self.minimal_payload(barnyard=barnyard),
+            self.report_sections(
+                barnyard_section=self.build_report.barnyard_report_section(barnyard)
+            ),
+        )
+
+        self.assertIn("No valid Barnyard cells were available for plotting.", rendered)
+        self.assertNotIn('plotIf("barnyard-umi"', rendered)
+
+    def test_report_without_barnyard_has_no_barnyard_artifacts(self):
+        rendered = self.build_report.build_html(
+            SimpleNamespace(sample_id="SINGLE"),
+            self.minimal_payload(),
+            self.report_sections(),
+        )
+
+        for marker in ["Barnyard QC", 'id="barnyard-umi"', '"barnyard":', "payload.barnyard", 'plotIf("barnyard-umi"']:
+            self.assertNotIn(marker, rendered)
 
     def test_template_is_rna_only_new_report_shell(self):
         template = TEMPLATE_PATH.read_text(encoding="utf-8")
@@ -311,6 +899,7 @@ class ReportTemplateContractTests(unittest.TestCase):
             parameters = tmp_path / "parameters.tsv"
             per_cell = tmp_path / "per_cell.tsv"
             rna_cluster = tmp_path / "rna_cluster.tsv"
+            barnyard_summary, barnyard_per_cell = self.write_barnyard_inputs(tmp_path)
             output = tmp_path / "report.html"
 
             metrics = [
@@ -377,6 +966,10 @@ class ReportTemplateContractTests(unittest.TestCase):
                 str(per_cell),
                 "--rna-cluster-tsv",
                 str(rna_cluster),
+                "--barnyard-summary-tsv",
+                str(barnyard_summary),
+                "--barnyard-per-cell-tsv",
+                str(barnyard_per_cell),
                 "--skip-glycine",
             ]
             subprocess.run(command, check=True, capture_output=True, text=True)
@@ -390,6 +983,9 @@ class ReportTemplateContractTests(unittest.TestCase):
             self.assertIn('"status": "unassigned"', rendered)
             self.assertIn('id="rna-cluster-assignment"', rendered)
             self.assertIn('id="rna-umi-counts"', rendered)
+            self.assertIn('id="barnyard-umi"', rendered)
+            self.assertIn('"barnyard": {', rendered)
+            self.assertIn('plotIf("barnyard-umi"', rendered)
             self.assertNotIn("P2026042903", rendered)
             self.assertNotIn("16,682", rendered)
             self.assertNotIn("VDJ-T", rendered)

@@ -754,6 +754,9 @@ run_stage barnyard_qc "${DOWNSTREAM_DIR}/barnyard_qc.py" \
   --ambient-umi-threshold 1000 \
   --singlet-threshold "${SINGLET_THRESHOLD}" 2>&1 | tee -a "${QC_LOG}"
 
+BARNYARD_SUMMARY_TSV="barnyard_qc/barnyard_summary.tsv"
+BARNYARD_PER_CELL_TSV="barnyard_qc/barnyard_per_cell.tsv"
+
 BUILD_REPORT_ARGS=(
   --sample-id "${SAMPLE_ID}"
   --output-html "${SAMPLE_ID}.single_cell_report.html"
@@ -774,6 +777,14 @@ BUILD_REPORT_ARGS=(
   --saturation-png "${SAMPLE_ID}.saturation_curves.png"
   --rna-violin-png "${SAMPLE_ID}.rna_violin_plot.png"
 )
+if [[ -f "${BARNYARD_SUMMARY_TSV}" && -f "${BARNYARD_PER_CELL_TSV}" ]]; then
+  BUILD_REPORT_ARGS+=(
+    --barnyard-summary-tsv "${BARNYARD_SUMMARY_TSV}"
+    --barnyard-per-cell-tsv "${BARNYARD_PER_CELL_TSV}"
+  )
+else
+  log "WARNING: Barnyard report inputs are incomplete; omitting Barnyard QC from the HTML report."
+fi
 if [[ "${SKIP_GLYCINE}" -eq 1 ]]; then
   BUILD_REPORT_ARGS+=(--skip-glycine)
 else

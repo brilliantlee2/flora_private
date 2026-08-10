@@ -38,6 +38,54 @@ class RnaClusterWorkflowTests(unittest.TestCase):
                 self.assertLess(gene_position, cluster_position)
                 self.assertLess(cluster_position, report_position)
 
+    def test_mixed_entrypoint_defines_barnyard_report_outputs_after_qc(self):
+        source = (PROJECT_ROOT / "run_all_mixed_species.sh").read_text(
+            encoding="utf-8"
+        )
+
+        barnyard_qc_position = source.index(
+            'run_stage barnyard_qc "${DOWNSTREAM_DIR}/barnyard_qc.py"'
+        )
+        summary_definition = (
+            'BARNYARD_SUMMARY_TSV="barnyard_qc/barnyard_summary.tsv"'
+        )
+        per_cell_definition = (
+            'BARNYARD_PER_CELL_TSV="barnyard_qc/barnyard_per_cell.tsv"'
+        )
+
+        self.assertIn(summary_definition, source)
+        self.assertIn(per_cell_definition, source)
+        summary_position = source.index(summary_definition)
+        per_cell_position = source.index(per_cell_definition)
+
+        self.assertLess(barnyard_qc_position, summary_position)
+        self.assertLess(summary_position, per_cell_position)
+
+    def test_mixed_entrypoint_forwards_complete_barnyard_pair_nonfatally(self):
+        source = (PROJECT_ROOT / "run_all_mixed_species.sh").read_text(
+            encoding="utf-8"
+        )
+        expected_block = '''if [[ -f "${BARNYARD_SUMMARY_TSV}" && -f "${BARNYARD_PER_CELL_TSV}" ]]; then
+  BUILD_REPORT_ARGS+=(
+    --barnyard-summary-tsv "${BARNYARD_SUMMARY_TSV}"
+    --barnyard-per-cell-tsv "${BARNYARD_PER_CELL_TSV}"
+  )
+else
+  log "WARNING: Barnyard report inputs are incomplete; omitting Barnyard QC from the HTML report."
+fi'''
+
+        self.assertIn(expected_block, source)
+        self.assertEqual(source.count("--barnyard-summary-tsv"), 1)
+        self.assertEqual(source.count("--barnyard-per-cell-tsv"), 1)
+        self.assertNotIn('require_file "${BARNYARD_SUMMARY_TSV}"', source)
+        self.assertNotIn('require_file "${BARNYARD_PER_CELL_TSV}"', source)
+
+    def test_single_species_entrypoint_has_no_barnyard_report_arguments(self):
+        source = (PROJECT_ROOT / "run_all.sh").read_text(encoding="utf-8")
+
+        self.assertNotIn("--barnyard-summary-tsv", source)
+        self.assertNotIn("--barnyard-per-cell-tsv", source)
+
 
 if __name__ == "__main__":
     unittest.main()
