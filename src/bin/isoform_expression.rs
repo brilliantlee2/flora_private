@@ -4,15 +4,12 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use flora::matrices::{add_unique_umi, matrix_axes};
-use rust_htslib::bam::{self, Read};
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
+use rust_htslib::bam::{self, Read};
+use flora::matrices::{add_unique_umi, matrix_axes};
 
 #[derive(Debug, Parser)]
-#[command(
-    version,
-    about = "Build isoform expression matrix from tagged BAM and transcript assignments"
-)]
+#[command(version, about = "Build isoform expression matrix from tagged BAM and transcript assignments")]
 struct Cli {
     bam: PathBuf,
     transcripts: PathBuf,
@@ -27,18 +24,15 @@ struct Cli {
     _assignment_chunk_size: usize,
 }
 
-pub fn main() -> Result<()> {
+fn main() -> Result<()> {
     let cli = Cli::parse();
     let read_to_tx = load_transcript_assignments(&cli.transcripts)?;
-    let mut bam =
-        bam::Reader::from_path(&cli.bam).with_context(|| format!("open {}", cli.bam.display()))?;
+    let mut bam = bam::Reader::from_path(&cli.bam).with_context(|| format!("open {}", cli.bam.display()))?;
     let mut matrix = HashMap::default();
     for rec in bam.records() {
         let rec = rec?;
         let read_id = String::from_utf8_lossy(rec.qname()).to_string();
-        let Some(tx) = read_to_tx.get(&read_id) else {
-            continue;
-        };
+        let Some(tx) = read_to_tx.get(&read_id) else { continue };
         let cell = require_string_tag(&rec, b"CB", "CB")?;
         let umi = require_string_tag(&rec, b"UB", "UB")?;
         add_unique_umi(&mut matrix, tx, &cell, &umi);
@@ -47,8 +41,7 @@ pub fn main() -> Result<()> {
 }
 
 fn load_transcript_assignments(path: &PathBuf) -> Result<HashMap<String, String>> {
-    let reader =
-        BufReader::new(File::open(path).with_context(|| format!("open {}", path.display()))?);
+    let reader = BufReader::new(File::open(path).with_context(|| format!("open {}", path.display()))?);
     let mut map = HashMap::default();
     for line in reader.lines() {
         let line = line?;
@@ -70,9 +63,7 @@ fn write_matrix(
     matrix: &HashMap<(String, String), HashSet<String>>,
 ) -> Result<()> {
     let (rows, cols) = matrix_axes(matrix);
-    let mut writer = BufWriter::new(
-        File::create(output).with_context(|| format!("create {}", output.display()))?,
-    );
+    let mut writer = BufWriter::new(File::create(output).with_context(|| format!("create {}", output.display()))?);
     write!(writer, "transcript_id")?;
     for col in &cols {
         write!(writer, "\t{col}")?;
@@ -93,16 +84,8 @@ fn write_matrix(
 }
 
 fn require_string_tag(rec: &bam::Record, tag: &[u8; 2], label: &str) -> Result<String> {
-    match rec.aux(tag).with_context(|| {
-        format!(
-            "missing {label} tag on read {}",
-            String::from_utf8_lossy(rec.qname())
-        )
-    })? {
+    match rec.aux(tag).with_context(|| format!("missing {label} tag on read {}", String::from_utf8_lossy(rec.qname())))? {
         bam::record::Aux::String(v) => Ok(v.to_string()),
-        _ => anyhow::bail!(
-            "non-string {label} tag on read {}",
-            String::from_utf8_lossy(rec.qname())
-        ),
+        _ => anyhow::bail!("non-string {label} tag on read {}", String::from_utf8_lossy(rec.qname())),
     }
 }

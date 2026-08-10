@@ -5,7 +5,6 @@ use std::time::Instant;
 use anyhow::Result;
 use clap::{ArgAction, Parser};
 use flora::pipeline::{run_pipeline, PipelineConfig};
-use flora::workflow_runtime::{self, WorkflowKind};
 
 #[derive(Debug, Parser)]
 #[command(version, about = "Barcode, UMI, and cell assignment for Flora")]
@@ -115,15 +114,6 @@ struct Cli {
 
 fn main() -> Result<()> {
     let mut args: Vec<OsString> = std::env::args_os().collect();
-    let executable_name = args
-        .first()
-        .and_then(|value| std::path::Path::new(value).file_name())
-        .and_then(|value| value.to_str())
-        .unwrap_or("flora");
-    if let Some(result) = dispatch_internal_stage(executable_name) {
-        return result;
-    }
-
     match args.get(1).and_then(|value| value.to_str()) {
         Some("glycine") => {
             args.remove(1);
@@ -135,60 +125,29 @@ fn main() -> Result<()> {
             args[0] = OsString::from("flora analyze");
             return run_analyze_from(args);
         }
-        Some("mixed") => {
-            args.drain(0..2);
-            return workflow_runtime::run(WorkflowKind::Mixed, args);
-        }
-        Some("run") | Some("run-mixed") => {
-            anyhow::bail!(
-                "unsupported command; use 'flora' for single species or 'flora mixed' for mixed species"
-            );
-        }
         Some("help") if args.len() == 2 => {
             print_top_level_help();
-            return workflow_runtime::run(WorkflowKind::Single, vec![OsString::from("--help")]);
+            return Ok(());
         }
         Some("--help") | Some("-h") if args.len() == 2 => {
             print_top_level_help();
-            return workflow_runtime::run(WorkflowKind::Single, vec![OsString::from("--help")]);
+            return Ok(());
         }
         Some("--version") | Some("-V") if args.len() == 2 => {
             println!("flora {}", env!("CARGO_PKG_VERSION"));
             return Ok(());
         }
-        _ if std::env::var_os("FLORA_INTERNAL_WORKFLOW").is_some() => run_analyze_from(args),
-        _ => {
-            args.remove(0);
-            workflow_runtime::run(WorkflowKind::Single, args)
-        }
+        _ => run_analyze_from(args),
     }
 }
 
 fn print_top_level_help() {
     println!("Flora: end-to-end full-length single-cell transcriptomics\n");
-    println!("Commands:");
-    println!("  flora [OPTIONS]          Run the complete single-species workflow");
-    println!("  flora mixed [OPTIONS]    Run the complete mixed-species workflow");
-    println!("  flora glycine [OPTIONS]  Run Glycine full-length read identification only");
-    println!("  flora analyze [OPTIONS]  Run barcode, UMI, and cell assignment only\n");
-}
-
-fn dispatch_internal_stage(name: &str) -> Option<Result<()>> {
-    match name {
-        "add_cb_ur_tags" => Some(flora::stage_add_cb_ur_tags::main()),
-        "add_gene_tags" => Some(flora::stage_add_gene_tags::main()),
-        "assign_genes" => Some(flora::stage_assign_genes::main()),
-        "assign_transcripts" => Some(flora::stage_assign_transcripts::main()),
-        "cell_umi_gene_table" => Some(flora::stage_cell_umi_gene_table::main()),
-        "cluster_umis_allbam" => Some(flora::stage_cluster_umis_allbam::main()),
-        "gene_expression" => Some(flora::stage_gene_expression::main()),
-        "generate_26bp_whitelists" => Some(flora::stage_generate_26bp_whitelists::main()),
-        "isoform_expression" => Some(flora::stage_isoform_expression::main()),
-        "prepare_read_tags" => Some(flora::stage_prepare_read_tags::main()),
-        "read_qc_summary" => Some(flora::stage_read_qc_summary::main()),
-        "rna_qc_metrics" => Some(flora::stage_rna_qc_metrics::main()),
-        _ => None,
-    }
+    println!("Usage:");
+    println!("  flora glycine [OPTIONS]       Identify and trim full-length cDNA reads");
+    println!("  flora analyze [OPTIONS] FILE  Run barcode, UMI, and cell assignment");
+    println!("  flora [OPTIONS] FILE          Backward-compatible alias for 'flora analyze'");
+    println!("\nRun 'flora glycine --help' or 'flora analyze --help' for command details.");
 }
 
 fn run_analyze_from<I, T>(args: I) -> Result<()>
@@ -199,7 +158,9 @@ where
     let total_t0 = Instant::now();
     let cli = Cli::parse_from(args);
     if cli.barcode_extract_mode != "fixed_seq" {
-        anyhow::bail!("Flora currently supports --barcode_extract_mode fixed_seq only");
+        anyhow::bail!(
+            "Flora currently supports --barcode_extract_mode fixed_seq only"
+        );
     }
     if cli.threads > 0 {
         let _ = rayon::ThreadPoolBuilder::new()
@@ -209,8 +170,7 @@ where
 
     let skip_fastq = cli.light_output && !cli.full_output;
     let include_other_components = cli.include_other_components && !cli.exclude_other_components;
-    let absorb_unassigned_paired =
-        cli.absorb_unassigned_paired && !cli.disable_absorb_unassigned_paired;
+    let absorb_unassigned_paired = cli.absorb_unassigned_paired && !cli.disable_absorb_unassigned_paired;
     let config = PipelineConfig {
         fastq_fns: cli.fastq_fns,
         full_bc_whitelist_3p: cli.full_bc_whitelist_3p,

@@ -5,9 +5,9 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use clap::Parser;
 use csv::{ReaderBuilder, StringRecord, WriterBuilder};
-use flora::fastq::for_each_fastq_batch;
 use rust_htslib::bam::{self, Read};
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
+use flora::fastq::for_each_fastq_batch;
 
 #[derive(Debug, Parser)]
 #[command(version, about = "Compute RNA QC metrics and per-cell summaries")]
@@ -65,7 +65,7 @@ struct BamSummary {
     aligned_genome_reads_in_final_cells: usize,
 }
 
-pub fn main() -> Result<()> {
+fn main() -> Result<()> {
     let cli = Cli::parse();
     let raw_fastq_reads = count_fastq_reads(&cli.raw_fastq)?;
     let mut full_length_reads = if let Some(path) = &cli.full_length_fastq {
@@ -194,12 +194,8 @@ impl CellUmiGeneColumns {
     }
 }
 
-fn summarize_bam_alignments(
-    path: &PathBuf,
-    final_cell_reads: &HashSet<String>,
-) -> Result<BamSummary> {
-    let mut bam =
-        bam::Reader::from_path(path).with_context(|| format!("open {}", path.display()))?;
+fn summarize_bam_alignments(path: &PathBuf, final_cell_reads: &HashSet<String>) -> Result<BamSummary> {
+    let mut bam = bam::Reader::from_path(path).with_context(|| format!("open {}", path.display()))?;
     let mut summary = BamSummary::default();
     let mut mapped_unique_reads = HashSet::default();
     let mut aligned_genome_reads = HashSet::default();
@@ -276,8 +272,7 @@ fn load_transcript_assignment_summary(
     path: &PathBuf,
     final_cell_reads: &HashSet<String>,
 ) -> Result<(Option<usize>, Option<usize>)> {
-    let reader =
-        BufReader::new(File::open(path).with_context(|| format!("open {}", path.display()))?);
+    let reader = BufReader::new(File::open(path).with_context(|| format!("open {}", path.display()))?);
     let mut known_reads = HashSet::default();
     let mut isoforms = HashSet::default();
     for line in reader.lines() {
@@ -300,8 +295,7 @@ fn load_transcript_assignment_summary(
 }
 
 fn load_glycine_total_full_length_reads(path: &PathBuf) -> Result<Option<usize>> {
-    let reader =
-        BufReader::new(File::open(path).with_context(|| format!("open {}", path.display()))?);
+    let reader = BufReader::new(File::open(path).with_context(|| format!("open {}", path.display()))?);
     let mut in_type_block = false;
     for line in reader.lines() {
         let line = line?;
@@ -419,67 +413,25 @@ fn write_metrics_files(
 
     let metrics = vec![
         ("Input reads".to_string(), MetricValue::Int(raw_fastq_reads)),
-        (
-            "Full length reads".to_string(),
-            MetricValue::Int(full_length_reads),
-        ),
-        (
-            "Estimated number of cells".to_string(),
-            MetricValue::Int(estimated_cells),
-        ),
-        (
-            "Raw FASTQ reads".to_string(),
-            MetricValue::Int(raw_fastq_reads),
-        ),
-        (
-            "Aligned BAM reads".to_string(),
-            MetricValue::Int(bam.mapped_unique_reads),
-        ),
-        (
-            "Aligned BAM records".to_string(),
-            MetricValue::Int(bam.bam_records),
-        ),
-        (
-            "Pass reads".to_string(),
-            MetricValue::Int(full_length_reads),
-        ),
-        (
-            "Mapped".to_string(),
-            MetricValue::Int(bam.mapped_primary_alignments),
-        ),
+        ("Full length reads".to_string(), MetricValue::Int(full_length_reads)),
+        ("Estimated number of cells".to_string(), MetricValue::Int(estimated_cells)),
+        ("Raw FASTQ reads".to_string(), MetricValue::Int(raw_fastq_reads)),
+        ("Aligned BAM reads".to_string(), MetricValue::Int(bam.mapped_unique_reads)),
+        ("Aligned BAM records".to_string(), MetricValue::Int(bam.bam_records)),
+        ("Pass reads".to_string(), MetricValue::Int(full_length_reads)),
+        ("Mapped".to_string(), MetricValue::Int(bam.mapped_primary_alignments)),
         ("Unmapped".to_string(), MetricValue::Int(bam.unmapped_reads)),
-        (
-            "Supplementary".to_string(),
-            MetricValue::Int(bam.supplementary_alignments),
-        ),
-        (
-            "Barcode-valid reads".to_string(),
-            MetricValue::Int(barcode_valid_reads),
-        ),
-        (
-            "Reads assigned to final cells".to_string(),
-            MetricValue::Int(assigned_cell_reads),
-        ),
-        (
-            "Gene assigned reads".to_string(),
-            MetricValue::Int(cell_umi_gene.known_gene_reads),
-        ),
-        (
-            "Reads in final cells".to_string(),
-            MetricValue::Int(cell_associated_reads),
-        ),
+        ("Supplementary".to_string(), MetricValue::Int(bam.supplementary_alignments)),
+        ("Barcode-valid reads".to_string(), MetricValue::Int(barcode_valid_reads)),
+        ("Reads assigned to final cells".to_string(), MetricValue::Int(assigned_cell_reads)),
+        ("Gene assigned reads".to_string(), MetricValue::Int(cell_umi_gene.known_gene_reads)),
+        ("Reads in final cells".to_string(), MetricValue::Int(cell_associated_reads)),
         (
             "Reads aligned to reference genome in final cells".to_string(),
             MetricValue::Int(aligned_genome_reads),
         ),
-        (
-            "Reads per cell (mean)".to_string(),
-            MetricValue::Float(mean_reads_per_cell),
-        ),
-        (
-            "Mean reads per cell".to_string(),
-            MetricValue::Float(mean_reads_per_cell),
-        ),
+        ("Reads per cell (mean)".to_string(), MetricValue::Float(mean_reads_per_cell)),
+        ("Mean reads per cell".to_string(), MetricValue::Float(mean_reads_per_cell)),
         (
             "Mean cell-associated reads per cell".to_string(),
             MetricValue::Float(mean(&reads_per_cell)),
@@ -504,14 +456,8 @@ fn write_metrics_files(
             "Genes per cell (median)".to_string(),
             MetricValue::Float(median_from_f64(&genes_per_cell)),
         ),
-        (
-            "Unique genes".to_string(),
-            MetricValue::Int(cell_umi_gene.unique_genes),
-        ),
-        (
-            "Total genes detected".to_string(),
-            MetricValue::Int(cell_umi_gene.unique_genes),
-        ),
+        ("Unique genes".to_string(), MetricValue::Int(cell_umi_gene.unique_genes)),
+        ("Total genes detected".to_string(), MetricValue::Int(cell_umi_gene.unique_genes)),
         (
             "Fraction reads in cells".to_string(),
             MetricValue::Float(ratio(cell_associated_reads, full_length_reads)),
@@ -540,10 +486,7 @@ fn write_metrics_files(
 
     let mut metrics = metrics;
     if let Some(value) = known_transcript_reads {
-        metrics.push((
-            "Transcript assigned reads".to_string(),
-            MetricValue::Int(value),
-        ));
+        metrics.push(("Transcript assigned reads".to_string(), MetricValue::Int(value)));
         metrics.push((
             "Percent transcript assigned reads of full length".to_string(),
             MetricValue::Float(ratio(value, full_length_reads)),
@@ -574,24 +517,15 @@ fn write_metrics_files(
     .into_iter()
     .collect();
 
-    let mut writer = WriterBuilder::new()
-        .delimiter(b'\t')
-        .from_path("rna_qc_metrics.tsv")?;
+    let mut writer = WriterBuilder::new().delimiter(b'\t').from_path("rna_qc_metrics.tsv")?;
     writer.write_record(["Metric", "Value"])?;
     for (metric, value) in &metrics {
-        writer.write_record([
-            metric,
-            &format_metric_value(metric, value, &fraction_metrics),
-        ])?;
+        writer.write_record([metric, &format_metric_value(metric, value, &fraction_metrics)])?;
     }
     writer.flush()?;
 
     let report_records = vec![
-        (
-            "Experiment summary",
-            "Input reads",
-            metric_lookup(&metrics, "Input reads"),
-        ),
+        ("Experiment summary", "Input reads", metric_lookup(&metrics, "Input reads")),
         (
             "Experiment summary",
             "Estimated cells",
@@ -612,21 +546,9 @@ fn write_metrics_files(
             "Genes per cell (median)",
             metric_lookup(&metrics, "Genes per cell (median)"),
         ),
-        (
-            "Alignment / feature summary",
-            "Pass reads",
-            metric_lookup(&metrics, "Pass reads"),
-        ),
-        (
-            "Alignment / feature summary",
-            "Mapped",
-            metric_lookup(&metrics, "Mapped"),
-        ),
-        (
-            "Alignment / feature summary",
-            "Unmapped",
-            metric_lookup(&metrics, "Unmapped"),
-        ),
+        ("Alignment / feature summary", "Pass reads", metric_lookup(&metrics, "Pass reads")),
+        ("Alignment / feature summary", "Mapped", metric_lookup(&metrics, "Mapped")),
+        ("Alignment / feature summary", "Unmapped", metric_lookup(&metrics, "Unmapped")),
         (
             "Alignment / feature summary",
             "Supplementary",
@@ -680,10 +602,7 @@ fn write_metrics_files(
         (
             "Read assignment percentage",
             "% cell-assigned reads",
-            metric_lookup(
-                &metrics,
-                "Percent reads assigned to final cells of full length",
-            ),
+            metric_lookup(&metrics, "Percent reads assigned to final cells of full length"),
         ),
         (
             "Read assignment percentage",
@@ -715,9 +634,7 @@ fn write_metrics_files(
         let raw = value.map(|x| x.as_f64_string()).unwrap_or_default();
         let formatted = match value {
             None => String::new(),
-            Some(value) if report_fraction_metrics.contains(metric) => {
-                format!("{:.2}%", value.as_f64() * 100.0)
-            }
+            Some(value) if report_fraction_metrics.contains(metric) => format!("{:.2}%", value.as_f64() * 100.0),
             Some(value) => value.formatted_numeric(),
         };
         report_writer.write_record([section, metric, &raw, &formatted])?;
@@ -726,12 +643,7 @@ fn write_metrics_files(
 
     let stdout = metrics
         .iter()
-        .map(|(metric, value)| {
-            format!(
-                "{metric}\t{}",
-                format_metric_value(metric, value, &fraction_metrics)
-            )
-        })
+        .map(|(metric, value)| format!("{metric}\t{}", format_metric_value(metric, value, &fraction_metrics)))
         .collect::<Vec<_>>()
         .join("\n");
     println!("\nRNA QC Metrics\nMetric\tValue\n{stdout}");
@@ -739,9 +651,7 @@ fn write_metrics_files(
 }
 
 fn write_per_cell_qc(per_cell: &HashMap<String, CellStats>) -> Result<()> {
-    let mut writer = WriterBuilder::new()
-        .delimiter(b'\t')
-        .from_path("per_cell_qc.tsv")?;
+    let mut writer = WriterBuilder::new().delimiter(b'\t').from_path("per_cell_qc.tsv")?;
     writer.write_record(["barcode", "reads", "umis", "genes", "mito_percent"])?;
     let mut barcodes = per_cell.keys().cloned().collect::<Vec<_>>();
     barcodes.sort();
@@ -797,10 +707,7 @@ impl MetricValue {
 }
 
 fn metric_lookup<'a>(metrics: &'a [(String, MetricValue)], key: &str) -> Option<MetricValue> {
-    metrics
-        .iter()
-        .find(|(metric, _)| metric == key)
-        .map(|(_, value)| *value)
+    metrics.iter().find(|(metric, _)| metric == key).map(|(_, value)| *value)
 }
 
 fn ratio(numerator: usize, denominator: usize) -> f64 {
@@ -833,11 +740,7 @@ fn median_from_f64(values: &[f64]) -> f64 {
     }
 }
 
-fn format_metric_value(
-    metric: &str,
-    value: &MetricValue,
-    fraction_metrics: &HashSet<&str>,
-) -> String {
+fn format_metric_value(metric: &str, value: &MetricValue, fraction_metrics: &HashSet<&str>) -> String {
     if fraction_metrics.contains(metric) {
         format!("{:.2}%", value.as_f64() * 100.0)
     } else {
@@ -894,11 +797,7 @@ mod tests {
     fn metric_formatting_matches_python_report_style() {
         let fraction_metrics: HashSet<&str> = ["Percent full length reads"].into_iter().collect();
         assert_eq!(
-            format_metric_value(
-                "Percent full length reads",
-                &MetricValue::Float(0.125),
-                &fraction_metrics
-            ),
+            format_metric_value("Percent full length reads", &MetricValue::Float(0.125), &fraction_metrics),
             "12.50%"
         );
         assert_eq!(

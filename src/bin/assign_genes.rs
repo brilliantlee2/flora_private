@@ -7,10 +7,7 @@ use clap::Parser;
 use flora::annotation::{assign_gene, load_gene_gtf, parse_bed6_line, write_gene_assignment};
 
 #[derive(Debug, Parser)]
-#[command(
-    version,
-    about = "Assign reads in BED6 to genes using GTF gene intervals"
-)]
+#[command(version, about = "Assign reads in BED6 to genes using GTF gene intervals")]
 struct Cli {
     bed: PathBuf,
     gtf: PathBuf,
@@ -28,7 +25,7 @@ struct Cli {
     _verbosity: u8,
 }
 
-pub fn main() -> Result<()> {
+fn main() -> Result<()> {
     let cli = Cli::parse();
     run(cli)
 }
@@ -39,11 +36,9 @@ fn run(cli: Cli) -> Result<()> {
         File::create(&cli.output).with_context(|| format!("create {}", cli.output.display()))?;
         return Ok(());
     }
-    let reader = BufReader::new(
-        File::open(&cli.bed).with_context(|| format!("open {}", cli.bed.display()))?,
-    );
+    let reader = BufReader::new(File::open(&cli.bed).with_context(|| format!("open {}", cli.bed.display()))?);
     let mut writer = BufWriter::new(
-        File::create(&cli.output).with_context(|| format!("create {}", cli.output.display()))?,
+        File::create(&cli.output).with_context(|| format!("create {}", cli.output.display()))?
     );
 
     for line in reader.lines() {

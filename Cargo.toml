@@ -23,7 +23,6 @@ rust-htslib = "0.51.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 threadpool = "1.8.1"
-tempfile = "3.10"
 zip = { version = "2.2", default-features = false, features = ["deflate"] }
 
 [[bin]]
@@ -73,6 +72,9 @@ path = "src/bin/cluster_umis_allbam.rs"
 [[bin]]
 name = "rna_qc_metrics"
 path = "src/bin/rna_qc_metrics.rs"
+
+[dev-dependencies]
+tempfile = "3.10"
 
 [patch.crates-io]
 edlib_rs = { path = "vendor/edlib_rs-0.1.2" }

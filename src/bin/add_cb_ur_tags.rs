@@ -6,10 +6,7 @@ use clap::{ArgAction, Parser};
 use rust_htslib::bam::{self, Read};
 
 #[derive(Debug, Parser)]
-#[command(
-    version,
-    about = "Add CB/UR and related Flora tags to BAM from read_tags.tsv"
-)]
+#[command(version, about = "Add CB/UR and related Flora tags to BAM from read_tags.tsv")]
 struct Cli {
     #[arg(long)]
     bam: PathBuf,
@@ -40,11 +37,10 @@ struct Cli {
     keep_untagged: bool,
 }
 
-pub fn main() -> Result<()> {
+fn main() -> Result<()> {
     let cli = Cli::parse();
     let tag_map = load_tag_map(&cli)?;
-    let mut bam =
-        bam::Reader::from_path(&cli.bam).with_context(|| format!("open {}", cli.bam.display()))?;
+    let mut bam = bam::Reader::from_path(&cli.bam).with_context(|| format!("open {}", cli.bam.display()))?;
     let header = bam::Header::from_template(bam.header());
     let mut out = bam::Writer::from_path(&cli.output, &header, bam::Format::Bam)
         .with_context(|| format!("create {}", cli.output.display()))?;
@@ -78,16 +74,10 @@ pub fn main() -> Result<()> {
     bam::index::build(&cli.output, None, bam::index::Type::Bai, 1)?;
     println!("total_alignments\t{}", total_read_ids.len());
     println!("tagged_alignments\t{}", tagged_read_ids.len());
-    println!(
-        "unmatched_alignments\t{}",
-        total_read_ids.len().saturating_sub(tagged_read_ids.len())
-    );
+    println!("unmatched_alignments\t{}", total_read_ids.len().saturating_sub(tagged_read_ids.len()));
     println!("total_alignment_records\t{total}");
     println!("tagged_alignment_records\t{tagged}");
-    println!(
-        "unmatched_alignment_records\t{}",
-        total.saturating_sub(tagged)
-    );
+    println!("unmatched_alignment_records\t{}", total.saturating_sub(tagged));
     Ok(())
 }
 
@@ -108,12 +98,7 @@ fn load_tag_map(cli: &Cli) -> Result<HashMap<String, TagRow>> {
         .from_path(&cli.tags)
         .with_context(|| format!("open {}", cli.tags.display()))?;
     let headers = reader.headers()?.clone();
-    let idx = |name: &str| {
-        headers
-            .iter()
-            .position(|h| h == name)
-            .context(format!("missing column: {name}"))
-    };
+    let idx = |name: &str| headers.iter().position(|h| h == name).context(format!("missing column: {name}"));
     let read_id_idx = idx(&cli.read_id_col)?;
     let cb_idx = idx(&cli.cb_col)?;
     let ur_idx = idx(&cli.ur_col)?;

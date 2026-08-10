@@ -5,15 +5,12 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use clap::Parser;
 use flora::annotation::{
-    assign_transcript, bedtools_bamtobed_split, load_exon_gtf, parse_bed6_line,
-    write_transcript_assignment, BedRecord,
+    assign_transcript, bedtools_bamtobed_split, load_exon_gtf, parse_bed6_line, write_transcript_assignment,
+    BedRecord,
 };
 
 #[derive(Debug, Parser)]
-#[command(
-    version,
-    about = "Assign reads in BAM to transcripts using split BED blocks and GTF exons"
-)]
+#[command(version, about = "Assign reads in BAM to transcripts using split BED blocks and GTF exons")]
 struct Cli {
     bam: PathBuf,
     gtf: PathBuf,
@@ -31,7 +28,7 @@ struct Cli {
     _verbosity: u8,
 }
 
-pub fn main() -> Result<()> {
+fn main() -> Result<()> {
     let cli = Cli::parse();
     run_cli(cli)
 }
@@ -55,12 +52,9 @@ fn run(
     exons: &flora::annotation::ExonIndex,
     mapq: i32,
 ) -> Result<()> {
-    let reader = BufReader::new(
-        File::open(split_bed).with_context(|| format!("open {}", split_bed.display()))?,
-    );
-    let mut writer = BufWriter::new(
-        File::create(output).with_context(|| format!("create {}", output.display()))?,
-    );
+    let reader = BufReader::new(File::open(split_bed).with_context(|| format!("open {}", split_bed.display()))?);
+    let mut writer =
+        BufWriter::new(File::create(output).with_context(|| format!("create {}", output.display()))?);
     let mut current_name = String::new();
     let mut current_blocks: Vec<BedRecord> = Vec::new();
 
@@ -69,9 +63,7 @@ fn run(
         if line.trim().is_empty() {
             continue;
         }
-        let Some(record) = parse_bed6_line(&line) else {
-            continue;
-        };
+        let Some(record) = parse_bed6_line(&line) else { continue };
         if current_name.is_empty() {
             current_name = record.name.clone();
         }
@@ -93,10 +85,7 @@ fn run(
 
 fn temp_split_bed_path() -> PathBuf {
     let mut path = std::env::temp_dir();
-    path.push(format!(
-        "strint_assign_transcripts_{}.split.bed",
-        std::process::id()
-    ));
+    path.push(format!("strint_assign_transcripts_{}.split.bed", std::process::id()));
     path
 }
 

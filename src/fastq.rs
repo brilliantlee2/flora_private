@@ -27,11 +27,7 @@ pub fn read_fastq(path: &Path) -> Result<Vec<FastqRecord>> {
     parse_fastq(reader)
 }
 
-pub fn for_each_fastq_batch<F>(
-    paths: &[impl AsRef<Path>],
-    batch_size: usize,
-    mut callback: F,
-) -> Result<usize>
+pub fn for_each_fastq_batch<F>(paths: &[impl AsRef<Path>], batch_size: usize, mut callback: F) -> Result<usize>
 where
     F: FnMut(Vec<FastqRecord>) -> Result<()>,
 {
@@ -56,11 +52,7 @@ pub fn parse_fastq<R: BufRead>(mut reader: R) -> Result<Vec<FastqRecord>> {
     Ok(records)
 }
 
-pub fn parse_fastq_batches<R, F>(
-    mut reader: R,
-    batch_size: usize,
-    callback: &mut F,
-) -> Result<usize>
+pub fn parse_fastq_batches<R, F>(mut reader: R, batch_size: usize, callback: &mut F) -> Result<usize>
 where
     R: BufRead,
     F: FnMut(Vec<FastqRecord>) -> Result<()>,

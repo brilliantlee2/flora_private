@@ -62,13 +62,12 @@ samtools --version
 minimap2 --version
 bedtools --version
 
-./flora --version
-./flora --help
-./flora mixed --help
-./flora glycine --help
+./target/release/flora --version
+./target/release/flora glycine --help
+bash run_all.sh -h
 ```
 
-The embedded Python analysis modules require Python 3.11. Do not replace the environment with Python 3.10, 3.12, 3.13, or 3.14.
+The bundled Python bytecode requires Python 3.11. Do not replace the environment with Python 3.10, 3.12, 3.13, or 3.14.
 
 ## Prepare a reference
 
@@ -97,7 +96,7 @@ cut -f1,2 genome.fa.fai | sort -V > chrom_sizes.tsv
 The integrated Glycine stage runs automatically:
 
 ```bash
-./flora \
+bash run_all.sh \
   --fastq /data/sample.fastq.gz \
   --barcode-list-10bp /data/BC_1536.txt \
   --ref-dir /data/GRCh38_flora \
@@ -112,7 +111,7 @@ The integrated Glycine stage runs automatically:
 ## Analyze an existing full-length FASTQ
 
 ```bash
-./flora \
+bash run_all.sh \
   --skip-glycine \
   --full-length-fastq /data/sample.full-length-plus-rescued.fq.gz \
   --barcode-list-10bp /data/BC_1536.txt \
@@ -128,7 +127,7 @@ The integrated Glycine stage runs automatically:
 ## Mixed-species analysis
 
 ```bash
-./flora mixed \
+bash run_all_mixed_species.sh \
   --skip-glycine \
   --full-length-fastq /data/mixed.full-length-plus-rescued.fq.gz \
   --barcode-list-10bp /data/BC_1536.txt \

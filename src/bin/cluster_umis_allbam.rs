@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use flora::umi_cluster::cluster_directional;
-use rust_htslib::bam::{self, ext::BamRecordExtensions, Read};
 use rustc_hash::FxHashMap as HashMap;
+use rust_htslib::bam::{self, ext::BamRecordExtensions, Read};
+use flora::umi_cluster::cluster_directional;
 
 #[derive(Debug, Parser)]
 #[command(version, about = "Cluster UMIs per gene+cell and write UB-tagged BAM")]
@@ -42,7 +42,7 @@ struct ReadState {
     needs_gene_override: bool,
 }
 
-pub fn main() -> Result<()> {
+fn main() -> Result<()> {
     let cli = Cli::parse();
     let mut bam = bam::IndexedReader::from_path(&cli.bam).with_context(|| "open indexed BAM")?;
     let header = bam::Header::from_template(bam.header());
@@ -172,12 +172,7 @@ fn create_region_name(rec: &bam::Record, chrom: &str, ref_interval: u32) -> Stri
     region_name_from_positions(chrom, first, last, ref_interval)
 }
 
-fn region_name_from_positions(
-    chrom: &str,
-    start_pos: u32,
-    end_pos: u32,
-    ref_interval: u32,
-) -> String {
+fn region_name_from_positions(chrom: &str, start_pos: u32, end_pos: u32, ref_interval: u32) -> String {
     let midpoint = (start_pos + end_pos) / 2;
     let interval_start = (midpoint / ref_interval) * ref_interval;
     let interval_end = midpoint.div_ceil(ref_interval) * ref_interval;
@@ -197,17 +192,8 @@ mod tests {
 
     #[test]
     fn region_name_matches_python_midpoint_binning() {
-        assert_eq!(
-            region_name_from_positions("chr1", 100, 199, 1000),
-            "chr1_0_1000"
-        );
-        assert_eq!(
-            region_name_from_positions("chr1", 1000, 1000, 1000),
-            "chr1_1000_1000"
-        );
-        assert_eq!(
-            region_name_from_positions("chr7", 1444, 1555, 1000),
-            "chr7_1000_2000"
-        );
+        assert_eq!(region_name_from_positions("chr1", 100, 199, 1000), "chr1_0_1000");
+        assert_eq!(region_name_from_positions("chr1", 1000, 1000, 1000), "chr1_1000_1000");
+        assert_eq!(region_name_from_positions("chr7", 1444, 1555, 1000), "chr7_1000_2000");
     }
 }

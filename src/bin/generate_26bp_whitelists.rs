@@ -27,7 +27,7 @@ struct Cli {
     middle_5p: String,
 }
 
-pub fn main() -> Result<()> {
+fn main() -> Result<()> {
     let cli = Cli::parse();
     let barcodes = read_10bp_barcodes(&cli.barcode_list_10bp)?;
     if let Some(parent) = cli.out_3p.parent() {
@@ -44,18 +44,9 @@ pub fn main() -> Result<()> {
         &cli.out_5p,
     )?;
     println!("Input 10bp barcode count: {}", barcodes.len());
-    println!(
-        "3p whitelist: {} ({count_3p} records)",
-        cli.out_3p.display()
-    );
-    println!(
-        "5p whitelist: {} ({count_5p} records)",
-        cli.out_5p.display()
-    );
-    println!(
-        "First 3 raw barcodes: {:?}",
-        &barcodes[..barcodes.len().min(3)]
-    );
+    println!("3p whitelist: {} ({count_3p} records)", cli.out_3p.display());
+    println!("5p whitelist: {} ({count_5p} records)", cli.out_5p.display());
+    println!("First 3 raw barcodes: {:?}", &barcodes[..barcodes.len().min(3)]);
     let first_rc: Vec<_> = barcodes
         .iter()
         .take(3)
@@ -66,11 +57,7 @@ pub fn main() -> Result<()> {
 }
 
 fn read_10bp_barcodes(path: &Path) -> Result<Vec<String>> {
-    let barcodes = if path
-        .extension()
-        .and_then(|x| x.to_str())
-        .is_some_and(|x| x.eq_ignore_ascii_case("xlsx"))
-    {
+    let barcodes = if path.extension().and_then(|x| x.to_str()).is_some_and(|x| x.eq_ignore_ascii_case("xlsx")) {
         read_xlsx_barcodes(path)?
     } else {
         read_plain_barcodes(path)?
@@ -80,10 +67,7 @@ fn read_10bp_barcodes(path: &Path) -> Result<Vec<String>> {
 
 fn read_plain_barcodes(path: &Path) -> Result<Vec<String>> {
     let text = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
-    let first_line = text
-        .lines()
-        .find(|line| !line.trim().is_empty())
-        .unwrap_or("");
+    let first_line = text.lines().find(|line| !line.trim().is_empty()).unwrap_or("");
     let delimiter = if first_line.contains(',') {
         Some(',')
     } else if first_line.contains('\t') {
@@ -99,10 +83,7 @@ fn read_plain_barcodes(path: &Path) -> Result<Vec<String>> {
             .map(|x| x.trim().trim_matches('\u{feff}').to_ascii_lowercase())
             .collect();
         let seq_idx = headers.iter().position(|h| {
-            matches!(
-                h.as_str(),
-                "sequence" | "seq" | "barcode" | "cellbarcode" | "序列"
-            )
+            matches!(h.as_str(), "sequence" | "seq" | "barcode" | "cellbarcode" | "序列")
         });
         if let Some(idx) = seq_idx {
             return Ok(lines

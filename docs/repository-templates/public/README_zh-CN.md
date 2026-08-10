@@ -62,13 +62,12 @@ samtools --version
 minimap2 --version
 bedtools --version
 
-./flora --version
-./flora --help
-./flora mixed --help
-./flora glycine --help
+./target/release/flora --version
+./target/release/flora glycine --help
+bash run_all.sh -h
 ```
 
-内嵌的 Python 分析模块需要 Python 3.11，不要替换为 Python 3.10、3.12、3.13 或 3.14。
+发行包中的 Python 字节码需要 Python 3.11，不要替换为 Python 3.10、3.12、3.13 或 3.14。
 
 ## 准备参考基因组
 
@@ -97,7 +96,7 @@ cut -f1,2 genome.fa.fai | sort -V > chrom_sizes.tsv
 内置 Glycine 会自动运行：
 
 ```bash
-./flora \
+bash run_all.sh \
   --fastq /data/sample.fastq.gz \
   --barcode-list-10bp /data/BC_1536.txt \
   --ref-dir /data/GRCh38_flora \
@@ -112,7 +111,7 @@ cut -f1,2 genome.fa.fai | sort -V > chrom_sizes.tsv
 ## 分析已有全长 FASTQ
 
 ```bash
-./flora \
+bash run_all.sh \
   --skip-glycine \
   --full-length-fastq /data/sample.full-length-plus-rescued.fq.gz \
   --barcode-list-10bp /data/BC_1536.txt \
@@ -128,7 +127,7 @@ cut -f1,2 genome.fa.fai | sort -V > chrom_sizes.tsv
 ## Mixed-species 分析
 
 ```bash
-./flora mixed \
+bash run_all_mixed_species.sh \
   --skip-glycine \
   --full-length-fastq /data/mixed.full-length-plus-rescued.fq.gz \
   --barcode-list-10bp /data/BC_1536.txt \

@@ -2,17 +2,14 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::Parser;
-use flora::fastq::for_each_fastq_batch;
 use serde::Serialize;
+use flora::fastq::for_each_fastq_batch;
 
 const READ_QUALITY_TRIM_LENGTH: usize = 10;
 const READ_LENGTH_HIST_UPPER_QUANTILE: f64 = 0.995;
 
 #[derive(Debug, Parser)]
-#[command(
-    version,
-    about = "Summarize FASTQ read length and quality distributions"
-)]
+#[command(version, about = "Summarize FASTQ read length and quality distributions")]
 struct Cli {
     #[arg(long)]
     fastq: PathBuf,
@@ -61,7 +58,7 @@ struct YieldPayload {
     n50_bp: usize,
 }
 
-pub fn main() -> Result<()> {
+fn main() -> Result<()> {
     let cli = Cli::parse();
     let mut lengths: Vec<u32> = Vec::new();
     let mut mean_qualities: Vec<f32> = Vec::new();
@@ -90,10 +87,7 @@ fn mean_quality(quality: &str) -> f64 {
     let bytes = quality.as_bytes();
     let read_length = bytes.len();
     let (start, end) = if read_length >= 100 && read_length > 2 * READ_QUALITY_TRIM_LENGTH {
-        (
-            READ_QUALITY_TRIM_LENGTH,
-            read_length - READ_QUALITY_TRIM_LENGTH,
-        )
+        (READ_QUALITY_TRIM_LENGTH, read_length - READ_QUALITY_TRIM_LENGTH)
     } else {
         (0, read_length)
     };
@@ -123,12 +117,7 @@ fn build_payload(
     if lengths.is_empty() {
         return Payload {
             n_reads: 0,
-            quality: QualityPayload {
-                mean: 0.0,
-                median: 0.0,
-                bins: vec![],
-                counts: vec![],
-            },
+            quality: QualityPayload { mean: 0.0, median: 0.0, bins: vec![], counts: vec![] },
             length: LengthPayload {
                 mean: 0.0,
                 median: 0.0,
@@ -183,12 +172,7 @@ fn build_payload(
     }
 }
 
-fn histogram_f32(
-    values: &[f32],
-    min_value: f64,
-    max_value: f64,
-    bins: usize,
-) -> (Vec<f64>, Vec<usize>) {
+fn histogram_f32(values: &[f32], min_value: f64, max_value: f64, bins: usize) -> (Vec<f64>, Vec<usize>) {
     let width = ((max_value - min_value) / bins as f64).max(f64::EPSILON);
     let mut counts = vec![0usize; bins];
     for value in values {
@@ -215,15 +199,13 @@ fn histogram_u32_clipped_kb(values: &[u32], max_kb: f64, bins: usize) -> (Vec<f6
         }
         counts[idx] += 1;
     }
-    let centers = (0..bins).map(|idx| (idx as f64 + 0.5) * width).collect();
+    let centers = (0..bins)
+        .map(|idx| (idx as f64 + 0.5) * width)
+        .collect();
     (centers, counts)
 }
 
-fn yield_curve_sorted_asc(
-    lengths_asc: &[u32],
-    total_bases: usize,
-    curve_points: usize,
-) -> (Vec<f64>, Vec<f64>, usize) {
+fn yield_curve_sorted_asc(lengths_asc: &[u32], total_bases: usize, curve_points: usize) -> (Vec<f64>, Vec<f64>, usize) {
     let n = lengths_asc.len();
     let points = curve_points.max(1).min(n);
     let mut cumulative_before_desc = vec![0usize; n];

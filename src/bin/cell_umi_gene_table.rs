@@ -7,10 +7,7 @@ use clap::Parser;
 use rust_htslib::bam::{self, Read};
 
 #[derive(Debug, Parser)]
-#[command(
-    version,
-    about = "Extract read_id, gene, barcode, and UMI table from tagged BAM"
-)]
+#[command(version, about = "Extract read_id, gene, barcode, and UMI table from tagged BAM")]
 struct Cli {
     bam: PathBuf,
 
@@ -21,12 +18,11 @@ struct Cli {
     _verbosity: u8,
 }
 
-pub fn main() -> Result<()> {
+fn main() -> Result<()> {
     let cli = Cli::parse();
-    let mut bam =
-        bam::Reader::from_path(&cli.bam).with_context(|| format!("open {}", cli.bam.display()))?;
+    let mut bam = bam::Reader::from_path(&cli.bam).with_context(|| format!("open {}", cli.bam.display()))?;
     let mut writer = BufWriter::new(
-        File::create(&cli.output).with_context(|| format!("create {}", cli.output.display()))?,
+        File::create(&cli.output).with_context(|| format!("create {}", cli.output.display()))?
     );
     writeln!(writer, "read_id\tgene\tbarcode\tumi")?;
     for rec in bam.records() {
@@ -41,16 +37,8 @@ pub fn main() -> Result<()> {
 }
 
 fn require_string_tag(rec: &bam::Record, tag: &[u8; 2], label: &str) -> Result<String> {
-    match rec.aux(tag).with_context(|| {
-        format!(
-            "missing {label} tag on read {}",
-            String::from_utf8_lossy(rec.qname())
-        )
-    })? {
+    match rec.aux(tag).with_context(|| format!("missing {label} tag on read {}", String::from_utf8_lossy(rec.qname())))? {
         bam::record::Aux::String(v) => Ok(v.to_string()),
-        _ => anyhow::bail!(
-            "non-string {label} tag on read {}",
-            String::from_utf8_lossy(rec.qname())
-        ),
+        _ => anyhow::bail!("non-string {label} tag on read {}", String::from_utf8_lossy(rec.qname())),
     }
 }
