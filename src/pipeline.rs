@@ -173,16 +173,11 @@ struct GraphComponent {
     edges: Vec<EdgeRecord>,
 }
 
-#[derive(Clone, Debug, Serialize)]
-struct AssignedRead {
-    read_id: String,
-    putative_umi: String,
-    putative_umi_5p: String,
-    #[serde(rename = "BC5n")]
-    bc5n: String,
-    #[serde(rename = "BC3n")]
-    bc3n: String,
-    cell_id: String,
+struct AssignmentWriteSummary {
+    n_cells_before_min_reads: usize,
+    n_assigned_reads: usize,
+    cell_counts: HashMap<String, usize>,
+    assigned_ids: Option<HashSet<String>>,
 }
 
 pub fn run_pipeline(config: &PipelineConfig) -> Result<PipelineSummary> {
@@ -312,23 +307,22 @@ pub fn run_pipeline(config: &PipelineConfig) -> Result<PipelineSummary> {
         config.max_other_component_barcodes,
     );
     let top1_dominance = compute_top1_dominance(&pair_counts);
-    let assigned_all = assign_reads(
+    let need_assigned_ids =
+        !config.skip_matched_fastq || !config.skip_unmatched_fastq || !config.skip_cell_fastq;
+    let assignment = write_assignments(
+        config.out_dir.join("read_assigned_cell.csv"),
         &clean,
         &barcode_to_cell,
         &top1_dominance,
         config.dominance_min,
         config.absorb_unassigned_paired,
-    );
-    let n_cells_before_min_reads = assigned_all
-        .iter()
-        .map(|r| r.cell_id.as_str())
-        .collect::<HashSet<_>>()
-        .len();
-    let assigned = filter_min_reads(assigned_all, config.min_reads_per_cell);
-    write_csv(config.out_dir.join("read_assigned_cell.csv"), &assigned)?;
-    let cell_read_stats = collect_cell_stats(&assigned);
+        config.min_reads_per_cell,
+        need_assigned_ids,
+    )?;
+    let clean_reads_rows = clean.len();
+    let cell_read_stats = collect_cell_stats(&assignment.cell_counts);
     write_cell_stats(config.out_dir.join("cell_read_stats.csv"), &cell_read_stats)?;
-    let kept_cells: HashSet<&str> = assigned.iter().map(|r| r.cell_id.as_str()).collect();
+    let kept_cells: HashSet<&str> = assignment.cell_counts.keys().map(String::as_str).collect();
     write_barcode_to_cell(
         config.out_dir.join("barcode_to_cell.csv"),
         &barcode_to_cell,
@@ -339,9 +333,9 @@ pub fn run_pipeline(config: &PipelineConfig) -> Result<PipelineSummary> {
         .filter(|(_, cell)| kept_cells.contains(cell.as_str()))
         .count();
     let assign_stats = AssignStats {
-        n_total_reads: clean.len(),
-        n_assigned_reads: assigned.len(),
-        n_cells_before_min_reads,
+        n_total_reads: clean_reads_rows,
+        n_assigned_reads: assignment.n_assigned_reads,
+        n_cells_before_min_reads: assignment.n_cells_before_min_reads,
         n_cells_after_min_reads: kept_cells.len(),
         min_reads_per_cell: config.min_reads_per_cell,
         n_core_barcodes: core_barcodes,
@@ -352,36 +346,35 @@ pub fn run_pipeline(config: &PipelineConfig) -> Result<PipelineSummary> {
         &barcode_validity_stats,
     )?;
     log_step_elapsed(6, 7, step_t0);
+    drop(clean);
 
     println!("[Flora] Step 7/7: optional FASTQ outputs");
     let step_t0 = Instant::now();
+    let assigned_ids = assignment.assigned_ids.as_ref();
     if !config.skip_matched_fastq {
-        let assigned_ids: HashSet<String> = assigned.iter().map(|r| r.read_id.clone()).collect();
         write_filtered_fastq_gz(
             &config.fastq_fns,
             config.batch_size,
             config.out_dir.join("matched_reads.fastq.gz"),
-            &assigned_ids,
+            assigned_ids.expect("assigned IDs requested for matched FASTQ"),
             true,
         )?;
     }
     if !config.skip_unmatched_fastq {
-        let assigned_ids: HashSet<String> = assigned.iter().map(|r| r.read_id.clone()).collect();
         write_filtered_fastq_gz(
             &config.fastq_fns,
             config.batch_size,
             config.out_dir.join("unmatched_reads.fastq.gz"),
-            &assigned_ids,
+            assigned_ids.expect("assigned IDs requested for unmatched FASTQ"),
             false,
         )?;
     }
     if !config.skip_cell_fastq {
-        let assigned_ids: HashSet<String> = assigned.iter().map(|r| r.read_id.clone()).collect();
         write_filtered_fastq_gz(
             &config.fastq_fns,
             config.batch_size,
             config.out_dir.join("cell_reads.fastq.gz"),
-            &assigned_ids,
+            assigned_ids.expect("assigned IDs requested for cell FASTQ"),
             true,
         )?;
     }
@@ -397,9 +390,9 @@ pub fn run_pipeline(config: &PipelineConfig) -> Result<PipelineSummary> {
         merged_rows: reads_total,
         filtered_rows,
         trimmed_barcode_uniques,
-        clean_reads_rows: clean.len(),
+        clean_reads_rows,
         pair_counts_rows: pair_counts.len(),
-        assigned_rows: assigned.len(),
+        assigned_rows: assignment.n_assigned_reads,
         core_cells: kept_cells.len(),
         core_barcodes,
         pair_stats,
@@ -1400,82 +1393,157 @@ fn compute_top1_dominance(rows: &[PairCount]) -> HashMap<String, Top1Dominance> 
     out
 }
 
-fn assign_reads(
+fn resolve_read_cell<'a>(
+    read: &CleanRead,
+    barcode_to_cell: &'a HashMap<String, String>,
+    dom: &'a HashMap<String, Top1Dominance>,
+    dominance_min: f64,
+    absorb_unassigned_paired: bool,
+) -> Option<&'a str> {
+    let direct = barcode_to_cell
+        .get(&read.bc5n)
+        .or_else(|| barcode_to_cell.get(&read.bc3n));
+    if let Some(cell) = direct {
+        return Some(cell.as_str());
+    }
+    let has5 = !read.bc5n.is_empty();
+    let has3 = !read.bc3n.is_empty();
+    let try_absorb = |bc: &str| -> Option<&'a str> {
+        if bc.is_empty() {
+            return None;
+        }
+        let row = dom.get(bc)?;
+        if row.dominance < dominance_min {
+            return None;
+        }
+        barcode_to_cell.get(&row.top1_partner).map(String::as_str)
+    };
+    if has5 ^ has3 {
+        return if has5 {
+            try_absorb(&read.bc5n)
+        } else {
+            try_absorb(&read.bc3n)
+        };
+    }
+    if absorb_unassigned_paired && has5 && has3 {
+        return match (try_absorb(&read.bc5n), try_absorb(&read.bc3n)) {
+            (Some(a), Some(b)) if a == b => Some(a),
+            (Some(a), None) => Some(a),
+            (None, Some(b)) => Some(b),
+            _ => None,
+        };
+    }
+    None
+}
+
+fn write_assignments(
+    path: PathBuf,
     reads: &[CleanRead],
     barcode_to_cell: &HashMap<String, String>,
     dom: &HashMap<String, Top1Dominance>,
     dominance_min: f64,
     absorb_unassigned_paired: bool,
-) -> Vec<AssignedRead> {
-    reads
-        .iter()
-        .filter_map(|r| {
-            let cell_a_5 = barcode_to_cell.get(&r.bc5n).cloned();
-            let cell_a_3 = barcode_to_cell.get(&r.bc3n).cloned();
-            let cell_a = cell_a_5.clone().or(cell_a_3.clone());
-            let has5 = !r.bc5n.is_empty();
-            let has3 = !r.bc3n.is_empty();
-            let try_absorb = |bc: &str| -> Option<String> {
-                if bc.is_empty() {
-                    return None;
-                }
-                let row = dom.get(bc)?;
-                if row.dominance < dominance_min {
-                    return None;
-                }
-                barcode_to_cell.get(&row.top1_partner).cloned()
-            };
-            let cell = if let Some(cell) = cell_a {
-                Some(cell)
-            } else if has5 ^ has3 {
-                if has5 {
-                    try_absorb(&r.bc5n)
-                } else {
-                    try_absorb(&r.bc3n)
-                }
-            } else if absorb_unassigned_paired && has5 && has3 {
-                let cell_b5 = try_absorb(&r.bc5n);
-                let cell_b3 = try_absorb(&r.bc3n);
-                match (cell_b5, cell_b3) {
-                    (Some(a), Some(b)) if a == b => Some(a),
-                    (Some(a), None) => Some(a),
-                    (None, Some(b)) => Some(b),
-                    _ => None,
-                }
-            } else {
-                None
-            }?;
-            Some(AssignedRead {
-                read_id: r.read_id.clone(),
-                putative_umi: r.putative_umi.clone(),
-                putative_umi_5p: r.putative_umi_5p.clone(),
-                bc5n: r.bc5n.clone(),
-                bc3n: r.bc3n.clone(),
-                cell_id: cell.clone(),
-            })
-        })
-        .collect()
+    min_reads: usize,
+    collect_assigned_ids: bool,
+) -> Result<AssignmentWriteSummary> {
+    let file = File::create(&path).with_context(|| format!("write {}", path.display()))?;
+    write_assignments_to_writer(
+        file,
+        reads,
+        barcode_to_cell,
+        dom,
+        dominance_min,
+        absorb_unassigned_paired,
+        min_reads,
+        collect_assigned_ids,
+    )
 }
 
-fn filter_min_reads(reads: Vec<AssignedRead>, min_reads: usize) -> Vec<AssignedRead> {
-    let mut counts = HashMap::default();
-    for r in &reads {
-        *counts.entry(r.cell_id.clone()).or_insert(0usize) += 1;
-    }
-    reads
-        .into_iter()
-        .filter(|r| counts.get(&r.cell_id).copied().unwrap_or(0) >= min_reads)
-        .collect()
-}
-
-fn collect_cell_stats(reads: &[AssignedRead]) -> Vec<CellReadStat> {
-    let mut counts: HashMap<String, usize> = HashMap::default();
+fn write_assignments_to_writer<W: Write>(
+    writer: W,
+    reads: &[CleanRead],
+    barcode_to_cell: &HashMap<String, String>,
+    dom: &HashMap<String, Top1Dominance>,
+    dominance_min: f64,
+    absorb_unassigned_paired: bool,
+    min_reads: usize,
+    collect_assigned_ids: bool,
+) -> Result<AssignmentWriteSummary> {
+    let mut all_counts: HashMap<&str, usize> = HashMap::default();
     for r in reads {
-        *counts.entry(r.cell_id.clone()).or_insert(0) += 1;
+        if let Some(cell) = resolve_read_cell(
+            r,
+            barcode_to_cell,
+            dom,
+            dominance_min,
+            absorb_unassigned_paired,
+        ) {
+            *all_counts.entry(cell).or_insert(0) += 1;
+        }
     }
-    let mut rows: Vec<_> = counts
+    let n_cells_before_min_reads = all_counts.len();
+    let kept_cells: HashSet<&str> = all_counts
+        .iter()
+        .filter_map(|(cell, count)| (*count >= min_reads).then_some(*cell))
+        .collect();
+    let cell_counts: HashMap<String, usize> = all_counts
         .into_iter()
-        .map(|(cell_id, n_reads)| CellReadStat { cell_id, n_reads })
+        .filter(|(cell, _)| kept_cells.contains(cell))
+        .map(|(cell, count)| (cell.to_string(), count))
+        .collect();
+    let mut writer = csv::Writer::from_writer(writer);
+    writer.write_record([
+        "read_id",
+        "putative_umi",
+        "putative_umi_5p",
+        "BC5n",
+        "BC3n",
+        "cell_id",
+    ])?;
+    let mut assigned_ids = collect_assigned_ids.then(HashSet::default);
+    let mut n_assigned_reads = 0usize;
+    for r in reads {
+        let Some(cell) = resolve_read_cell(
+            r,
+            barcode_to_cell,
+            dom,
+            dominance_min,
+            absorb_unassigned_paired,
+        ) else {
+            continue;
+        };
+        if !kept_cells.contains(cell) {
+            continue;
+        }
+        writer.write_record([
+            r.read_id.as_str(),
+            r.putative_umi.as_str(),
+            r.putative_umi_5p.as_str(),
+            r.bc5n.as_str(),
+            r.bc3n.as_str(),
+            cell,
+        ])?;
+        if let Some(ids) = &mut assigned_ids {
+            ids.insert(r.read_id.clone());
+        }
+        n_assigned_reads += 1;
+    }
+    writer.flush()?;
+    Ok(AssignmentWriteSummary {
+        n_cells_before_min_reads,
+        n_assigned_reads,
+        cell_counts,
+        assigned_ids,
+    })
+}
+
+fn collect_cell_stats(counts: &HashMap<String, usize>) -> Vec<CellReadStat> {
+    let mut rows: Vec<_> = counts
+        .iter()
+        .map(|(cell_id, n_reads)| CellReadStat {
+            cell_id: cell_id.clone(),
+            n_reads: *n_reads,
+        })
         .collect();
     rows.sort_by(|a, b| b.n_reads.cmp(&a.n_reads));
     rows
@@ -1725,5 +1793,52 @@ read2,3p,FAILED,,failed,\n"
         assert_eq!(ids, vec!["paired-kept", "single-kept"]);
         assert_eq!(clean[0].bc5n, "TTTTTTTTTTGGGGGGGGGG");
         assert_eq!(clean[0].bc3n, "GGGGGGGGGGTTTTTTTTTT");
+    }
+
+    #[test]
+    fn streamed_assignment_preserves_order_and_minimum_read_filter() {
+        let reads = vec![
+            clean_read("r1", "BC_A", ""),
+            clean_read("r2", "BC_A", ""),
+            clean_read("r3", "BC_B", ""),
+        ];
+        let barcode_to_cell = HashMap::from_iter([
+            ("BC_A".to_string(), "cell_000001".to_string()),
+            ("BC_B".to_string(), "cell_000002".to_string()),
+        ]);
+        let mut output = Vec::new();
+
+        let summary = write_assignments_to_writer(
+            &mut output,
+            &reads,
+            &barcode_to_cell,
+            &HashMap::default(),
+            0.8,
+            false,
+            2,
+            true,
+        )
+        .unwrap();
+
+        assert_eq!(summary.n_cells_before_min_reads, 2);
+        assert_eq!(summary.n_assigned_reads, 2);
+        assert_eq!(summary.cell_counts["cell_000001"], 2);
+        assert_eq!(summary.assigned_ids.as_ref().unwrap().len(), 2);
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "read_id,putative_umi,putative_umi_5p,BC5n,BC3n,cell_id\n\
+r1,UMI3,UMI5,BC_A,,cell_000001\n\
+r2,UMI3,UMI5,BC_A,,cell_000001\n"
+        );
+    }
+
+    fn clean_read(read_id: &str, bc5n: &str, bc3n: &str) -> CleanRead {
+        CleanRead {
+            read_id: read_id.into(),
+            putative_umi: "UMI3".into(),
+            putative_umi_5p: "UMI5".into(),
+            bc5n: bc5n.into(),
+            bc3n: bc3n.into(),
+        }
     }
 }
