@@ -666,6 +666,48 @@ class ReportTemplateContractTests(unittest.TestCase):
         self.assertEqual(payload["is_true"], [True, False, True])
         self.assertNotIn("threshold", payload)
 
+    def test_beads_payload_prefers_one_row_per_cell_barcode_map(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            barcode_to_cell = tmp_path / "barcode_to_cell.csv"
+            read_assigned_cell = tmp_path / "read_assigned_cell.csv"
+            barcode_to_cell.write_text(
+                "cell,barcode,is_cell_barcode\n"
+                "CELL1_N2,BC_A;BC_B,1\n"
+                "CELL2_N1,BC_C,1\n",
+                encoding="utf-8",
+            )
+            read_assigned_cell.write_text(
+                "cell_id,BC5n,BC3n\n"
+                "should_not_be_used,WRONG_A,WRONG_B\n",
+                encoding="utf-8",
+            )
+
+            payload = self.build_report.beads_per_droplet_payload(
+                read_assigned_cell,
+                barcode_to_cell,
+            )
+
+        self.assertEqual(payload, {"x": [1, 2], "y": [1, 1], "n_cells": 2})
+
+    def test_beads_payload_falls_back_to_read_assignments(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            read_assigned_cell = Path(tmp) / "read_assigned_cell.csv"
+            read_assigned_cell.write_text(
+                "cell_id,BC5n,BC3n\n"
+                "cell_1,BC_A,BC_B\n"
+                "cell_1,BC_A,BC_B\n"
+                "cell_2,BC_C,BC_C\n",
+                encoding="utf-8",
+            )
+
+            payload = self.build_report.beads_per_droplet_payload(
+                read_assigned_cell,
+                None,
+            )
+
+        self.assertEqual(payload, {"x": [1, 2], "y": [1, 1], "n_cells": 2})
+
     def test_reference_plot_colors_and_labels_are_used(self):
         source = BUILD_REPORT_PATH.read_text(encoding="utf-8")
 
@@ -844,7 +886,19 @@ class ReportTemplateContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             glycine_stats = Path(tmp) / "identifying_statistics.txt"
             glycine_stats.write_text(
-                "Read_count: 1000\nLength-filtered: 100\nQC-filtered: 50\n",
+                "Summary\n"
+                "Total_base_count\tValid_base_count\tValid_base_proportion(%)\n"
+                "100000\t90000\t90.00\n"
+                "Type\tRead_count\tRead_proportion(%)\n"
+                "Total\t1000\t100.00\n"
+                "Length-filtered\t100\t10.00\n"
+                "QC-filtered\t50\t5.00\n"
+                "Full-length+rescued\t600\t60.00\n"
+                "Full-length\t550\t55.00\n\n"
+                "Non-chimeric\n"
+                "Type\tRead_count\tRead_proportion(%)\n"
+                "Total\t700\t100.00\n"
+                "Full-length\t400\t57.14\n",
                 encoding="utf-8",
             )
             rows, denominator = self.build_report.build_read_summary(
@@ -864,6 +918,49 @@ class ReportTemplateContractTests(unittest.TestCase):
                 {"Metric": "Transcript assigned", "Read count": "200", "Percent": "20.00%"},
             ],
         )
+
+    def test_clean_reads_uses_raw_fastq_count_when_it_differs_from_glycine_total(self):
+        report_df = pd.DataFrame(
+            [
+                ("Experiment summary", "Input reads", 1010),
+                ("Read assignment summary", "Full length", 600),
+            ],
+            columns=["Section", "Metric", "Value"],
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            glycine_stats = Path(tmp) / "sample.identifying_statistic.txt"
+            glycine_stats.write_text(
+                "Summary\n"
+                "Type\tRead_count\tRead_proportion(%)\n"
+                "Total\t1000\t100.00\n"
+                "Length-filtered\t100\t10.00\n"
+                "QC-filtered\t50\t5.00\n"
+                "Full-length\t600\t60.00\n",
+                encoding="utf-8",
+            )
+            rows, denominator = self.build_report.build_read_summary(
+                report_df, pd.DataFrame(), False, glycine_stats
+            )
+
+        self.assertEqual(denominator, 1010)
+        self.assertEqual(rows[0], {"Metric": "Raw reads", "Read count": "1,010", "Percent": "100.00%"})
+        self.assertEqual(rows[1], {"Metric": "Clean reads", "Read count": "860", "Percent": "85.15%"})
+
+    def test_non_skipped_glycine_rejects_malformed_statistics(self):
+        report_df = pd.DataFrame(
+            [
+                ("Experiment summary", "Input reads", 1000),
+                ("Read assignment summary", "Full length", 600),
+            ],
+            columns=["Section", "Metric", "Value"],
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            glycine_stats = Path(tmp) / "sample.identifying_statistic.txt"
+            glycine_stats.write_text("Summary\nnot a valid table\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "Glycine Summary"):
+                self.build_report.build_read_summary(
+                    report_df, pd.DataFrame(), False, glycine_stats
+                )
 
     def test_read_summary_raw_clean_and_full_length_match_when_skipping_glycine(self):
         report_df = pd.DataFrame(

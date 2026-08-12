@@ -89,6 +89,7 @@ def parse_args():
     parser.add_argument("--whitelist-3p", default=None)
     parser.add_argument("--whitelist-5p", default=None)
     parser.add_argument("--read-assigned-cell", default=None)
+    parser.add_argument("--barcode-to-cell", default=None)
     parser.add_argument("--glycine-stats", default=None)
     parser.add_argument("--skip-glycine", action="store_true")
     parser.add_argument("--knee-plot-3p", default=None)
@@ -397,28 +398,47 @@ def build_sample_rows(params):
 
 def parse_glycine_read_counts(path):
     if not path or not Path(path).exists():
-        return None, None
-    text = Path(path).read_text(encoding="utf-8", errors="ignore")
+        raise ValueError(f"Glycine statistics file does not exist: {path}")
+
+    lines = Path(path).read_text(encoding="utf-8", errors="ignore").splitlines()
+    try:
+        summary_start = next(i for i, line in enumerate(lines) if line.strip() == "Summary")
+        table_start = next(
+            i
+            for i in range(summary_start + 1, len(lines))
+            if lines[i].strip().split("\t")[:2] == ["Type", "Read_count"]
+        )
+    except StopIteration as exc:
+        raise ValueError(f"Missing Glycine Summary read-count table in {path}") from exc
+
     values = {}
-    for line in text.splitlines():
-        parts = re.split(r"[\t: ]+", line.strip())
+    for line in lines[table_start + 1 :]:
+        stripped = line.strip()
+        if not stripped:
+            break
+        parts = stripped.split("\t")
         if len(parts) < 2:
-            continue
-        key = parts[0].strip()
-        for token in parts[1:]:
-            if re.fullmatch(r"\d+(?:\.\d+)?", token):
-                values.setdefault(key, float(token))
-                break
-    read_count = values.get("Read_count")
-    length_filtered = values.get("Length-filtered", 0.0)
-    qc_filtered = values.get("QC-filtered", 0.0)
-    if read_count is None:
-        return None, None
-    return int(read_count), max(0, int(read_count - length_filtered - qc_filtered))
+            break
+        try:
+            count = int(parts[1].replace(",", ""))
+        except ValueError as exc:
+            raise ValueError(
+                f"Invalid Glycine Summary read count for {parts[0]!r} in {path}"
+            ) from exc
+        values[parts[0].strip()] = count
+
+    required = {"Total", "Length-filtered", "QC-filtered"}
+    missing = required - set(values)
+    if missing:
+        raise ValueError(
+            f"Glycine Summary is missing required rows in {path}: {', '.join(sorted(missing))}"
+        )
+    return values["Total"], values["Length-filtered"], values["QC-filtered"]
 
 
 def parse_glycine_clean_reads(path):
-    return parse_glycine_read_counts(path)[1]
+    total, length_filtered, qc_filtered = parse_glycine_read_counts(path)
+    return max(0, total - length_filtered - qc_filtered)
 
 
 def build_read_summary(report_df, qc_df, skip_glycine, glycine_stats):
@@ -432,14 +452,17 @@ def build_read_summary(report_df, qc_df, skip_glycine, glycine_stats):
     full_length = metric(report_df, qc_df, "Full length", "Read assignment summary")
     if full_length is None:
         full_length = metric(report_df, qc_df, "Full length reads")
-    glycine_raw_reads, glycine_clean_reads = parse_glycine_read_counts(glycine_stats)
-    clean_reads = int(full_length) if skip_glycine and full_length is not None else glycine_clean_reads
-    if clean_reads is None and full_length is not None:
-        clean_reads = int(full_length)
-
     raw_reads = metric(report_df, qc_df, "Input reads")
-    if raw_reads is None:
-        raw_reads = full_length if skip_glycine else glycine_raw_reads
+    if skip_glycine:
+        if raw_reads is None:
+            raw_reads = full_length
+        clean_reads = int(full_length) if full_length is not None else raw_reads
+    else:
+        glycine_total, length_filtered, qc_filtered = parse_glycine_read_counts(glycine_stats)
+        if raw_reads is None:
+            raw_reads = glycine_total
+        clean_reads = max(0, int(raw_reads) - length_filtered - qc_filtered)
+
     if raw_reads is None:
         raw_reads = clean_reads or full_length
 
@@ -783,7 +806,25 @@ def barnyard_payload(summary_path, per_cell_path):
     }
 
 
-def beads_per_droplet_payload(path):
+def beads_per_droplet_payload(path, barcode_to_cell_path=None):
+    if barcode_to_cell_path and Path(barcode_to_cell_path).exists():
+        hist = Counter()
+        n_cells = 0
+        for chunk in pd.read_csv(
+            barcode_to_cell_path,
+            chunksize=BEAD_CHUNK_ROWS,
+            usecols=["cell", "barcode"],
+            dtype=str,
+            keep_default_na=False,
+        ):
+            for cell, barcode_text in zip(chunk["cell"], chunk["barcode"]):
+                if not cell.strip():
+                    continue
+                barcodes = {value.strip() for value in barcode_text.split(";") if value.strip()}
+                hist[len(barcodes)] += 1
+                n_cells += 1
+        xs = sorted(hist)
+        return {"x": xs, "y": [hist[x] for x in xs], "n_cells": n_cells}
     if not path or not Path(path).exists():
         return {"x": [], "y": [], "n_cells": 0}
     cell_barcodes = defaultdict(set)
@@ -1659,7 +1700,7 @@ def build_html(args, payload, sections):
     bargroupgap: 0.1
   }});
   const beadsNote = document.getElementById("beads-note");
-  if (beadsNote) beadsNote.textContent = `${{(payload.beads.n_cells || 0).toLocaleString()}} cells summarized from read_assigned_cell.csv.`;
+  if (beadsNote) beadsNote.textContent = `${{(payload.beads.n_cells || 0).toLocaleString()}} cells summarized from final barcode-to-cell assignments.`;
 
 {barnyard_script}
 
@@ -1829,7 +1870,7 @@ def main():
         "perCell": per_cell,
         "saturation": dataframe_payload(saturation_df) if not saturation_df.empty else {},
         "barcodeRank5p": barcode_rank_payload(args.barcode_counts_5p_tsv, args.whitelist_5p),
-        "beads": beads_per_droplet_payload(args.read_assigned_cell),
+        "beads": beads_per_droplet_payload(args.read_assigned_cell, args.barcode_to_cell),
         "rnaCluster": rna_clusters,
     }
     if barnyard is not None:
