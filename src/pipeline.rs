@@ -125,16 +125,6 @@ pub struct CellReadStat {
 }
 
 #[derive(Clone, Debug, Serialize)]
-struct CorrectionMapRow {
-    read_id: String,
-    side: String,
-    putative_barcode: String,
-    corrected_barcode: String,
-    status: String,
-    final_corrected_20bp: String,
-}
-
-#[derive(Clone, Debug, Serialize)]
 struct CleanRead {
     read_id: String,
     putative_umi: String,
@@ -518,26 +508,44 @@ fn write_correction_map(
     putative: &[PutativeRow],
     corrected: &[CorrectedRead],
 ) -> Result<()> {
-    let rows = putative
-        .iter()
-        .zip(corrected.iter())
-        .map(|(p, c)| {
-            let (putative_barcode, corrected_barcode) = if side == "3p" {
-                (p.putative_bc.clone(), c.bc3_corrected.clone())
-            } else {
-                (p.putative_bc_5p.clone(), c.bc5_corrected.clone())
-            };
-            CorrectionMapRow {
-                read_id: p.read_id.clone(),
-                side: side.to_string(),
-                putative_barcode: putative_barcode.clone(),
-                corrected_barcode: corrected_barcode.clone(),
-                status: correction_status(&putative_barcode, &corrected_barcode),
-                final_corrected_20bp: final_corrected_20bp_for_side(side, &corrected_barcode),
-            }
-        })
-        .collect::<Vec<_>>();
-    write_csv(path, &rows)
+    let file = File::create(&path).with_context(|| format!("write {}", path.display()))?;
+    write_correction_map_to_writer(file, side, putative, corrected)
+}
+
+fn write_correction_map_to_writer<W: Write>(
+    writer: W,
+    side: &str,
+    putative: &[PutativeRow],
+    corrected: &[CorrectedRead],
+) -> Result<()> {
+    let mut writer = csv::Writer::from_writer(writer);
+    writer.write_record([
+        "read_id",
+        "side",
+        "putative_barcode",
+        "corrected_barcode",
+        "status",
+        "final_corrected_20bp",
+    ])?;
+    for (p, c) in putative.iter().zip(corrected) {
+        let (putative_barcode, corrected_barcode) = if side == "3p" {
+            (p.putative_bc.as_str(), c.bc3_corrected.as_str())
+        } else {
+            (p.putative_bc_5p.as_str(), c.bc5_corrected.as_str())
+        };
+        let status = correction_status(putative_barcode, corrected_barcode);
+        let final_corrected = final_corrected_20bp_for_side(side, corrected_barcode);
+        writer.write_record([
+            p.read_id.as_str(),
+            side,
+            putative_barcode,
+            corrected_barcode,
+            status.as_str(),
+            final_corrected.as_str(),
+        ])?;
+    }
+    writer.flush()?;
+    Ok(())
 }
 
 fn read_whitelist(path: &Path, revcomp: bool) -> Result<HashSet<String>> {
@@ -1641,5 +1649,48 @@ mod tests {
         let cache = build_correction_cache(&rows, true, &whitelist, 1, 2);
         assert_eq!(cache.len(), 1);
         assert_eq!(cache["AAAA"], "AAAA");
+    }
+
+    #[test]
+    fn correction_map_stream_preserves_row_order_and_fields() {
+        let putative = vec![
+            PutativeRow {
+                read_id: "read1".into(),
+                putative_bc: "AAAAGCTACCCCCC".into(),
+                ..PutativeRow::default()
+            },
+            PutativeRow {
+                read_id: "read2".into(),
+                putative_bc: "FAILED".into(),
+                ..PutativeRow::default()
+            },
+        ];
+        let corrected = vec![
+            CorrectedRead {
+                read_id: "read1".into(),
+                putative_umi: String::new(),
+                putative_umi_5p: String::new(),
+                bc3_corrected: "AAAAGCTACCCCCC".into(),
+                bc5_corrected: String::new(),
+            },
+            CorrectedRead {
+                read_id: "read2".into(),
+                putative_umi: String::new(),
+                putative_umi_5p: String::new(),
+                bc3_corrected: String::new(),
+                bc5_corrected: String::new(),
+            },
+        ];
+        let mut output = Vec::new();
+
+        write_correction_map_to_writer(&mut output, "3p", &putative, &corrected).unwrap();
+
+        let text = String::from_utf8(output).unwrap();
+        assert_eq!(
+            text,
+            "read_id,side,putative_barcode,corrected_barcode,status,final_corrected_20bp\n\
+read1,3p,AAAAGCTACCCCCC,AAAAGCTACCCCCC,exact,\n\
+read2,3p,FAILED,,failed,\n"
+        );
     }
 }
