@@ -259,22 +259,35 @@ pub fn run_pipeline(config: &PipelineConfig) -> Result<PipelineSummary> {
         &putative,
         &corrected,
     )?;
+    let reads_total = putative.len();
+    let reads_demultiplexed = corrected
+        .iter()
+        .filter(|r| !r.bc3_corrected.is_empty() || !r.bc5_corrected.is_empty())
+        .count();
     let barcode_validity_stats = summarize_barcode_validity(&corrected);
+    drop(correction_cache_3p);
+    drop(correction_cache_5p);
+    drop(wl3_index);
+    drop(wl5_index);
+    drop(raw3);
+    drop(raw5);
+    drop(full_wl3);
+    drop(full_wl5);
+    drop(putative);
     log_step_elapsed(3, 7, step_t0);
 
     println!("[Flora] Step 4/7: filtering corrected reads and stripping fixed barcode sequence");
     let step_t0 = Instant::now();
-    let corrected_filtered = filter_corrected_rows(
-        &corrected,
+    let clean_pre_pair = filter_corrected_into_clean(
+        corrected,
         config.pair_min,
         config.auto_pair_min_floor,
         config.auto_pair_min_quantile,
     );
-    let filtered_rows = corrected_filtered.len();
-    let clean_pre_pair = build_clean_reads(&corrected_filtered);
+    let filtered_rows = clean_pre_pair.len();
     let trimmed_barcode_uniques = summarize_trimmed_barcode_uniques(&clean_pre_pair);
     let (clean, pair_counts, pair_stats, _prune_stats) = filter_pairs_three_stage(
-        &clean_pre_pair,
+        clean_pre_pair,
         config.pair_min,
         config.auto_pair_min_floor,
         config.auto_pair_min_quantile,
@@ -376,15 +389,12 @@ pub fn run_pipeline(config: &PipelineConfig) -> Result<PipelineSummary> {
 
     Ok(PipelineSummary {
         fastq_files: config.fastq_fns.len(),
-        reads_total: putative.len(),
-        reads_demultiplexed: corrected
-            .iter()
-            .filter(|r| !r.bc3_corrected.is_empty() || !r.bc5_corrected.is_empty())
-            .count(),
+        reads_total,
+        reads_demultiplexed,
         barcode_validity_stats,
-        putative_rows_3p: putative.len(),
-        putative_rows_5p: putative.len(),
-        merged_rows: putative.len(),
+        putative_rows_3p: reads_total,
+        putative_rows_5p: reads_total,
+        merged_rows: reads_total,
         filtered_rows,
         trimmed_barcode_uniques,
         clean_reads_rows: clean.len(),
@@ -728,24 +738,21 @@ fn write_lines(path: PathBuf, lines: &[String]) -> Result<()> {
     Ok(())
 }
 
-fn filter_corrected_rows(
-    rows: &[CorrectedRead],
+fn filter_corrected_into_clean(
+    rows: Vec<CorrectedRead>,
     pair_min: Option<usize>,
     auto_pair_min_floor: usize,
     auto_pair_min_quantile: f64,
-) -> Vec<CorrectedRead> {
-    let paired_keys = rows
-        .iter()
-        .filter(|r| !r.bc3_corrected.is_empty() && !r.bc5_corrected.is_empty())
-        .map(|r| {
-            ordered_pair(
-                &strip_fixed_5p(&r.bc5_corrected),
-                &revcomp_upper(&strip_fixed_3p(&r.bc3_corrected)),
-            )
-        })
-        .collect::<Vec<_>>();
+) -> Vec<CleanRead> {
     let mut pair_counts: HashMap<(String, String), usize> = HashMap::default();
-    for key in paired_keys {
+    for row in &rows {
+        if row.bc3_corrected.is_empty() || row.bc5_corrected.is_empty() {
+            continue;
+        }
+        let key = ordered_pair(
+            &strip_fixed_5p(&row.bc5_corrected),
+            &revcomp_upper(&strip_fixed_3p(&row.bc3_corrected)),
+        );
         *pair_counts.entry(key).or_insert(0) += 1;
     }
     let (resolved_pair_min, _) = resolve_pair_min(
@@ -754,39 +761,29 @@ fn filter_corrected_rows(
         auto_pair_min_floor,
         auto_pair_min_quantile,
     );
-    let mut bad_read_ids = HashSet::default();
-    for r in rows {
-        if r.bc3_corrected.is_empty() || r.bc5_corrected.is_empty() {
-            continue;
-        }
-        let key = ordered_pair(
-            &strip_fixed_5p(&r.bc5_corrected),
-            &revcomp_upper(&strip_fixed_3p(&r.bc3_corrected)),
-        );
-        if pair_counts.get(&key).copied().unwrap_or(0) < resolved_pair_min {
-            bad_read_ids.insert(r.read_id.clone());
-        }
-    }
-    rows.iter()
-        .filter(|r| !bad_read_ids.contains(&r.read_id))
+    rows.into_iter()
+        .filter(|r| {
+            if r.bc3_corrected.is_empty() || r.bc5_corrected.is_empty() {
+                return true;
+            }
+            let key = ordered_pair(
+                &strip_fixed_5p(&r.bc5_corrected),
+                &revcomp_upper(&strip_fixed_3p(&r.bc3_corrected)),
+            );
+            pair_counts.get(&key).copied().unwrap_or(0) >= resolved_pair_min
+        })
         .filter(|r| !r.bc3_corrected.is_empty() || !r.bc5_corrected.is_empty())
         .filter(|r| !(r.putative_umi.trim().is_empty() && r.putative_umi_5p.trim().is_empty()))
-        .cloned()
-        .collect()
-}
-
-fn build_clean_reads(rows: &[CorrectedRead]) -> Vec<CleanRead> {
-    rows.iter()
-        .filter_map(|r| {
+        .map(|r| {
             let bc5 = strip_fixed_5p(&r.bc5_corrected);
             let bc3 = revcomp_upper(&strip_fixed_3p(&r.bc3_corrected));
-            Some(CleanRead {
-                read_id: r.read_id.clone(),
-                putative_umi: r.putative_umi.clone(),
-                putative_umi_5p: r.putative_umi_5p.clone(),
+            CleanRead {
+                read_id: r.read_id,
+                putative_umi: r.putative_umi,
+                putative_umi_5p: r.putative_umi_5p,
                 bc5n: bc5,
                 bc3n: bc3,
-            })
+            }
         })
         .collect()
 }
@@ -895,7 +892,7 @@ fn build_pair_counts(
 }
 
 fn filter_pairs_three_stage(
-    reads: &[CleanRead],
+    reads: Vec<CleanRead>,
     pair_min: Option<usize>,
     floor: usize,
     q: f64,
@@ -905,10 +902,9 @@ fn filter_pairs_three_stage(
     drop_umi_a_ratio_gt: f64,
 ) -> (Vec<CleanRead>, Vec<PairCount>, PairStats, PairPruneStats) {
     let cleaned = reads
-        .iter()
+        .into_iter()
         .filter(|r| !r.bc5n.is_empty() || !r.bc3n.is_empty())
         .filter(|r| umi_a_ratio(&r.putative_umi) <= drop_umi_a_ratio_gt)
-        .cloned()
         .collect::<Vec<_>>();
     let (paired, single) = cleaned
         .into_iter()
@@ -1692,5 +1688,42 @@ mod tests {
 read1,3p,AAAAGCTACCCCCC,AAAAGCTACCCCCC,exact,\n\
 read2,3p,FAILED,,failed,\n"
         );
+    }
+
+    #[test]
+    fn corrected_rows_are_consumed_into_clean_rows_without_reordering() {
+        let rows = vec![
+            CorrectedRead {
+                read_id: "paired-kept".into(),
+                putative_umi: "CGT".into(),
+                putative_umi_5p: "TGC".into(),
+                bc3_corrected: "AAAAAAAAAAGCTACCCCCCCCCCCC".into(),
+                bc5_corrected: "TTTTTTTTTTCCTTCCGGGGGGGGGG".into(),
+            },
+            CorrectedRead {
+                read_id: "single-kept".into(),
+                putative_umi: "GTC".into(),
+                putative_umi_5p: String::new(),
+                bc3_corrected: "CCCCCCCCCCGCTACCGGGGGGGGGG".into(),
+                bc5_corrected: String::new(),
+            },
+            CorrectedRead {
+                read_id: "missing-umi".into(),
+                putative_umi: String::new(),
+                putative_umi_5p: String::new(),
+                bc3_corrected: "GGGGGGGGGGGCTACCTTTTTTTTTT".into(),
+                bc5_corrected: String::new(),
+            },
+        ];
+
+        let clean = filter_corrected_into_clean(rows, Some(1), 1, 0.1);
+
+        let ids = clean
+            .iter()
+            .map(|row| row.read_id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(ids, vec!["paired-kept", "single-kept"]);
+        assert_eq!(clean[0].bc5n, "TTTTTTTTTTGGGGGGGGGG");
+        assert_eq!(clean[0].bc3n, "GGGGGGGGGGTTTTTTTTTT");
     }
 }
