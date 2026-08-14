@@ -154,16 +154,28 @@ The integrated Glycine stage runs automatically:
 
 ## Initial resource guidance
 
-Resource use depends on read count, read length, reference size, barcode diversity, storage speed, and thread count. These are conservative starting points rather than guaranteed limits.
+Resource use depends on read count, read length, reference size, barcode diversity, storage speed, workflow mode, and thread count. The table below is conservative planning guidance anchored by the current memory-optimized benchmark. Ranges other than the measured approximately 150 GB case are extrapolations and should be validated on representative data.
 
-| Compressed FASTQ | Threads | Requested RAM | Initial wall-time allowance |
+| Compressed FASTQ | CPU threads | Requested RAM | Initial wall-time allowance |
 |---:|---:|---:|---:|
-| up to 5 GB | 16-24 | 96-128 GB | 4-8 h |
-| 5-20 GB | 24-32 | 192-256 GB | 12-24 h |
-| 20-50 GB | 32 | 384-512 GB | 24-48 h |
-| 50-100 GB | 32-48 | 768 GB-1 TB | 48-96 h |
+| up to 20 GB | 16-24 | 64-96 GB | up to 12 h |
+| 20-75 GB | 24-32 | 96-128 GB | 12-20 h |
+| 75-160 GB | 32 | 160 GB | 24-30 h |
+| over 160 GB | 32 initially | 192-256 GB | 36-48 h; benchmark first |
+
+### Measured large-run benchmark
+
+One monitored memory-optimized `flora mixed --skip-glycine` run used a 149 GB compressed full-length FASTQ containing 138,615,368 reads. With 32 workflow threads and 16 cluster threads, the monitored process tree completed in approximately 884 minutes (14 h 44 min). Peak PSS was 94.964 GiB, peak summed RSS was 94.973 GiB, and the 95th-percentile PSS was 66.846 GiB.
+
+For a comparable approximately 150 GB `--skip-glycine` run, request **32 CPU slots, 160 GB RAM, and 24-30 hours** for the first production submission. Request 192 GB when additional headroom is preferred, when shared-storage performance is unstable, or when thread counts are increased. This benchmark used one dataset and one system and should not be treated as a hard upper bound.
+
+The benchmark above excludes Glycine. For a large raw FASTQ processed with integrated Glycine, allow at least an additional 8-12 hours for the first run. The stages execute sequentially, so their memory allocations are not simply added, but the current optimized no-skip workflow has not yet been benchmarked end to end; monitor the first production run before lowering its RAM request.
 
 Increasing the number of threads can increase peak memory and does not guarantee proportional acceleration. Benchmark a representative sample before reducing scheduler memory requests.
+
+PSS is the preferred estimate of the process tree's effective physical-memory footprint because shared pages are apportioned among processes; summed RSS can double-count shared pages. The monitor sampled once per minute, so the reported peaks are observed lower bounds and may miss spikes shorter than the sampling interval.
+
+As an initial storage estimate, reserve at least 3-5 times the compressed FASTQ size as writable scratch space when using the default light-output mode. For a 149 GB input, this means approximately 450-750 GB, with 1 TB preferred when space permits. Full output and retained intermediates can require substantially more space. Monitor both space and inodes with `df -h` and `df -i` during the first production run.
 
 ## Outputs
 
