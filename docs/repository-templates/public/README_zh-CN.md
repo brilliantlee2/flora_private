@@ -115,11 +115,7 @@ cut -f1,2 genome.fa.fai | sort -V > chrom_sizes.tsv
   --barcode-list-10bp /data/BC_1536.txt \
   --ref-dir /data/GRCh38_flora \
   --out-dir ./sample_output \
-  --sample-id sample \
-  --threads 32 \
-  --cluster-threads 16 \
-  --top1-alpha 0.1 \
-  --max-ed 2
+  --sample-id sample
 ```
 
 ## 分析已有全长 FASTQ
@@ -131,11 +127,7 @@ cut -f1,2 genome.fa.fai | sort -V > chrom_sizes.tsv
   --barcode-list-10bp /data/BC_1536.txt \
   --ref-dir /data/GRCh38_flora \
   --out-dir ./sample_output \
-  --sample-id sample \
-  --threads 32 \
-  --cluster-threads 16 \
-  --top1-alpha 0.1 \
-  --max-ed 2
+  --sample-id sample
 ```
 
 ## Mixed-species 分析
@@ -147,9 +139,7 @@ cut -f1,2 genome.fa.fai | sort -V > chrom_sizes.tsv
   --barcode-list-10bp /data/BC_1536.txt \
   --ref-dir /data/merged_reference \
   --out-dir ./mixed_output \
-  --sample-id mixed_sample \
-  --threads 32 \
-  --cluster-threads 16
+  --sample-id mixed_sample
 ```
 
 ## 实测资源消耗
