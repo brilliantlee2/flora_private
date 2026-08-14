@@ -32,15 +32,28 @@ Glycine 已集成到 Flora 中，用户不需要单独安装 Glycine，也不需
 
 请从 [GitHub Releases](https://github.com/brilliantlee2/Flora/releases) 下载最新版本。
 
-Flora v0.1.0：
+下面的命令会自动识别最新的正式 Release，后续发布新版本时无需再修改
+README 中的版本号：
 
 ```bash
-wget https://github.com/brilliantlee2/Flora/releases/download/v0.1.0/Flora-0.1.0-linux-x86_64.tar.gz
-wget https://github.com/brilliantlee2/Flora/releases/download/v0.1.0/Flora-0.1.0-linux-x86_64.tar.gz.sha256
+REPO="brilliantlee2/Flora"
+LATEST_URL="$(curl -fsSL -o /dev/null -w '%{url_effective}' "https://github.com/${REPO}/releases/latest")"
+LATEST_TAG="${LATEST_URL##*/}"
 
-sha256sum -c Flora-0.1.0-linux-x86_64.tar.gz.sha256
-tar -xzf Flora-0.1.0-linux-x86_64.tar.gz
-cd Flora-0.1.0-linux-x86_64
+case "${LATEST_TAG}" in
+  v[0-9]*) ;;
+  *) echo "Unable to resolve the latest Flora release" >&2; exit 1 ;;
+esac
+
+VERSION="${LATEST_TAG#v}"
+ARCHIVE="Flora-${VERSION}-linux-x86_64.tar.gz"
+
+wget "https://github.com/${REPO}/releases/download/${LATEST_TAG}/${ARCHIVE}"
+wget "https://github.com/${REPO}/releases/download/${LATEST_TAG}/${ARCHIVE}.sha256"
+
+sha256sum -c "${ARCHIVE}.sha256"
+tar -xzf "${ARCHIVE}"
+cd "Flora-${VERSION}-linux-x86_64"
 ```
 
 ## 安装运行环境
