@@ -125,16 +125,6 @@ pub struct CellReadStat {
 }
 
 #[derive(Clone, Debug, Serialize)]
-struct CorrectionMapRow {
-    read_id: String,
-    side: String,
-    putative_barcode: String,
-    corrected_barcode: String,
-    status: String,
-    final_corrected_20bp: String,
-}
-
-#[derive(Clone, Debug, Serialize)]
 struct CleanRead {
     read_id: String,
     putative_umi: String,
@@ -183,16 +173,11 @@ struct GraphComponent {
     edges: Vec<EdgeRecord>,
 }
 
-#[derive(Clone, Debug, Serialize)]
-struct AssignedRead {
-    read_id: String,
-    putative_umi: String,
-    putative_umi_5p: String,
-    #[serde(rename = "BC5n")]
-    bc5n: String,
-    #[serde(rename = "BC3n")]
-    bc3n: String,
-    cell_id: String,
+struct AssignmentWriteSummary {
+    n_cells_before_min_reads: usize,
+    n_assigned_reads: usize,
+    cell_counts: HashMap<String, usize>,
+    assigned_ids: Option<HashSet<String>>,
 }
 
 pub fn run_pipeline(config: &PipelineConfig) -> Result<PipelineSummary> {
@@ -269,22 +254,35 @@ pub fn run_pipeline(config: &PipelineConfig) -> Result<PipelineSummary> {
         &putative,
         &corrected,
     )?;
+    let reads_total = putative.len();
+    let reads_demultiplexed = corrected
+        .iter()
+        .filter(|r| !r.bc3_corrected.is_empty() || !r.bc5_corrected.is_empty())
+        .count();
     let barcode_validity_stats = summarize_barcode_validity(&corrected);
+    drop(correction_cache_3p);
+    drop(correction_cache_5p);
+    drop(wl3_index);
+    drop(wl5_index);
+    drop(raw3);
+    drop(raw5);
+    drop(full_wl3);
+    drop(full_wl5);
+    drop(putative);
     log_step_elapsed(3, 7, step_t0);
 
     println!("[Flora] Step 4/7: filtering corrected reads and stripping fixed barcode sequence");
     let step_t0 = Instant::now();
-    let corrected_filtered = filter_corrected_rows(
-        &corrected,
+    let clean_pre_pair = filter_corrected_into_clean(
+        corrected,
         config.pair_min,
         config.auto_pair_min_floor,
         config.auto_pair_min_quantile,
     );
-    let filtered_rows = corrected_filtered.len();
-    let clean_pre_pair = build_clean_reads(&corrected_filtered);
+    let filtered_rows = clean_pre_pair.len();
     let trimmed_barcode_uniques = summarize_trimmed_barcode_uniques(&clean_pre_pair);
     let (clean, pair_counts, pair_stats, _prune_stats) = filter_pairs_three_stage(
-        &clean_pre_pair,
+        clean_pre_pair,
         config.pair_min,
         config.auto_pair_min_floor,
         config.auto_pair_min_quantile,
@@ -309,23 +307,22 @@ pub fn run_pipeline(config: &PipelineConfig) -> Result<PipelineSummary> {
         config.max_other_component_barcodes,
     );
     let top1_dominance = compute_top1_dominance(&pair_counts);
-    let assigned_all = assign_reads(
+    let need_assigned_ids =
+        !config.skip_matched_fastq || !config.skip_unmatched_fastq || !config.skip_cell_fastq;
+    let assignment = write_assignments(
+        config.out_dir.join("read_assigned_cell.csv"),
         &clean,
         &barcode_to_cell,
         &top1_dominance,
         config.dominance_min,
         config.absorb_unassigned_paired,
-    );
-    let n_cells_before_min_reads = assigned_all
-        .iter()
-        .map(|r| r.cell_id.as_str())
-        .collect::<HashSet<_>>()
-        .len();
-    let assigned = filter_min_reads(assigned_all, config.min_reads_per_cell);
-    write_csv(config.out_dir.join("read_assigned_cell.csv"), &assigned)?;
-    let cell_read_stats = collect_cell_stats(&assigned);
+        config.min_reads_per_cell,
+        need_assigned_ids,
+    )?;
+    let clean_reads_rows = clean.len();
+    let cell_read_stats = collect_cell_stats(&assignment.cell_counts);
     write_cell_stats(config.out_dir.join("cell_read_stats.csv"), &cell_read_stats)?;
-    let kept_cells: HashSet<&str> = assigned.iter().map(|r| r.cell_id.as_str()).collect();
+    let kept_cells: HashSet<&str> = assignment.cell_counts.keys().map(String::as_str).collect();
     write_barcode_to_cell(
         config.out_dir.join("barcode_to_cell.csv"),
         &barcode_to_cell,
@@ -336,9 +333,9 @@ pub fn run_pipeline(config: &PipelineConfig) -> Result<PipelineSummary> {
         .filter(|(_, cell)| kept_cells.contains(cell.as_str()))
         .count();
     let assign_stats = AssignStats {
-        n_total_reads: clean.len(),
-        n_assigned_reads: assigned.len(),
-        n_cells_before_min_reads,
+        n_total_reads: clean_reads_rows,
+        n_assigned_reads: assignment.n_assigned_reads,
+        n_cells_before_min_reads: assignment.n_cells_before_min_reads,
         n_cells_after_min_reads: kept_cells.len(),
         min_reads_per_cell: config.min_reads_per_cell,
         n_core_barcodes: core_barcodes,
@@ -349,36 +346,35 @@ pub fn run_pipeline(config: &PipelineConfig) -> Result<PipelineSummary> {
         &barcode_validity_stats,
     )?;
     log_step_elapsed(6, 7, step_t0);
+    drop(clean);
 
     println!("[Flora] Step 7/7: optional FASTQ outputs");
     let step_t0 = Instant::now();
+    let assigned_ids = assignment.assigned_ids.as_ref();
     if !config.skip_matched_fastq {
-        let assigned_ids: HashSet<String> = assigned.iter().map(|r| r.read_id.clone()).collect();
         write_filtered_fastq_gz(
             &config.fastq_fns,
             config.batch_size,
             config.out_dir.join("matched_reads.fastq.gz"),
-            &assigned_ids,
+            assigned_ids.expect("assigned IDs requested for matched FASTQ"),
             true,
         )?;
     }
     if !config.skip_unmatched_fastq {
-        let assigned_ids: HashSet<String> = assigned.iter().map(|r| r.read_id.clone()).collect();
         write_filtered_fastq_gz(
             &config.fastq_fns,
             config.batch_size,
             config.out_dir.join("unmatched_reads.fastq.gz"),
-            &assigned_ids,
+            assigned_ids.expect("assigned IDs requested for unmatched FASTQ"),
             false,
         )?;
     }
     if !config.skip_cell_fastq {
-        let assigned_ids: HashSet<String> = assigned.iter().map(|r| r.read_id.clone()).collect();
         write_filtered_fastq_gz(
             &config.fastq_fns,
             config.batch_size,
             config.out_dir.join("cell_reads.fastq.gz"),
-            &assigned_ids,
+            assigned_ids.expect("assigned IDs requested for cell FASTQ"),
             true,
         )?;
     }
@@ -386,20 +382,17 @@ pub fn run_pipeline(config: &PipelineConfig) -> Result<PipelineSummary> {
 
     Ok(PipelineSummary {
         fastq_files: config.fastq_fns.len(),
-        reads_total: putative.len(),
-        reads_demultiplexed: corrected
-            .iter()
-            .filter(|r| !r.bc3_corrected.is_empty() || !r.bc5_corrected.is_empty())
-            .count(),
+        reads_total,
+        reads_demultiplexed,
         barcode_validity_stats,
-        putative_rows_3p: putative.len(),
-        putative_rows_5p: putative.len(),
-        merged_rows: putative.len(),
+        putative_rows_3p: reads_total,
+        putative_rows_5p: reads_total,
+        merged_rows: reads_total,
         filtered_rows,
         trimmed_barcode_uniques,
-        clean_reads_rows: clean.len(),
+        clean_reads_rows,
         pair_counts_rows: pair_counts.len(),
-        assigned_rows: assigned.len(),
+        assigned_rows: assignment.n_assigned_reads,
         core_cells: kept_cells.len(),
         core_barcodes,
         pair_stats,
@@ -518,26 +511,44 @@ fn write_correction_map(
     putative: &[PutativeRow],
     corrected: &[CorrectedRead],
 ) -> Result<()> {
-    let rows = putative
-        .iter()
-        .zip(corrected.iter())
-        .map(|(p, c)| {
-            let (putative_barcode, corrected_barcode) = if side == "3p" {
-                (p.putative_bc.clone(), c.bc3_corrected.clone())
-            } else {
-                (p.putative_bc_5p.clone(), c.bc5_corrected.clone())
-            };
-            CorrectionMapRow {
-                read_id: p.read_id.clone(),
-                side: side.to_string(),
-                putative_barcode: putative_barcode.clone(),
-                corrected_barcode: corrected_barcode.clone(),
-                status: correction_status(&putative_barcode, &corrected_barcode),
-                final_corrected_20bp: final_corrected_20bp_for_side(side, &corrected_barcode),
-            }
-        })
-        .collect::<Vec<_>>();
-    write_csv(path, &rows)
+    let file = File::create(&path).with_context(|| format!("write {}", path.display()))?;
+    write_correction_map_to_writer(file, side, putative, corrected)
+}
+
+fn write_correction_map_to_writer<W: Write>(
+    writer: W,
+    side: &str,
+    putative: &[PutativeRow],
+    corrected: &[CorrectedRead],
+) -> Result<()> {
+    let mut writer = csv::Writer::from_writer(writer);
+    writer.write_record([
+        "read_id",
+        "side",
+        "putative_barcode",
+        "corrected_barcode",
+        "status",
+        "final_corrected_20bp",
+    ])?;
+    for (p, c) in putative.iter().zip(corrected) {
+        let (putative_barcode, corrected_barcode) = if side == "3p" {
+            (p.putative_bc.as_str(), c.bc3_corrected.as_str())
+        } else {
+            (p.putative_bc_5p.as_str(), c.bc5_corrected.as_str())
+        };
+        let status = correction_status(putative_barcode, corrected_barcode);
+        let final_corrected = final_corrected_20bp_for_side(side, corrected_barcode);
+        writer.write_record([
+            p.read_id.as_str(),
+            side,
+            putative_barcode,
+            corrected_barcode,
+            status.as_str(),
+            final_corrected.as_str(),
+        ])?;
+    }
+    writer.flush()?;
+    Ok(())
 }
 
 fn read_whitelist(path: &Path, revcomp: bool) -> Result<HashSet<String>> {
@@ -720,24 +731,21 @@ fn write_lines(path: PathBuf, lines: &[String]) -> Result<()> {
     Ok(())
 }
 
-fn filter_corrected_rows(
-    rows: &[CorrectedRead],
+fn filter_corrected_into_clean(
+    rows: Vec<CorrectedRead>,
     pair_min: Option<usize>,
     auto_pair_min_floor: usize,
     auto_pair_min_quantile: f64,
-) -> Vec<CorrectedRead> {
-    let paired_keys = rows
-        .iter()
-        .filter(|r| !r.bc3_corrected.is_empty() && !r.bc5_corrected.is_empty())
-        .map(|r| {
-            ordered_pair(
-                &strip_fixed_5p(&r.bc5_corrected),
-                &revcomp_upper(&strip_fixed_3p(&r.bc3_corrected)),
-            )
-        })
-        .collect::<Vec<_>>();
+) -> Vec<CleanRead> {
     let mut pair_counts: HashMap<(String, String), usize> = HashMap::default();
-    for key in paired_keys {
+    for row in &rows {
+        if row.bc3_corrected.is_empty() || row.bc5_corrected.is_empty() {
+            continue;
+        }
+        let key = ordered_pair(
+            &strip_fixed_5p(&row.bc5_corrected),
+            &revcomp_upper(&strip_fixed_3p(&row.bc3_corrected)),
+        );
         *pair_counts.entry(key).or_insert(0) += 1;
     }
     let (resolved_pair_min, _) = resolve_pair_min(
@@ -746,39 +754,29 @@ fn filter_corrected_rows(
         auto_pair_min_floor,
         auto_pair_min_quantile,
     );
-    let mut bad_read_ids = HashSet::default();
-    for r in rows {
-        if r.bc3_corrected.is_empty() || r.bc5_corrected.is_empty() {
-            continue;
-        }
-        let key = ordered_pair(
-            &strip_fixed_5p(&r.bc5_corrected),
-            &revcomp_upper(&strip_fixed_3p(&r.bc3_corrected)),
-        );
-        if pair_counts.get(&key).copied().unwrap_or(0) < resolved_pair_min {
-            bad_read_ids.insert(r.read_id.clone());
-        }
-    }
-    rows.iter()
-        .filter(|r| !bad_read_ids.contains(&r.read_id))
+    rows.into_iter()
+        .filter(|r| {
+            if r.bc3_corrected.is_empty() || r.bc5_corrected.is_empty() {
+                return true;
+            }
+            let key = ordered_pair(
+                &strip_fixed_5p(&r.bc5_corrected),
+                &revcomp_upper(&strip_fixed_3p(&r.bc3_corrected)),
+            );
+            pair_counts.get(&key).copied().unwrap_or(0) >= resolved_pair_min
+        })
         .filter(|r| !r.bc3_corrected.is_empty() || !r.bc5_corrected.is_empty())
         .filter(|r| !(r.putative_umi.trim().is_empty() && r.putative_umi_5p.trim().is_empty()))
-        .cloned()
-        .collect()
-}
-
-fn build_clean_reads(rows: &[CorrectedRead]) -> Vec<CleanRead> {
-    rows.iter()
-        .filter_map(|r| {
+        .map(|r| {
             let bc5 = strip_fixed_5p(&r.bc5_corrected);
             let bc3 = revcomp_upper(&strip_fixed_3p(&r.bc3_corrected));
-            Some(CleanRead {
-                read_id: r.read_id.clone(),
-                putative_umi: r.putative_umi.clone(),
-                putative_umi_5p: r.putative_umi_5p.clone(),
+            CleanRead {
+                read_id: r.read_id,
+                putative_umi: r.putative_umi,
+                putative_umi_5p: r.putative_umi_5p,
                 bc5n: bc5,
                 bc3n: bc3,
-            })
+            }
         })
         .collect()
 }
@@ -887,7 +885,7 @@ fn build_pair_counts(
 }
 
 fn filter_pairs_three_stage(
-    reads: &[CleanRead],
+    reads: Vec<CleanRead>,
     pair_min: Option<usize>,
     floor: usize,
     q: f64,
@@ -897,10 +895,9 @@ fn filter_pairs_three_stage(
     drop_umi_a_ratio_gt: f64,
 ) -> (Vec<CleanRead>, Vec<PairCount>, PairStats, PairPruneStats) {
     let cleaned = reads
-        .iter()
+        .into_iter()
         .filter(|r| !r.bc5n.is_empty() || !r.bc3n.is_empty())
         .filter(|r| umi_a_ratio(&r.putative_umi) <= drop_umi_a_ratio_gt)
-        .cloned()
         .collect::<Vec<_>>();
     let (paired, single) = cleaned
         .into_iter()
@@ -1396,82 +1393,157 @@ fn compute_top1_dominance(rows: &[PairCount]) -> HashMap<String, Top1Dominance> 
     out
 }
 
-fn assign_reads(
+fn resolve_read_cell<'a>(
+    read: &CleanRead,
+    barcode_to_cell: &'a HashMap<String, String>,
+    dom: &'a HashMap<String, Top1Dominance>,
+    dominance_min: f64,
+    absorb_unassigned_paired: bool,
+) -> Option<&'a str> {
+    let direct = barcode_to_cell
+        .get(&read.bc5n)
+        .or_else(|| barcode_to_cell.get(&read.bc3n));
+    if let Some(cell) = direct {
+        return Some(cell.as_str());
+    }
+    let has5 = !read.bc5n.is_empty();
+    let has3 = !read.bc3n.is_empty();
+    let try_absorb = |bc: &str| -> Option<&'a str> {
+        if bc.is_empty() {
+            return None;
+        }
+        let row = dom.get(bc)?;
+        if row.dominance < dominance_min {
+            return None;
+        }
+        barcode_to_cell.get(&row.top1_partner).map(String::as_str)
+    };
+    if has5 ^ has3 {
+        return if has5 {
+            try_absorb(&read.bc5n)
+        } else {
+            try_absorb(&read.bc3n)
+        };
+    }
+    if absorb_unassigned_paired && has5 && has3 {
+        return match (try_absorb(&read.bc5n), try_absorb(&read.bc3n)) {
+            (Some(a), Some(b)) if a == b => Some(a),
+            (Some(a), None) => Some(a),
+            (None, Some(b)) => Some(b),
+            _ => None,
+        };
+    }
+    None
+}
+
+fn write_assignments(
+    path: PathBuf,
     reads: &[CleanRead],
     barcode_to_cell: &HashMap<String, String>,
     dom: &HashMap<String, Top1Dominance>,
     dominance_min: f64,
     absorb_unassigned_paired: bool,
-) -> Vec<AssignedRead> {
-    reads
-        .iter()
-        .filter_map(|r| {
-            let cell_a_5 = barcode_to_cell.get(&r.bc5n).cloned();
-            let cell_a_3 = barcode_to_cell.get(&r.bc3n).cloned();
-            let cell_a = cell_a_5.clone().or(cell_a_3.clone());
-            let has5 = !r.bc5n.is_empty();
-            let has3 = !r.bc3n.is_empty();
-            let try_absorb = |bc: &str| -> Option<String> {
-                if bc.is_empty() {
-                    return None;
-                }
-                let row = dom.get(bc)?;
-                if row.dominance < dominance_min {
-                    return None;
-                }
-                barcode_to_cell.get(&row.top1_partner).cloned()
-            };
-            let cell = if let Some(cell) = cell_a {
-                Some(cell)
-            } else if has5 ^ has3 {
-                if has5 {
-                    try_absorb(&r.bc5n)
-                } else {
-                    try_absorb(&r.bc3n)
-                }
-            } else if absorb_unassigned_paired && has5 && has3 {
-                let cell_b5 = try_absorb(&r.bc5n);
-                let cell_b3 = try_absorb(&r.bc3n);
-                match (cell_b5, cell_b3) {
-                    (Some(a), Some(b)) if a == b => Some(a),
-                    (Some(a), None) => Some(a),
-                    (None, Some(b)) => Some(b),
-                    _ => None,
-                }
-            } else {
-                None
-            }?;
-            Some(AssignedRead {
-                read_id: r.read_id.clone(),
-                putative_umi: r.putative_umi.clone(),
-                putative_umi_5p: r.putative_umi_5p.clone(),
-                bc5n: r.bc5n.clone(),
-                bc3n: r.bc3n.clone(),
-                cell_id: cell.clone(),
-            })
-        })
-        .collect()
+    min_reads: usize,
+    collect_assigned_ids: bool,
+) -> Result<AssignmentWriteSummary> {
+    let file = File::create(&path).with_context(|| format!("write {}", path.display()))?;
+    write_assignments_to_writer(
+        file,
+        reads,
+        barcode_to_cell,
+        dom,
+        dominance_min,
+        absorb_unassigned_paired,
+        min_reads,
+        collect_assigned_ids,
+    )
 }
 
-fn filter_min_reads(reads: Vec<AssignedRead>, min_reads: usize) -> Vec<AssignedRead> {
-    let mut counts = HashMap::default();
-    for r in &reads {
-        *counts.entry(r.cell_id.clone()).or_insert(0usize) += 1;
-    }
-    reads
-        .into_iter()
-        .filter(|r| counts.get(&r.cell_id).copied().unwrap_or(0) >= min_reads)
-        .collect()
-}
-
-fn collect_cell_stats(reads: &[AssignedRead]) -> Vec<CellReadStat> {
-    let mut counts: HashMap<String, usize> = HashMap::default();
+fn write_assignments_to_writer<W: Write>(
+    writer: W,
+    reads: &[CleanRead],
+    barcode_to_cell: &HashMap<String, String>,
+    dom: &HashMap<String, Top1Dominance>,
+    dominance_min: f64,
+    absorb_unassigned_paired: bool,
+    min_reads: usize,
+    collect_assigned_ids: bool,
+) -> Result<AssignmentWriteSummary> {
+    let mut all_counts: HashMap<&str, usize> = HashMap::default();
     for r in reads {
-        *counts.entry(r.cell_id.clone()).or_insert(0) += 1;
+        if let Some(cell) = resolve_read_cell(
+            r,
+            barcode_to_cell,
+            dom,
+            dominance_min,
+            absorb_unassigned_paired,
+        ) {
+            *all_counts.entry(cell).or_insert(0) += 1;
+        }
     }
-    let mut rows: Vec<_> = counts
+    let n_cells_before_min_reads = all_counts.len();
+    let kept_cells: HashSet<&str> = all_counts
+        .iter()
+        .filter_map(|(cell, count)| (*count >= min_reads).then_some(*cell))
+        .collect();
+    let cell_counts: HashMap<String, usize> = all_counts
         .into_iter()
-        .map(|(cell_id, n_reads)| CellReadStat { cell_id, n_reads })
+        .filter(|(cell, _)| kept_cells.contains(cell))
+        .map(|(cell, count)| (cell.to_string(), count))
+        .collect();
+    let mut writer = csv::Writer::from_writer(writer);
+    writer.write_record([
+        "read_id",
+        "putative_umi",
+        "putative_umi_5p",
+        "BC5n",
+        "BC3n",
+        "cell_id",
+    ])?;
+    let mut assigned_ids = collect_assigned_ids.then(HashSet::default);
+    let mut n_assigned_reads = 0usize;
+    for r in reads {
+        let Some(cell) = resolve_read_cell(
+            r,
+            barcode_to_cell,
+            dom,
+            dominance_min,
+            absorb_unassigned_paired,
+        ) else {
+            continue;
+        };
+        if !kept_cells.contains(cell) {
+            continue;
+        }
+        writer.write_record([
+            r.read_id.as_str(),
+            r.putative_umi.as_str(),
+            r.putative_umi_5p.as_str(),
+            r.bc5n.as_str(),
+            r.bc3n.as_str(),
+            cell,
+        ])?;
+        if let Some(ids) = &mut assigned_ids {
+            ids.insert(r.read_id.clone());
+        }
+        n_assigned_reads += 1;
+    }
+    writer.flush()?;
+    Ok(AssignmentWriteSummary {
+        n_cells_before_min_reads,
+        n_assigned_reads,
+        cell_counts,
+        assigned_ids,
+    })
+}
+
+fn collect_cell_stats(counts: &HashMap<String, usize>) -> Vec<CellReadStat> {
+    let mut rows: Vec<_> = counts
+        .iter()
+        .map(|(cell_id, n_reads)| CellReadStat {
+            cell_id: cell_id.clone(),
+            n_reads: *n_reads,
+        })
         .collect();
     rows.sort_by(|a, b| b.n_reads.cmp(&a.n_reads));
     rows
@@ -1641,5 +1713,132 @@ mod tests {
         let cache = build_correction_cache(&rows, true, &whitelist, 1, 2);
         assert_eq!(cache.len(), 1);
         assert_eq!(cache["AAAA"], "AAAA");
+    }
+
+    #[test]
+    fn correction_map_stream_preserves_row_order_and_fields() {
+        let putative = vec![
+            PutativeRow {
+                read_id: "read1".into(),
+                putative_bc: "AAAAGCTACCCCCC".into(),
+                ..PutativeRow::default()
+            },
+            PutativeRow {
+                read_id: "read2".into(),
+                putative_bc: "FAILED".into(),
+                ..PutativeRow::default()
+            },
+        ];
+        let corrected = vec![
+            CorrectedRead {
+                read_id: "read1".into(),
+                putative_umi: String::new(),
+                putative_umi_5p: String::new(),
+                bc3_corrected: "AAAAGCTACCCCCC".into(),
+                bc5_corrected: String::new(),
+            },
+            CorrectedRead {
+                read_id: "read2".into(),
+                putative_umi: String::new(),
+                putative_umi_5p: String::new(),
+                bc3_corrected: String::new(),
+                bc5_corrected: String::new(),
+            },
+        ];
+        let mut output = Vec::new();
+
+        write_correction_map_to_writer(&mut output, "3p", &putative, &corrected).unwrap();
+
+        let text = String::from_utf8(output).unwrap();
+        assert_eq!(
+            text,
+            "read_id,side,putative_barcode,corrected_barcode,status,final_corrected_20bp\n\
+read1,3p,AAAAGCTACCCCCC,AAAAGCTACCCCCC,exact,\n\
+read2,3p,FAILED,,failed,\n"
+        );
+    }
+
+    #[test]
+    fn corrected_rows_are_consumed_into_clean_rows_without_reordering() {
+        let rows = vec![
+            CorrectedRead {
+                read_id: "paired-kept".into(),
+                putative_umi: "CGT".into(),
+                putative_umi_5p: "TGC".into(),
+                bc3_corrected: "AAAAAAAAAAGCTACCCCCCCCCCCC".into(),
+                bc5_corrected: "TTTTTTTTTTCCTTCCGGGGGGGGGG".into(),
+            },
+            CorrectedRead {
+                read_id: "single-kept".into(),
+                putative_umi: "GTC".into(),
+                putative_umi_5p: String::new(),
+                bc3_corrected: "CCCCCCCCCCGCTACCGGGGGGGGGG".into(),
+                bc5_corrected: String::new(),
+            },
+            CorrectedRead {
+                read_id: "missing-umi".into(),
+                putative_umi: String::new(),
+                putative_umi_5p: String::new(),
+                bc3_corrected: "GGGGGGGGGGGCTACCTTTTTTTTTT".into(),
+                bc5_corrected: String::new(),
+            },
+        ];
+
+        let clean = filter_corrected_into_clean(rows, Some(1), 1, 0.1);
+
+        let ids = clean
+            .iter()
+            .map(|row| row.read_id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(ids, vec!["paired-kept", "single-kept"]);
+        assert_eq!(clean[0].bc5n, "TTTTTTTTTTGGGGGGGGGG");
+        assert_eq!(clean[0].bc3n, "GGGGGGGGGGTTTTTTTTTT");
+    }
+
+    #[test]
+    fn streamed_assignment_preserves_order_and_minimum_read_filter() {
+        let reads = vec![
+            clean_read("r1", "BC_A", ""),
+            clean_read("r2", "BC_A", ""),
+            clean_read("r3", "BC_B", ""),
+        ];
+        let barcode_to_cell = HashMap::from_iter([
+            ("BC_A".to_string(), "cell_000001".to_string()),
+            ("BC_B".to_string(), "cell_000002".to_string()),
+        ]);
+        let mut output = Vec::new();
+
+        let summary = write_assignments_to_writer(
+            &mut output,
+            &reads,
+            &barcode_to_cell,
+            &HashMap::default(),
+            0.8,
+            false,
+            2,
+            true,
+        )
+        .unwrap();
+
+        assert_eq!(summary.n_cells_before_min_reads, 2);
+        assert_eq!(summary.n_assigned_reads, 2);
+        assert_eq!(summary.cell_counts["cell_000001"], 2);
+        assert_eq!(summary.assigned_ids.as_ref().unwrap().len(), 2);
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "read_id,putative_umi,putative_umi_5p,BC5n,BC3n,cell_id\n\
+r1,UMI3,UMI5,BC_A,,cell_000001\n\
+r2,UMI3,UMI5,BC_A,,cell_000001\n"
+        );
+    }
+
+    fn clean_read(read_id: &str, bc5n: &str, bc3n: &str) -> CleanRead {
+        CleanRead {
+            read_id: read_id.into(),
+            putative_umi: "UMI3".into(),
+            putative_umi_5p: "UMI5".into(),
+            bc5n: bc5n.into(),
+            bc3n: bc3n.into(),
+        }
     }
 }
