@@ -1,6 +1,6 @@
 [package]
 name = "flora"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "End-to-end full-length single-cell transcriptomics analysis"
 repository = "https://github.com/brilliantlee2/Flora"
