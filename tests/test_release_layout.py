@@ -1,5 +1,6 @@
 import unittest
 from pathlib import Path
+import re
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -196,17 +197,31 @@ class ReleaseLayoutTests(unittest.TestCase):
             )
 
     def test_flora_package_metadata_are_consistent(self):
-        cargo_toml = (PROJECT_ROOT / "Cargo.toml").read_text(encoding="utf-8")
-        cargo_lock = (PROJECT_ROOT / "Cargo.lock").read_text(encoding="utf-8")
+        cargo_toml_text = (PROJECT_ROOT / "Cargo.toml").read_text(encoding="utf-8")
+        cargo_lock_text = (PROJECT_ROOT / "Cargo.lock").read_text(encoding="utf-8")
         runners = "\n".join(
             (PROJECT_ROOT / name).read_text(encoding="utf-8")
             for name in ["run_all.sh", "run_all_mixed_species.sh"]
         )
 
-        self.assertRegex(cargo_toml, r'(?m)^name = "flora"$')
-        self.assertRegex(cargo_toml, r'(?m)^version = "0\.1\.0"$')
-        self.assertRegex(cargo_toml, r'(?ms)^\[profile\.release\].*?^strip = "symbols"$')
-        self.assertIn('name = "flora"\nversion = "0.1.0"', cargo_lock)
+        package = re.search(r"(?ms)^\[package\]\n(.*?)(?=^\[)", cargo_toml_text)
+        self.assertIsNotNone(package)
+        package_text = package.group(1)
+        self.assertRegex(package_text, r'(?m)^name = "flora"$')
+        version = re.search(r'(?m)^version = "(\d+\.\d+\.\d+)"$', package_text)
+        self.assertIsNotNone(version)
+        self.assertRegex(
+            cargo_toml_text,
+            r'(?ms)^\[profile\.release\].*?^strip = "symbols"$',
+        )
+
+        locked_versions = []
+        for package_block in cargo_lock_text.split("[[package]]")[1:]:
+            if re.search(r'(?m)^name = "flora"$', package_block):
+                locked_version = re.search(r'(?m)^version = "([^"]+)"$', package_block)
+                self.assertIsNotNone(locked_version)
+                locked_versions.append(locked_version.group(1))
+        self.assertEqual(locked_versions, [version.group(1)])
         self.assertNotIn("StrintRust", runners)
 
 
