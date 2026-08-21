@@ -1,0 +1,100 @@
+Bootstrap: localimage
+From: flora-base-ubuntu22.04.sif
+
+%labels
+    Author brilliantlee2
+    Application Flora
+    Version 0.1.1
+    Description "Full-length single-cell RNA-seq analysis workflow"
+
+%files
+    Flora-0.1.1-linux-x86_64.tar.gz /opt/flora.tar.gz
+    Miniforge3-Linux-x86_64.sh /opt/miniforge.sh
+
+%post
+    set -eu
+    export DEBIAN_FRONTEND=noninteractive
+
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        bzip2 \
+        tar \
+        gzip
+
+    mkdir -p /opt/flora
+
+    tar -xzf /opt/flora.tar.gz \
+        -C /opt/flora \
+        --strip-components=1
+
+    rm -f /opt/flora.tar.gz
+
+    test -x /opt/flora/flora
+    test -f /opt/flora/environment.yml
+    test -s /opt/miniforge.sh
+
+    /bin/bash /opt/miniforge.sh \
+        -b \
+        -p /opt/conda
+
+    rm -f /opt/miniforge.sh
+
+    /opt/conda/bin/conda config --system \
+        --set channel_priority strict
+
+    /opt/conda/bin/conda config --system \
+        --set show_channel_urls true
+
+    /opt/conda/bin/conda env create \
+        --prefix /opt/conda/envs/flora \
+        --file /opt/flora/environment.yml
+
+    test -x /opt/conda/envs/flora/bin/python
+    test -x /opt/conda/envs/flora/bin/samtools
+    test -x /opt/conda/envs/flora/bin/minimap2
+    test -x /opt/conda/envs/flora/bin/bedtools
+
+    /opt/conda/bin/conda clean -afy
+    apt-get clean
+    rm -rf /var/lib/apt/lists/*
+
+%environment
+    export PATH=/opt/conda/envs/flora/bin:/opt/flora:/opt/conda/bin:$PATH
+    export LANG=C.UTF-8
+    export LC_ALL=C.UTF-8
+    export PYTHONUTF8=1
+    export PYTHONNOUSERSITE=1
+    export FLORA_CACHE_DIR="${TMPDIR:-/tmp}/flora-cache-${USER:-user}"
+    export XDG_CACHE_HOME="${FLORA_CACHE_DIR}/xdg"
+    export MPLCONFIGDIR="${FLORA_CACHE_DIR}/matplotlib"
+    export NUMBA_CACHE_DIR="${FLORA_CACHE_DIR}/numba"
+
+%runscript
+    mkdir -p \
+        "$XDG_CACHE_HOME" \
+        "$MPLCONFIGDIR" \
+        "$NUMBA_CACHE_DIR"
+
+    exec /opt/flora/flora "$@"
+
+%test
+    mkdir -p \
+        "$XDG_CACHE_HOME" \
+        "$MPLCONFIGDIR" \
+        "$NUMBA_CACHE_DIR"
+
+    test -x /opt/flora/flora
+    test -x /opt/conda/envs/flora/bin/python
+    test -x /opt/conda/envs/flora/bin/samtools
+    test -x /opt/conda/envs/flora/bin/minimap2
+    test -x /opt/conda/envs/flora/bin/bedtools
+
+    /opt/flora/flora --version
+    /opt/flora/flora --help >/dev/null
+    /opt/conda/envs/flora/bin/python --version
+    /opt/conda/envs/flora/bin/python -c \
+        "import pandas, numpy, scipy, matplotlib, pysam, scanpy; print('Python dependencies OK')"
+    /opt/conda/envs/flora/bin/samtools --version
+    /opt/conda/envs/flora/bin/minimap2 --version
+    /opt/conda/envs/flora/bin/bedtools --version

@@ -1,3 +1,8 @@
 *.tar.gz
 *.tar.gz.sha256
+*.sif
+*.sif.sha256
+*.docker.tar
+flora-base-*.tar
+Miniforge3-*.sh
 .DS_Store

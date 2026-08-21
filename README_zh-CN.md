@@ -218,10 +218,84 @@ CPython 3.11 字节码，复制运行环境和公开文档，清理扩展属性�
 只有 `flora run --help` 和 `flora run-mixed --help` 都成功时才允许打包。在迁移尚未完成的
 阶段，这个失败是预期行为，用于防止发布不完整的二进制包。
 
+## 构建 Singularity 镜像
+
+当目标 HPC 的宿主机 glibc 低于 Flora 二进制所需版本时，可以把发行包及其
+Python/生信依赖封装到 Singularity SIF 中。已经验证的基础系统为 Ubuntu 22.04
+（glibc 2.35）。构建机需要 Linux x86_64、Singularity 和可用的 `--fakeroot`；
+只有准备基础镜像时需要 Docker。构建 SIF 不需要激活 Flora Conda 环境。
+
+先创建独立构建目录并复制输入文件：
+
+```bash
+mkdir -p singularity_build
+cp dist/Flora-0.1.1-linux-x86_64.tar.gz singularity_build/
+cp packaging/singularity/Flora.def singularity_build/
+cd singularity_build
+```
+
+验证并导出 Ubuntu 22.04 基础镜像：
+
+```bash
+docker run --rm quay.io/nf-core/ubuntu:22.04 \
+  bash -c 'cat /etc/os-release; getconf GNU_LIBC_VERSION'
+
+docker save quay.io/nf-core/ubuntu:22.04 \
+  -o flora-base-ubuntu22.04.tar
+
+singularity build --fakeroot \
+  flora-base-ubuntu22.04.sif \
+  docker-archive://flora-base-ubuntu22.04.tar
+```
+
+如果 Singularity 无权访问 `/var/run/docker.sock`，不要修改 socket 为全局可写；
+使用 `docker save` 加 `docker-archive://` 的方式，或请管理员配置 Docker 用户组。
+
+从国内镜像下载一次 Miniforge 安装器：
+
+```bash
+curl -L --fail --retry 5 --retry-delay 5 \
+  -o Miniforge3-Linux-x86_64.sh \
+  https://mirror.nju.edu.cn/github-release/conda-forge/miniforge/LatestRelease/Miniforge3-Linux-x86_64.sh
+```
+
+四个构建输入应当位于同一目录：
+
+```text
+Flora.def
+Flora-0.1.1-linux-x86_64.tar.gz
+Miniforge3-Linux-x86_64.sh
+flora-base-ubuntu22.04.sif
+```
+
+构建并验证 SIF：
+
+```bash
+env -u LD_LIBRARY_PATH \
+singularity build --fakeroot \
+  Flora-0.1.1-linux-x86_64.sif \
+  Flora.def
+
+singularity run --cleanenv \
+  Flora-0.1.1-linux-x86_64.sif \
+  --version
+
+singularity run --cleanenv \
+  Flora-0.1.1-linux-x86_64.sif \
+  --help
+
+sha256sum Flora-0.1.1-linux-x86_64.sif \
+  > Flora-0.1.1-linux-x86_64.sif.sha256
+```
+
+实测镜像包含 Flora、Python 3.11、samtools、minimap2、bedtools 和完整 Python
+依赖，大小约为 820 MiB。`Flora.def` 使用每个用户独立的 `/tmp` 缓存目录，避免
+只读 SIF 中的 Fontconfig、Matplotlib 和 Numba 缓存警告。
+
 ## 检查发行包
 
 ```bash
-ARCHIVE="dist/Flora-0.1.0-linux-x86_64.tar.gz"
+ARCHIVE="dist/Flora-0.1.1-linux-x86_64.tar.gz"
 
 tar -tzf "$ARCHIVE" | head -50
 tar -tzf "$ARCHIVE" | \
@@ -237,7 +311,7 @@ tar -tzf "$ARCHIVE" | \
 rm -rf /tmp/flora-release-test
 mkdir -p /tmp/flora-release-test
 tar -xzf "$ARCHIVE" -C /tmp/flora-release-test
-cd /tmp/flora-release-test/Flora-0.1.0-linux-x86_64
+cd /tmp/flora-release-test/Flora-0.1.1-linux-x86_64
 
 file flora
 ldd flora
@@ -266,15 +340,15 @@ Linux：
 
 ```bash
 cd /path/to/Flora
-sha256sum dist/Flora-0.1.0-linux-x86_64.tar.gz \
-  > dist/Flora-0.1.0-linux-x86_64.tar.gz.sha256
+sha256sum dist/Flora-0.1.1-linux-x86_64.tar.gz \
+  > dist/Flora-0.1.1-linux-x86_64.tar.gz.sha256
 ```
 
 验证：
 
 ```bash
 cd dist
-sha256sum -c Flora-0.1.0-linux-x86_64.tar.gz.sha256
+sha256sum -c Flora-0.1.1-linux-x86_64.tar.gz.sha256
 ```
 
 ## 发布到公开 GitHub 仓库
@@ -291,13 +365,18 @@ cp docs/repository-templates/public/README_zh-CN.md /path/to/Flora-public/README
 使用 GitHub CLI：
 
 ```bash
-gh release create v0.1.0 \
-  dist/Flora-0.1.0-linux-x86_64.tar.gz \
-  dist/Flora-0.1.0-linux-x86_64.tar.gz.sha256 \
+gh release create v0.1.1 \
+  dist/Flora-0.1.1-linux-x86_64.tar.gz \
+  dist/Flora-0.1.1-linux-x86_64.tar.gz.sha256 \
   --repo brilliantlee2/Flora \
-  --title "Flora v0.1.0" \
-  --notes-file docs/repository-templates/public/RELEASE_NOTES_v0.1.0.md
+  --title "Flora v0.1.1" \
+  --generate-notes
 ```
+
+Git 历史中只提交 README、`Flora.def`、许可和 release notes。二进制压缩包及
+`.sha256` 应作为 GitHub Release 附件上传。SIF 及其校验文件可以作为可选 Release
+附件；如果仅让用户自行构建，则不必上传 SIF。不要提交基础 SIF、Docker tar、
+Miniforge 安装器、`dist/` 或任何私有源码到公开仓库。
 
 ## 保密规则
 

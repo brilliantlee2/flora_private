@@ -224,10 +224,87 @@ The script deliberately refuses to package until both `flora run --help` and
 `flora run-mixed --help` succeed. During the migration period this failure is
 expected and prevents publication of an incomplete binary.
 
+## Build a Singularity image
+
+When the target HPC host provides an older glibc than the Flora binary requires,
+package the release and its Python/bioinformatics dependencies in a Singularity
+SIF. The validated base is Ubuntu 22.04 with glibc 2.35. The build host requires
+Linux x86_64, Singularity, and working `--fakeroot`; Docker is needed only to
+prepare the base image. The Flora Conda environment does not need to be active.
+
+Create an isolated build directory and copy the inputs:
+
+```bash
+mkdir -p singularity_build
+cp dist/Flora-0.1.1-linux-x86_64.tar.gz singularity_build/
+cp packaging/singularity/Flora.def singularity_build/
+cd singularity_build
+```
+
+Validate and export the Ubuntu 22.04 base image:
+
+```bash
+docker run --rm quay.io/nf-core/ubuntu:22.04 \
+  bash -c 'cat /etc/os-release; getconf GNU_LIBC_VERSION'
+
+docker save quay.io/nf-core/ubuntu:22.04 \
+  -o flora-base-ubuntu22.04.tar
+
+singularity build --fakeroot \
+  flora-base-ubuntu22.04.sif \
+  docker-archive://flora-base-ubuntu22.04.tar
+```
+
+If Singularity cannot access `/var/run/docker.sock`, do not make the socket
+world-writable. Use `docker save` plus `docker-archive://`, or ask the system
+administrator to configure Docker group access.
+
+Download the Miniforge installer once from a nearby mirror:
+
+```bash
+curl -L --fail --retry 5 --retry-delay 5 \
+  -o Miniforge3-Linux-x86_64.sh \
+  https://mirror.nju.edu.cn/github-release/conda-forge/miniforge/LatestRelease/Miniforge3-Linux-x86_64.sh
+```
+
+The four build inputs must be in the same directory:
+
+```text
+Flora.def
+Flora-0.1.1-linux-x86_64.tar.gz
+Miniforge3-Linux-x86_64.sh
+flora-base-ubuntu22.04.sif
+```
+
+Build and validate the SIF:
+
+```bash
+env -u LD_LIBRARY_PATH \
+singularity build --fakeroot \
+  Flora-0.1.1-linux-x86_64.sif \
+  Flora.def
+
+singularity run --cleanenv \
+  Flora-0.1.1-linux-x86_64.sif \
+  --version
+
+singularity run --cleanenv \
+  Flora-0.1.1-linux-x86_64.sif \
+  --help
+
+sha256sum Flora-0.1.1-linux-x86_64.sif \
+  > Flora-0.1.1-linux-x86_64.sif.sha256
+```
+
+The tested image contains Flora, Python 3.11, samtools, minimap2, bedtools, and
+all Python dependencies, and is approximately 820 MiB. `Flora.def` uses
+per-user writable cache directories under `/tmp` for Fontconfig, Matplotlib,
+and Numba.
+
 ## Validate the release archive
 
 ```bash
-ARCHIVE="dist/Flora-0.1.0-linux-x86_64.tar.gz"
+ARCHIVE="dist/Flora-0.1.1-linux-x86_64.tar.gz"
 
 tar -tzf "$ARCHIVE" | head -50
 tar -tzf "$ARCHIVE" | \
@@ -243,7 +320,7 @@ Extract and test independently:
 rm -rf /tmp/flora-release-test
 mkdir -p /tmp/flora-release-test
 tar -xzf "$ARCHIVE" -C /tmp/flora-release-test
-cd /tmp/flora-release-test/Flora-0.1.0-linux-x86_64
+cd /tmp/flora-release-test/Flora-0.1.1-linux-x86_64
 
 file flora
 ldd flora
@@ -272,15 +349,15 @@ On Linux:
 
 ```bash
 cd /path/to/Flora
-sha256sum dist/Flora-0.1.0-linux-x86_64.tar.gz \
-  > dist/Flora-0.1.0-linux-x86_64.tar.gz.sha256
+sha256sum dist/Flora-0.1.1-linux-x86_64.tar.gz \
+  > dist/Flora-0.1.1-linux-x86_64.tar.gz.sha256
 ```
 
 Verify it:
 
 ```bash
 cd dist
-sha256sum -c Flora-0.1.0-linux-x86_64.tar.gz.sha256
+sha256sum -c Flora-0.1.1-linux-x86_64.tar.gz.sha256
 ```
 
 ## Publish to the public GitHub repository
@@ -297,13 +374,19 @@ Commit and push only the public documentation. Upload the `.tar.gz` and `.sha256
 With GitHub CLI:
 
 ```bash
-gh release create v0.1.0 \
-  dist/Flora-0.1.0-linux-x86_64.tar.gz \
-  dist/Flora-0.1.0-linux-x86_64.tar.gz.sha256 \
+gh release create v0.1.1 \
+  dist/Flora-0.1.1-linux-x86_64.tar.gz \
+  dist/Flora-0.1.1-linux-x86_64.tar.gz.sha256 \
   --repo brilliantlee2/Flora \
-  --title "Flora v0.1.0" \
-  --notes-file docs/repository-templates/public/RELEASE_NOTES_v0.1.0.md
+  --title "Flora v0.1.1" \
+  --generate-notes
 ```
+
+Commit only README files, `Flora.def`, licenses, and release notes to Git
+history. Upload the binary archive and `.sha256` as GitHub Release assets. The
+SIF and its checksum are optional Release assets; omit them when users will
+build the image themselves. Never commit the base SIF, Docker tar, Miniforge
+installer, `dist/`, or private source code to the public repository.
 
 ## Confidentiality rules
 
