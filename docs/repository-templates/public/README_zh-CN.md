@@ -40,30 +40,21 @@ ldd --version | head -n 1
 
 ## 下载
 
-请从 [GitHub Releases](https://github.com/brilliantlee2/Flora/releases) 下载最新版本。
+请前往 [GitHub Releases](https://github.com/brilliantlee2/Flora/releases) 下载
+最新版本的以下两个文件：
 
-下面的命令会自动识别最新的正式 Release，后续发布新版本时无需再修改
-README 中的版本号：
+```text
+Flora-<version>-linux-x86_64.tar.gz
+Flora-<version>-linux-x86_64.tar.gz.sha256
+```
+
+下载后使用对应的 `.sha256` 文件验证完整性，再解压压缩包。命令中的
+`<version>` 替换为实际下载的版本号：
 
 ```bash
-REPO="brilliantlee2/Flora"
-LATEST_URL="$(curl -fsSL -o /dev/null -w '%{url_effective}' "https://github.com/${REPO}/releases/latest")"
-LATEST_TAG="${LATEST_URL##*/}"
-
-case "${LATEST_TAG}" in
-  v[0-9]*) ;;
-  *) echo "Unable to resolve the latest Flora release" >&2; exit 1 ;;
-esac
-
-VERSION="${LATEST_TAG#v}"
-ARCHIVE="Flora-${VERSION}-linux-x86_64.tar.gz"
-
-wget "https://github.com/${REPO}/releases/download/${LATEST_TAG}/${ARCHIVE}"
-wget "https://github.com/${REPO}/releases/download/${LATEST_TAG}/${ARCHIVE}.sha256"
-
-sha256sum -c "${ARCHIVE}.sha256"
-tar -xzf "${ARCHIVE}"
-cd "Flora-${VERSION}-linux-x86_64"
+sha256sum -c Flora-<version>-linux-x86_64.tar.gz.sha256
+tar -xzf Flora-<version>-linux-x86_64.tar.gz
+cd Flora-<version>-linux-x86_64
 ```
 
 ## 安装运行环境

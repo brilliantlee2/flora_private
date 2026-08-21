@@ -41,30 +41,21 @@ Singularity procedure below instead.
 
 ## Download
 
-Download the latest archive from [GitHub Releases](https://github.com/brilliantlee2/Flora/releases).
+Open [GitHub Releases](https://github.com/brilliantlee2/Flora/releases) and
+download these two files from the latest release:
 
-The commands below automatically resolve the latest stable release, so they do
-not need to be updated for each new Flora version:
+```text
+Flora-<version>-linux-x86_64.tar.gz
+Flora-<version>-linux-x86_64.tar.gz.sha256
+```
+
+Use the accompanying `.sha256` file to verify the download, then extract the
+archive. Replace `<version>` with the version that was downloaded:
 
 ```bash
-REPO="brilliantlee2/Flora"
-LATEST_URL="$(curl -fsSL -o /dev/null -w '%{url_effective}' "https://github.com/${REPO}/releases/latest")"
-LATEST_TAG="${LATEST_URL##*/}"
-
-case "${LATEST_TAG}" in
-  v[0-9]*) ;;
-  *) echo "Unable to resolve the latest Flora release" >&2; exit 1 ;;
-esac
-
-VERSION="${LATEST_TAG#v}"
-ARCHIVE="Flora-${VERSION}-linux-x86_64.tar.gz"
-
-wget "https://github.com/${REPO}/releases/download/${LATEST_TAG}/${ARCHIVE}"
-wget "https://github.com/${REPO}/releases/download/${LATEST_TAG}/${ARCHIVE}.sha256"
-
-sha256sum -c "${ARCHIVE}.sha256"
-tar -xzf "${ARCHIVE}"
-cd "Flora-${VERSION}-linux-x86_64"
+sha256sum -c Flora-<version>-linux-x86_64.tar.gz.sha256
+tar -xzf Flora-<version>-linux-x86_64.tar.gz
+cd Flora-<version>-linux-x86_64
 ```
 
 ## Install the runtime environment
