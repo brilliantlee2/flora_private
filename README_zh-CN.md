@@ -233,7 +233,7 @@ Python/生信依赖封装到 Singularity SIF 中。已经验证的基础系统�
 
 ```bash
 mkdir -p singularity_build
-cp dist/Flora-0.1.1-linux-x86_64.tar.gz singularity_build/
+cp dist/Flora-0.1.2-linux-x86_64.tar.gz singularity_build/
 cp packaging/singularity/Flora.def singularity_build/
 cd singularity_build
 ```
@@ -267,7 +267,7 @@ curl -L --fail --retry 5 --retry-delay 5 \
 
 ```text
 Flora.def
-Flora-0.1.1-linux-x86_64.tar.gz
+Flora-0.1.2-linux-x86_64.tar.gz
 Miniforge3-Linux-x86_64.sh
 flora-base-ubuntu22.04.sif
 ```
@@ -277,19 +277,19 @@ flora-base-ubuntu22.04.sif
 ```bash
 env -u LD_LIBRARY_PATH \
 singularity build --fakeroot \
-  Flora-0.1.1-linux-x86_64.sif \
+  Flora-0.1.2-linux-x86_64.sif \
   Flora.def
 
 singularity run --cleanenv \
-  Flora-0.1.1-linux-x86_64.sif \
+  Flora-0.1.2-linux-x86_64.sif \
   --version
 
 singularity run --cleanenv \
-  Flora-0.1.1-linux-x86_64.sif \
+  Flora-0.1.2-linux-x86_64.sif \
   --help
 
-sha256sum Flora-0.1.1-linux-x86_64.sif \
-  > Flora-0.1.1-linux-x86_64.sif.sha256
+sha256sum Flora-0.1.2-linux-x86_64.sif \
+  > Flora-0.1.2-linux-x86_64.sif.sha256
 ```
 
 实测镜像包含 Flora、Python 3.11、samtools、minimap2、bedtools 和完整 Python
@@ -299,7 +299,7 @@ sha256sum Flora-0.1.1-linux-x86_64.sif \
 ## 检查发行包
 
 ```bash
-ARCHIVE="dist/Flora-0.1.1-linux-x86_64.tar.gz"
+ARCHIVE="dist/Flora-0.1.2-linux-x86_64.tar.gz"
 
 tar -tzf "$ARCHIVE" | head -50
 tar -tzf "$ARCHIVE" | \
@@ -315,7 +315,7 @@ tar -tzf "$ARCHIVE" | \
 rm -rf /tmp/flora-release-test
 mkdir -p /tmp/flora-release-test
 tar -xzf "$ARCHIVE" -C /tmp/flora-release-test
-cd /tmp/flora-release-test/Flora-0.1.1-linux-x86_64
+cd /tmp/flora-release-test/Flora-0.1.2-linux-x86_64
 
 file flora
 ldd flora
@@ -344,15 +344,15 @@ Linux：
 
 ```bash
 cd /path/to/Flora
-sha256sum dist/Flora-0.1.1-linux-x86_64.tar.gz \
-  > dist/Flora-0.1.1-linux-x86_64.tar.gz.sha256
+sha256sum dist/Flora-0.1.2-linux-x86_64.tar.gz \
+  > dist/Flora-0.1.2-linux-x86_64.tar.gz.sha256
 ```
 
 验证：
 
 ```bash
 cd dist
-sha256sum -c Flora-0.1.1-linux-x86_64.tar.gz.sha256
+sha256sum -c Flora-0.1.2-linux-x86_64.tar.gz.sha256
 ```
 
 ## 发布到公开 GitHub 仓库
@@ -369,11 +369,11 @@ cp docs/repository-templates/public/README_zh-CN.md /path/to/Flora-public/README
 使用 GitHub CLI：
 
 ```bash
-gh release create v0.1.1 \
-  dist/Flora-0.1.1-linux-x86_64.tar.gz \
-  dist/Flora-0.1.1-linux-x86_64.tar.gz.sha256 \
+gh release create v0.1.2 \
+  dist/Flora-0.1.2-linux-x86_64.tar.gz \
+  dist/Flora-0.1.2-linux-x86_64.tar.gz.sha256 \
   --repo brilliantlee2/Flora \
-  --title "Flora v0.1.1" \
+  --title "Flora v0.1.2" \
   --generate-notes
 ```
 
