@@ -69,6 +69,10 @@ name = "add_gene_tags"
 path = "src/bin/add_gene_tags.rs"
 
 [[bin]]
+name = "tag_and_assign_genes"
+path = "src/bin/tag_and_assign_genes.rs"
+
+[[bin]]
 name = "cluster_umis_allbam"
 path = "src/bin/cluster_umis_allbam.rs"
 

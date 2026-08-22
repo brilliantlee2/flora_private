@@ -37,3 +37,5 @@ pub mod stage_read_qc_summary;
 pub mod stage_rna_qc_metrics;
 #[path = "bin/saturation.rs"]
 pub mod stage_saturation;
+#[path = "bin/tag_and_assign_genes.rs"]
+pub mod stage_tag_and_assign_genes;
