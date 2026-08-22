@@ -84,13 +84,24 @@ fn run(cli: Cli) -> Result<()> {
         };
         add_read_tags(&mut record, tags)?;
         tagged_records += 1;
-        tagged_read_ids.insert(read_id);
+        tagged_read_ids.insert(read_id.clone());
+
+        if genes.is_empty() {
+            continue;
+        }
 
         // Default bedtools bamtobed skips unmapped records. The legacy
         // add_gene_tags stage therefore stops before writing them as well.
         let Some(bed_record) = bed_record_from_bam(&record, &header_view) else {
             continue;
         };
+        if bed_record.name != read_id {
+            anyhow::bail!(
+                "BAM and gene assignment reads not ordered: {} != {}",
+                read_id,
+                bed_record.name
+            );
+        }
         let assignment = assign_gene(&bed_record, &genes, cli.mapq);
         write_gene_assignment(&mut assignments, &assignment)?;
         record.update_aux(b"GN", bam::record::Aux::String(&assignment.gene))?;
@@ -269,8 +280,8 @@ mod tests {
         .unwrap();
 
         run(Cli {
-            bam: input_path,
-            tags: tags_path,
+            bam: input_path.clone(),
+            tags: tags_path.clone(),
             gtf: gtf_path,
             gene_assigns: assigns_path.clone(),
             output: output_path.clone(),
@@ -290,5 +301,23 @@ mod tests {
         assert!(matches!(record.aux(b"CB").unwrap(), Aux::String("CELL1")));
         assert!(matches!(record.aux(b"UR").unwrap(), Aux::String("UMI1")));
         assert!(matches!(record.aux(b"GN").unwrap(), Aux::String("GENE1")));
+
+        let empty_gtf = temp.path().join("empty.gtf");
+        let empty_assigns = temp.path().join("empty.assigns.tsv");
+        let empty_bam = temp.path().join("empty.bam");
+        std::fs::write(&empty_gtf, "").unwrap();
+        run(Cli {
+            bam: input_path,
+            tags: tags_path,
+            gtf: empty_gtf,
+            gene_assigns: empty_assigns.clone(),
+            output: empty_bam.clone(),
+            mapq: 60,
+            threads: 2,
+        })
+        .unwrap();
+        assert_eq!(std::fs::read_to_string(empty_assigns).unwrap(), "");
+        let mut reader = bam::Reader::from_path(empty_bam).unwrap();
+        assert_eq!(reader.records().count(), 0);
     }
 }
