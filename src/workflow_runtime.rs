@@ -245,7 +245,7 @@ fn resolve_python(explicit: Option<OsString>) -> Result<PathBuf> {
 
 fn normalize_path_options(args: &mut [OsString]) -> Result<()> {
     const PATH_OPTIONS: &[&str] = &[
-        "--fastq",
+        "--fastq-dir",
         "--full-length-fastq",
         "--barcode-list-10bp",
         "--barcode_list_10bp",
@@ -265,6 +265,21 @@ fn normalize_path_options(args: &mut [OsString]) -> Result<()> {
     let mut index = 0;
     while index < args.len() {
         let raw = args[index].to_string_lossy();
+        if raw == "--fastq" {
+            index += 1;
+            let first_value = index;
+            while index < args.len() && !args[index].to_string_lossy().starts_with('-') {
+                let path = PathBuf::from(&args[index]);
+                if path.is_relative() {
+                    args[index] = cwd.join(path).into_os_string();
+                }
+                index += 1;
+            }
+            if index == first_value {
+                bail!("--fastq requires at least one value")
+            }
+            continue;
+        }
         if PATH_OPTIONS.iter().any(|option| raw == *option) {
             if index + 1 >= args.len() {
                 bail!("{} requires a value", raw)
@@ -277,7 +292,7 @@ fn normalize_path_options(args: &mut [OsString]) -> Result<()> {
             continue;
         }
         if let Some((option, value)) = raw.split_once('=') {
-            if PATH_OPTIONS.contains(&option) {
+            if option == "--fastq" || PATH_OPTIONS.contains(&option) {
                 let path = PathBuf::from(value);
                 if path.is_relative() {
                     args[index] = OsString::from(format!("{option}={}", cwd.join(path).display()));
@@ -287,4 +302,30 @@ fn normalize_path_options(args: &mut [OsString]) -> Result<()> {
         index += 1;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_path_options;
+    use std::ffi::OsString;
+    use std::path::PathBuf;
+
+    #[test]
+    fn normalizes_every_multi_fastq_value_and_fastq_directory() {
+        let cwd = std::env::current_dir().unwrap();
+        let mut files = vec![
+            OsString::from("--fastq"),
+            OsString::from("sample_1.fastq.gz"),
+            OsString::from("sample_2.fastq.gz"),
+            OsString::from("--out-dir"),
+            OsString::from("output"),
+        ];
+        normalize_path_options(&mut files).unwrap();
+        assert_eq!(PathBuf::from(&files[1]), cwd.join("sample_1.fastq.gz"));
+        assert_eq!(PathBuf::from(&files[2]), cwd.join("sample_2.fastq.gz"));
+
+        let mut directory = vec![OsString::from("--fastq-dir"), OsString::from("chunks")];
+        normalize_path_options(&mut directory).unwrap();
+        assert_eq!(PathBuf::from(&directory[1]), cwd.join("chunks"));
+    }
 }
