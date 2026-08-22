@@ -27,6 +27,11 @@ def parse_args():
         default="saturation_curves.png",
         help="Output saturation plot PNG [saturation_curves.png]",
     )
+    parser.add_argument(
+        "--plot-existing-tsv",
+        default=None,
+        help="Plot an existing saturation TSV without loading read-level input.",
+    )
     return parser.parse_args()
 
 
@@ -52,47 +57,50 @@ def median_known_genes_per_cell(df_sub):
 
 def main():
     args = parse_args()
-    df = pd.read_csv(args.input, sep="\t")
-    df = df.copy()
-    df["barcode"] = df["barcode"].astype(str)
-    df["gene"] = df["gene"].astype(str)
-    df["umi"] = df["umi"].astype(str)
-    df["read_id"] = df["read_id"].astype(str)
+    if args.plot_existing_tsv:
+        res = pd.read_csv(args.plot_existing_tsv, sep="\t")
+    else:
+        df = pd.read_csv(args.input, sep="\t")
+        df = df.copy()
+        df["barcode"] = df["barcode"].astype(str)
+        df["gene"] = df["gene"].astype(str)
+        df["umi"] = df["umi"].astype(str)
+        df["read_id"] = df["read_id"].astype(str)
 
-    fractions = [0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
-    records = []
+        fractions = [0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+        records = []
 
-    for frac in fractions:
-        df_sub = df.sample(frac=frac, random_state=42) if frac < 1.0 else df
-        n_reads = df_sub.shape[0]
-        if n_reads == 0:
-            records.append((frac, 0, 0.0, 0.0, 0.0, 0.0))
-            continue
+        for frac in fractions:
+            df_sub = df.sample(frac=frac, random_state=42) if frac < 1.0 else df
+            n_reads = df_sub.shape[0]
+            if n_reads == 0:
+                records.append((frac, 0, 0.0, 0.0, 0.0, 0.0))
+                continue
 
-        gene_bc_umi = df_sub["gene"] + "_" + df_sub["barcode"] + "_" + df_sub["umi"]
-        n_deduped_reads = gene_bc_umi.nunique()
-        saturation = 1 - (n_deduped_reads / n_reads)
+            gene_bc_umi = df_sub["gene"] + "_" + df_sub["barcode"] + "_" + df_sub["umi"]
+            n_deduped_reads = gene_bc_umi.nunique()
+            saturation = 1 - (n_deduped_reads / n_reads)
 
-        genes_per_cell = median_known_genes_per_cell(df_sub)
-        umis_per_cell = float(df_sub.groupby("barcode")["umi"].nunique().median())
-        reads_per_cell = float(df_sub.groupby("barcode")["read_id"].nunique().median())
+            genes_per_cell = median_known_genes_per_cell(df_sub)
+            umis_per_cell = float(df_sub.groupby("barcode")["umi"].nunique().median())
+            reads_per_cell = float(df_sub.groupby("barcode")["read_id"].nunique().median())
 
-        records.append(
-            (frac, n_reads, reads_per_cell, genes_per_cell, umis_per_cell, saturation)
+            records.append(
+                (frac, n_reads, reads_per_cell, genes_per_cell, umis_per_cell, saturation)
+            )
+
+        res = pd.DataFrame(
+            records,
+            columns=[
+                "fraction",
+                "reads",
+                "reads_per_cell",
+                "genes_per_cell",
+                "umis_per_cell",
+                "saturation",
+            ],
         )
-
-    res = pd.DataFrame(
-        records,
-        columns=[
-            "fraction",
-            "reads",
-            "reads_per_cell",
-            "genes_per_cell",
-            "umis_per_cell",
-            "saturation",
-        ],
-    )
-    res.to_csv(args.output_tsv, sep="\t", index=False)
+        res.to_csv(args.output_tsv, sep="\t", index=False)
 
     if plt is None:
         print("Warning: matplotlib is not installed; skipped saturation PNG output.")

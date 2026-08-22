@@ -843,6 +843,11 @@ run_stage saturation "${DOWNSTREAM_DIR}/Saturation.py" \
   --input cell_umi_gene.tsv \
   --output-tsv "${SAMPLE_ID}.saturation.tsv" \
   --output-png "${SAMPLE_ID}.saturation_curves.png" 2>&1 | tee -a "${QC_LOG}"
+if [[ ! -f "${SAMPLE_ID}.saturation_curves.png" ]]; then
+  python3 "$(python_asset "${DOWNSTREAM_DIR}/Saturation.py")" \
+    --plot-existing-tsv "${SAMPLE_ID}.saturation.tsv" \
+    --output-png "${SAMPLE_ID}.saturation_curves.png" 2>&1 | tee -a "${QC_LOG}"
+fi
 
 run_stage barnyard_qc "${DOWNSTREAM_DIR}/barnyard_qc.py" \
   --input cell_umi_gene.tsv \

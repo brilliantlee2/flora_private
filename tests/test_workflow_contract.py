@@ -787,5 +787,18 @@ class WorkflowTimingContractTest(unittest.TestCase):
                     self.assertIn(marker, script)
 
 
+class SaturationStageContractTest(unittest.TestCase):
+    def test_saturation_uses_embedded_rust_compute_and_python_plot_only(self):
+        root = Path(__file__).resolve().parents[1]
+        runtime = (root / "src" / "workflow_runtime.rs").read_text(encoding="utf-8")
+        self.assertIn('"saturation",', runtime)
+        for runner_name in ["run_all.sh", "run_all_mixed_species.sh"]:
+            runner = (root / runner_name).read_text(encoding="utf-8")
+            self.assertIn(
+                'run_stage saturation "${DOWNSTREAM_DIR}/Saturation.py"', runner
+            )
+            self.assertIn('--plot-existing-tsv "${SAMPLE_ID}.saturation.tsv"', runner)
+
+
 if __name__ == "__main__":
     unittest.main()

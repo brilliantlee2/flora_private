@@ -187,6 +187,7 @@ fn dispatch_internal_stage(name: &str) -> Option<Result<()>> {
         "prepare_read_tags" => Some(flora::stage_prepare_read_tags::main()),
         "read_qc_summary" => Some(flora::stage_read_qc_summary::main()),
         "rna_qc_metrics" => Some(flora::stage_rna_qc_metrics::main()),
+        "saturation" => Some(flora::stage_saturation::main()),
         _ => None,
     }
 }
