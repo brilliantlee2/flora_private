@@ -6,7 +6,8 @@
   "sources": ["run_all_mixed_species.sh"],
   "positionals": [],
   "options": [
-    {"name":"--fastq","aliases":[],"type":"path","required":false,"required_when":[{"option":"--skip-glycine","operator":"equals","value":false}],"default":null,"conflicts":[],"description":"Raw FASTQ input for Glycine."},
+    {"name":"--fastq","aliases":[],"type":"string_list","required":false,"required_when":[],"default":null,"conflicts":["--fastq-dir"],"description":"One or more raw FASTQ inputs for concurrent Glycine processing."},
+    {"name":"--fastq-dir","aliases":[],"type":"path","required":false,"required_when":[],"default":null,"conflicts":["--fastq"],"description":"Non-recursive directory containing raw FASTQ chunks."},
     {"name":"--full-length-fastq","aliases":[],"type":"path","required":false,"required_when":[{"option":"--skip-glycine","operator":"equals","value":true}],"default":null,"conflicts":[],"description":"Precomputed full-length FASTQ used when Glycine is skipped."},
     {"name":"--tso-seq","aliases":["--tso_seq"],"type":"string","required":false,"required_when":[],"default":"AAGACCGCTTGGCCTCCGACTTTCTGCG","conflicts":[],"description":"Template-switching oligo sequence."},
     {"name":"--rtp-seq","aliases":["--rtp_seq"],"type":"string","required":false,"required_when":[],"default":"GAGGTCCATGAAGTGAGCATCTTCTGCG","conflicts":[],"description":"Reverse-transcription primer sequence."},
@@ -21,6 +22,8 @@
     {"name":"--sample-id","aliases":["--sample"],"type":"string","required":false,"required_when":[],"default":"sample","conflicts":[],"description":"Sample identifier."},
     {"name":"--threads","aliases":["--thread"],"type":"int","required":false,"required_when":[],"default":32,"conflicts":[],"description":"Primary worker thread count."},
     {"name":"--cluster-threads","aliases":[],"type":"int","required":false,"required_when":[],"default":16,"conflicts":[],"description":"UMI clustering thread count."},
+    {"name":"--glycine-jobs","aliases":[],"type":"int","required":false,"required_when":[],"default":10,"conflicts":[],"description":"Maximum concurrent Glycine jobs."},
+    {"name":"--glycine-threads","aliases":[],"type":"int","required":false,"required_when":[],"default":64,"conflicts":[],"description":"Total thread budget shared across Glycine jobs."},
     {"name":"--exp-cells","aliases":[],"type":"int","required":false,"required_when":[],"default":5000,"conflicts":[],"description":"Expected cell count."},
     {"name":"--min-q","aliases":[],"type":"int","required":false,"required_when":[],"default":2,"conflicts":[],"description":"Minimum barcode base quality."},
     {"name":"--max-ed","aliases":[],"type":"int","required":false,"required_when":[],"default":2,"conflicts":[],"description":"Maximum barcode edit distance."},

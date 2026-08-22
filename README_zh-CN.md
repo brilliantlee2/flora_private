@@ -91,6 +91,10 @@ python -m unittest discover -s tests -v
 bash run_all.sh -h
 ```
 
+全流程支持在一个 `--fastq` 后传入多个路径，也支持非递归的
+`--fastq-dir`。并行 Glycine 默认为10个并发任务共享64个总线程；修改后应通过
+`flora --help` 检查这些选项。
+
 生成单二进制公开发行包前，`flora run --help` 和
 `flora run-mixed --help` 也必须成功。如果任意命令不可用，打包脚本会主动停止。
 
