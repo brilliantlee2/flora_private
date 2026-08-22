@@ -36,8 +36,17 @@ struct Cli {
     #[arg(long = "glycine-log")]
     glycine_log: Option<PathBuf>,
 
+    #[arg(long = "glycine-stats")]
+    glycine_stats: Option<PathBuf>,
+
     #[arg(long = "mixed-species", default_value_t = false)]
     mixed_species: bool,
+
+    #[arg(long = "fastq-count-file")]
+    fastq_count_file: Option<PathBuf>,
+
+    #[arg(long, default_value_t = 4)]
+    threads: usize,
 }
 
 #[derive(Default)]
@@ -67,9 +76,44 @@ struct BamSummary {
 
 pub fn main() -> Result<()> {
     let cli = Cli::parse();
-    let raw_fastq_reads = count_fastq_reads(&cli.raw_fastq)?;
-    let mut full_length_reads = if let Some(path) = &cli.full_length_fastq {
-        count_fastq_reads(path)?
+    let summarized_full_length_reads = cli
+        .fastq_count_file
+        .as_ref()
+        .map(load_fastq_count)
+        .transpose()?;
+    let raw_is_full_length = cli
+        .full_length_fastq
+        .as_ref()
+        .map(|path| same_file(&cli.raw_fastq, path))
+        .transpose()?
+        .unwrap_or(false);
+    let glycine_raw_reads = cli
+        .glycine_stats
+        .as_ref()
+        .map(|path| load_glycine_summary_read_count(path, "Total"))
+        .transpose()?
+        .flatten();
+
+    // In multi-FASTQ Glycine runs, raw_fastq points at the merged full-length
+    // output; the Glycine summary is the authoritative raw input count.
+    let raw_fastq_reads = if let Some(count) = glycine_raw_reads {
+        count
+    } else if raw_is_full_length {
+        match summarized_full_length_reads {
+            Some(count) => count,
+            None => count_fastq_reads(&cli.raw_fastq)?,
+        }
+    } else {
+        count_fastq_reads(&cli.raw_fastq)?
+    };
+    let mut full_length_reads = if let Some(count) = summarized_full_length_reads {
+        count
+    } else if let Some(path) = &cli.full_length_fastq {
+        if raw_is_full_length {
+            raw_fastq_reads
+        } else {
+            count_fastq_reads(path)?
+        }
     } else {
         raw_fastq_reads
     };
@@ -92,7 +136,8 @@ pub fn main() -> Result<()> {
         Some(path) => load_barcode_valid_reads(path)?.unwrap_or(assigned_cell_reads),
         None => assigned_cell_reads,
     };
-    let bam_summary = summarize_bam_alignments(&cli.bam, &cell_umi_gene.final_cell_read_ids)?;
+    let bam_summary =
+        summarize_bam_alignments(&cli.bam, &cell_umi_gene.final_cell_read_ids, cli.threads)?;
 
     let (known_transcript_reads, unique_isoforms) = match &cli.transcript_assigns {
         Some(path) => load_transcript_assignment_summary(path, &cell_umi_gene.final_cell_read_ids)?,
@@ -197,9 +242,11 @@ impl CellUmiGeneColumns {
 fn summarize_bam_alignments(
     path: &PathBuf,
     final_cell_reads: &HashSet<String>,
+    threads: usize,
 ) -> Result<BamSummary> {
     let mut bam =
         bam::Reader::from_path(path).with_context(|| format!("open {}", path.display()))?;
+    bam.set_threads(threads.max(1))?;
     let mut summary = BamSummary::default();
     let mut mapped_unique_reads = HashSet::default();
     let mut aligned_genome_reads = HashSet::default();
@@ -230,6 +277,24 @@ fn summarize_bam_alignments(
 
 fn count_fastq_reads(path: &PathBuf) -> Result<usize> {
     for_each_fastq_batch(&[path], 100_000, |_batch| Ok(()))
+}
+
+fn same_file(left: &PathBuf, right: &PathBuf) -> Result<bool> {
+    Ok(
+        std::fs::canonicalize(left).with_context(|| format!("resolve {}", left.display()))?
+            == std::fs::canonicalize(right)
+                .with_context(|| format!("resolve {}", right.display()))?,
+    )
+}
+
+fn load_fastq_count(path: &PathBuf) -> Result<usize> {
+    let mut value = String::new();
+    BufReader::new(File::open(path).with_context(|| format!("open {}", path.display()))?)
+        .read_line(&mut value)?;
+    value
+        .trim()
+        .parse()
+        .with_context(|| format!("invalid FASTQ record count in {}", path.display()))
 }
 
 fn count_read_tags(path: &PathBuf) -> Result<usize> {
@@ -300,6 +365,10 @@ fn load_transcript_assignment_summary(
 }
 
 fn load_glycine_total_full_length_reads(path: &PathBuf) -> Result<Option<usize>> {
+    load_glycine_summary_read_count(path, "Full-length")
+}
+
+fn load_glycine_summary_read_count(path: &PathBuf, row_name: &str) -> Result<Option<usize>> {
     let reader =
         BufReader::new(File::open(path).with_context(|| format!("open {}", path.display()))?);
     let mut in_type_block = false;
@@ -318,7 +387,7 @@ fn load_glycine_total_full_length_reads(path: &PathBuf) -> Result<Option<usize>>
         }
         if in_type_block {
             let parts: Vec<&str> = stripped.split('\t').collect();
-            if parts.len() >= 2 && parts[0] == "Full-length" {
+            if parts.len() >= 2 && parts[0] == row_name {
                 return Ok(parts[1].parse().ok());
             }
         }
@@ -906,5 +975,26 @@ mod tests {
             "12,345"
         );
         assert_eq!(format_float_with_commas(1234.5), "1,234.50");
+    }
+
+    #[test]
+    fn glycine_summary_total_and_full_length_counts_are_parsed() {
+        let path =
+            std::env::temp_dir().join(format!("flora-glycine-summary-{}.txt", std::process::id()));
+        std::fs::write(
+            &path,
+            "Summary\nTotal_base_count\tValid_base_count\tValid_base_proportion(%)\n10\t9\t90.0\nType\tRead_count\tRead_proportion(%)\nTotal\t12345\t100.00\nLength-filtered\t10\t0.08\nQC-filtered\t5\t0.04\nFull-length\t10000\t81.00\n\nNon-chimeric\n",
+        )
+        .unwrap();
+
+        assert_eq!(
+            load_glycine_summary_read_count(&path, "Total").unwrap(),
+            Some(12345)
+        );
+        assert_eq!(
+            load_glycine_total_full_length_reads(&path).unwrap(),
+            Some(10000)
+        );
+        std::fs::remove_file(path).unwrap();
     }
 }

@@ -788,17 +788,30 @@ ln -sf "${MATRIX_DIR}/${SAMPLE_ID}.cell_umi_gene.tsv" cell_umi_gene.tsv
 ln -sf "${ALIGN_DIR}/${SAMPLE_ID}.aligned.sorted.bam" filtered.sorted.bam
 ln -sf "${ALIGN_DIR}/${SAMPLE_ID}.aligned.sorted.bam.bai" filtered.sorted.bam.bai
 
-if [[ "${SKIP_GLYCINE}" -eq 0 ]]; then
-  RAW_FASTQ_FOR_QC="${FULL_LENGTH_FASTQ}"
+PRECOMPUTED_READ_QC_JSON="${UPSTREAM_DIR}/read_qc_summary.json"
+PRECOMPUTED_FASTQ_COUNT="${UPSTREAM_DIR}/full_length_fastq_count.txt"
+if [[ -s "${PRECOMPUTED_READ_QC_JSON}" && -s "${PRECOMPUTED_FASTQ_COUNT}" ]]; then
+  cp "${PRECOMPUTED_READ_QC_JSON}" "${SAMPLE_ID}.read_qc_summary.json"
+  cp "${PRECOMPUTED_FASTQ_COUNT}" "${SAMPLE_ID}.full_length_fastq_count.txt"
+  log "Reused Read QC accumulated during the barcode FASTQ scan" | tee -a "${QC_LOG}"
 else
-  RAW_FASTQ_FOR_QC="${FULL_LENGTH_FASTQ}"
+  log "Precomputed Read QC unavailable; scanning the full-length FASTQ" | tee -a "${QC_LOG}"
+  run_stage read_qc_summary "${DOWNSTREAM_DIR}/read_qc_summary.py" \
+    --fastq "${FULL_LENGTH_FASTQ}" \
+    --output-json "${SAMPLE_ID}.read_qc_summary.json" \
+    --output-fastq-count "${SAMPLE_ID}.full_length_fastq_count.txt" 2>&1 | tee -a "${QC_LOG}"
 fi
+
+RAW_FASTQ_FOR_QC="${FULL_LENGTH_FASTQ}"
+QC_THREADS=$(( THREADS < 8 ? THREADS : 8 ))
 
 QC_ARGS=(
   --cell-umi-gene-tsv cell_umi_gene.tsv
   --bam filtered.sorted.bam
   --raw-fastq "${RAW_FASTQ_FOR_QC}"
   --full-length-fastq "${FULL_LENGTH_FASTQ}"
+  --fastq-count-file "${SAMPLE_ID}.full_length_fastq_count.txt"
+  --threads "${QC_THREADS}"
   --read-tags "${ALIGN_DIR}/${SAMPLE_ID}.read_tags.tsv"
   --barcode-validity-tsv "${BARCODE_VALIDITY_SUMMARY}"
 )
@@ -825,20 +838,6 @@ run_stage saturation "${DOWNSTREAM_DIR}/Saturation.py" \
   --input cell_umi_gene.tsv \
   --output-tsv "${SAMPLE_ID}.saturation.tsv" \
   --output-png "${SAMPLE_ID}.saturation_curves.png" 2>&1 | tee -a "${QC_LOG}"
-
-PRECOMPUTED_READ_QC_JSON="${UPSTREAM_DIR}/read_qc_summary.json"
-PRECOMPUTED_FASTQ_COUNT="${UPSTREAM_DIR}/full_length_fastq_count.txt"
-if [[ -s "${PRECOMPUTED_READ_QC_JSON}" && -s "${PRECOMPUTED_FASTQ_COUNT}" ]]; then
-  cp "${PRECOMPUTED_READ_QC_JSON}" "${SAMPLE_ID}.read_qc_summary.json"
-  cp "${PRECOMPUTED_FASTQ_COUNT}" "${SAMPLE_ID}.full_length_fastq_count.txt"
-  log "Reused Read QC accumulated during the barcode FASTQ scan" | tee -a "${QC_LOG}"
-else
-  log "Precomputed Read QC unavailable; scanning the full-length FASTQ" | tee -a "${QC_LOG}"
-  run_stage read_qc_summary "${DOWNSTREAM_DIR}/read_qc_summary.py" \
-    --fastq "${FULL_LENGTH_FASTQ}" \
-    --output-json "${SAMPLE_ID}.read_qc_summary.json" \
-    --output-fastq-count "${SAMPLE_ID}.full_length_fastq_count.txt" 2>&1 | tee -a "${QC_LOG}"
-fi
 
 BUILD_REPORT_ARGS=(
   --sample-id "${SAMPLE_ID}"
