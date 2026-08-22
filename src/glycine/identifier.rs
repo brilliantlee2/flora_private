@@ -19,11 +19,36 @@ fn build_rescued_record_id(raw_id: &[u8], record_number: &[u8], strand: &[u8]) -
     .concat()
 }
 
+pub struct PrimerSequences {
+    tso: Vec<u8>,
+    rtp: Vec<u8>,
+    tso_rev_comp: Vec<u8>,
+    rtp_rev_comp: Vec<u8>,
+    tso_trimmed_comp: Vec<u8>,
+    rtp_trimmed_comp: Vec<u8>,
+}
+
+impl PrimerSequences {
+    pub fn new(tso: Vec<u8>, rtp: Vec<u8>, trim_len: usize) -> Self {
+        let tso_rev_comp = convert_rev_comp(&tso);
+        let rtp_rev_comp = convert_rev_comp(&rtp);
+        let tso_trimmed_comp = convert_comp(&tso[trim_len..]);
+        let rtp_trimmed_comp = convert_comp(&rtp[trim_len..]);
+        Self {
+            tso,
+            rtp,
+            tso_rev_comp,
+            rtp_rev_comp,
+            tso_trimmed_comp,
+            rtp_trimmed_comp,
+        }
+    }
+}
+
 // 识别全长转录本、非全长转录本和discarded等
 pub fn classify_reads(
     raw_record: Record,
-    tso_seq: &Vec<u8>,
-    rtp_seq: &Vec<u8>,
+    primers: &PrimerSequences,
     err_threshold_tso: usize,
     err_threshold_rtp: usize,
     err_threshold_tso_comp: usize,
@@ -32,10 +57,11 @@ pub fn classify_reads(
     shift_threshold_end: usize,
     min_len: usize,
     min_qual: f64,
-    trim_len: usize,
     tail_len: usize,
     umi_len: usize,
 ) -> (Vec<(ProcessedRecord, usize)>, usize) {
+    let tso_seq = &primers.tso;
+    let rtp_seq = &primers.rtp;
     let raw_record_len = raw_record.seq().len();
     let tail_search_span = chimeric_tail_search_span(tail_len, umi_len);
 
@@ -55,11 +81,9 @@ pub fn classify_reads(
     rtp_config.task = EdlibAlignTaskRs::EDLIB_TASK_LOC;
 
     let tso_align_res = edlibAlignRs(tso_seq, raw_record.seq(), &tso_config);
-    let tso_rev_comp_align_res =
-        edlibAlignRs(&convert_rev_comp(tso_seq), raw_record.seq(), &tso_config);
+    let tso_rev_comp_align_res = edlibAlignRs(&primers.tso_rev_comp, raw_record.seq(), &tso_config);
     let rtp_align_res = edlibAlignRs(rtp_seq, raw_record.seq(), &rtp_config);
-    let rtp_rev_comp_align_res =
-        edlibAlignRs(&convert_rev_comp(rtp_seq), raw_record.seq(), &rtp_config);
+    let rtp_rev_comp_align_res = edlibAlignRs(&primers.rtp_rev_comp, raw_record.seq(), &rtp_config);
 
     let mut primer_loc_vec: Vec<(usize, usize)> = vec![];
 
@@ -328,9 +352,9 @@ pub fn classify_reads(
     let (tso_ld, res_shift_len_tso) = min_edit_distance_and_coord(&tso_seq, read_text_start);
     let (rtp_ld, res_shift_len_rtp) = min_edit_distance_and_coord(&rtp_seq, read_text_start);
     let (tso_comp_ld, res_shift_len_tso_comp) =
-        min_edit_distance_and_coord(&convert_comp(&tso_seq[trim_len..]), &read_text_end);
+        min_edit_distance_and_coord(&primers.tso_trimmed_comp, &read_text_end);
     let (rtp_comp_ld, res_shift_len_rtp_comp) =
-        min_edit_distance_and_coord(&convert_comp(&rtp_seq[trim_len..]), &read_text_end);
+        min_edit_distance_and_coord(&primers.rtp_trimmed_comp, &read_text_end);
 
     let res_shift_len_polya_option = read_text_end
         .windows(tail_len)
@@ -614,7 +638,8 @@ pub fn classify_reads(
 
 #[cfg(test)]
 mod tests {
-    use super::{build_rescued_record_id, chimeric_tail_search_span};
+    use super::{build_rescued_record_id, chimeric_tail_search_span, PrimerSequences};
+    use crate::glycine::utils::{convert_comp, convert_rev_comp};
 
     #[test]
     fn defaults_to_legacy_window_without_umi_gap() {
@@ -631,6 +656,27 @@ mod tests {
         assert_eq!(
             build_rescued_record_id(b"260F200339011_1_4460_2_3736_19402_1_13.15", b"2", b"minus"),
             b"@260F200339011_1_4460_2_3736_19402_1_13.15_rescued_No2_strand_minus".to_vec()
+        );
+    }
+
+    #[test]
+    fn primer_variants_are_precomputed_with_legacy_transformations() {
+        let tso = b"AAGACCGC".to_vec();
+        let rtp = b"GAGGTCCA".to_vec();
+        let trim_len = 2;
+        let primers = PrimerSequences::new(tso.clone(), rtp.clone(), trim_len);
+
+        assert_eq!(primers.tso, tso);
+        assert_eq!(primers.rtp, rtp);
+        assert_eq!(primers.tso_rev_comp, convert_rev_comp(&primers.tso));
+        assert_eq!(primers.rtp_rev_comp, convert_rev_comp(&primers.rtp));
+        assert_eq!(
+            primers.tso_trimmed_comp,
+            convert_comp(&primers.tso[trim_len..])
+        );
+        assert_eq!(
+            primers.rtp_trimmed_comp,
+            convert_comp(&primers.rtp[trim_len..])
         );
     }
 }

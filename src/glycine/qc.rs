@@ -1,5 +1,14 @@
 use super::utils::ProcessedRecord;
 use fxread::Record;
+use std::sync::OnceLock;
+
+static QUALITY_ERROR_PROBABILITIES: OnceLock<[f64; 256]> = OnceLock::new();
+
+fn quality_error_probabilities() -> &'static [f64; 256] {
+    QUALITY_ERROR_PROBABILITIES.get_or_init(|| {
+        std::array::from_fn(|quality| 10.0_f64.powf((quality as f64 - 33.0_f64) / (-10.0_f64)))
+    })
+}
 
 // 根据长度和Q值对reads做QC
 pub fn qc(
@@ -21,11 +30,12 @@ pub fn qc(
         return Some((length_filtered_record, 16));
     }
 
+    let error_probabilities = quality_error_probabilities();
     let read_err_rate: f64 = raw_record
         .qual()
         .unwrap()
         .iter()
-        .map(|&v| 10.0_f64.powf((v as f64 - 33.0_f64) / (-10.0_f64)))
+        .map(|&v| error_probabilities[v as usize])
         .sum::<f64>()
         / raw_record_len as f64;
     let read_qval: f64 = -10.0_f64 * read_err_rate.log10();
@@ -43,4 +53,18 @@ pub fn qc(
     }
 
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::quality_error_probabilities;
+
+    #[test]
+    fn quality_lookup_matches_original_powf_formula() {
+        let lookup = quality_error_probabilities();
+        for quality in 0_u16..=255 {
+            let expected = 10.0_f64.powf((quality as f64 - 33.0_f64) / (-10.0_f64));
+            assert_eq!(lookup[quality as usize], expected);
+        }
+    }
 }

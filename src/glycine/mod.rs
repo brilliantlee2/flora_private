@@ -71,9 +71,6 @@ where
 
     let pool = ThreadPool::new(thread_num);
 
-    let tso_seq: Arc<Vec<u8>> = Arc::new(tso_seq);
-    let rtp_seq: Arc<Vec<u8>> = Arc::new(rtp_seq);
-
     let (err_threshold_start, err_threshold_end): (ErrThreshold, ErrThreshold);
     if err_threshold_vec.len() < 2 {
         err_threshold_start = err_threshold_vec[0].clone();
@@ -87,6 +84,7 @@ where
     let err_threshold_rtp = convert_ld(&err_threshold_start, rtp_seq.len());
     let err_threshold_tso_comp = convert_ld(&err_threshold_end, tso_seq.len() - trim_len);
     let err_threshold_rtp_comp = convert_ld(&err_threshold_end, rtp_seq.len() - trim_len);
+    let primers = Arc::new(PrimerSequences::new(tso_seq, rtp_seq, trim_len));
 
     let (shift_threshold_start, shift_threshold_end): (usize, usize);
     if shift_threshold_vec.len() < 2 {
@@ -119,14 +117,12 @@ where
 
             for raw_record in batch {
                 let tx = tx.clone();
-                let tso_seq = Arc::clone(&tso_seq);
-                let rtp_seq = Arc::clone(&rtp_seq);
+                let primers = Arc::clone(&primers);
 
                 pool.execute(move || {
                     let res_fq_result = classify_reads(
                         raw_record,
-                        &tso_seq,
-                        &rtp_seq,
+                        &primers,
                         err_threshold_tso,
                         err_threshold_rtp,
                         err_threshold_tso_comp,
@@ -135,7 +131,6 @@ where
                         shift_threshold_end,
                         min_len,
                         min_qual,
-                        trim_len,
                         tail_len,
                         umi_len,
                     );
@@ -227,14 +222,12 @@ where
 
         for raw_record in batch {
             let tx = tx.clone();
-            let tso_seq = Arc::clone(&tso_seq);
-            let rtp_seq = Arc::clone(&rtp_seq);
+            let primers = Arc::clone(&primers);
 
             pool.execute(move || {
                 let res_fq_result = classify_reads(
                     raw_record,
-                    &tso_seq,
-                    &rtp_seq,
+                    &primers,
                     err_threshold_tso,
                     err_threshold_rtp,
                     err_threshold_tso_comp,
@@ -243,7 +236,6 @@ where
                     shift_threshold_end,
                     min_len,
                     min_qual,
-                    trim_len,
                     tail_len,
                     umi_len,
                 );
