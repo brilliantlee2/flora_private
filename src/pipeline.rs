@@ -18,6 +18,7 @@ use crate::barcode::{
     strip_fixed_5p, umi_a_ratio, BarcodeIndex, CorrectedRead, PutativeRow,
 };
 use crate::fastq::{for_each_fastq_batch, write_fastq_record};
+use crate::read_qc::ReadQcAccumulator;
 
 #[derive(Clone, Debug)]
 pub struct PipelineConfig {
@@ -189,13 +190,18 @@ pub fn run_pipeline(config: &PipelineConfig) -> Result<PipelineSummary> {
 
     println!("[Flora] Step 1/7: streaming FASTQ and extracting putative 3p/5p barcode tables");
     let step_t0 = Instant::now();
-    let putative = extract_putative_rows(
+    let (putative, read_qc) = extract_putative_rows(
         &config.fastq_fns,
         config.batch_size,
         &bc_fixed_3p,
         &umi_fixed_3p,
         &bc_fixed_5p,
         &umi_fixed_5p,
+    )?;
+    read_qc.write_outputs(
+        &config.out_dir.join("read_qc_summary.json"),
+        &config.out_dir.join("full_length_fastq_count.txt"),
+        300,
     )?;
     if config.save_intermediate {
         write_csv(config.out_dir.join("putative_bc.csv"), &putative)?;
@@ -415,9 +421,13 @@ fn extract_putative_rows(
     umi_fixed_3p: &str,
     bc_fixed_5p: &str,
     umi_fixed_5p: &str,
-) -> Result<Vec<PutativeRow>> {
+) -> Result<(Vec<PutativeRow>, ReadQcAccumulator)> {
     let mut putative = Vec::new();
+    let mut read_qc = ReadQcAccumulator::new();
     for_each_fastq_batch(paths, batch_size, |batch| {
+        for rec in &batch {
+            read_qc.observe(rec.seq.as_bytes(), rec.qual.as_bytes());
+        }
         let mut rows: Vec<PutativeRow> = batch
             .par_iter()
             .map(|rec| extract_putative(rec, bc_fixed_3p, umi_fixed_3p, bc_fixed_5p, umi_fixed_5p))
@@ -425,7 +435,7 @@ fn extract_putative_rows(
         putative.append(&mut rows);
         Ok(())
     })?;
-    Ok(putative)
+    Ok((putative, read_qc))
 }
 
 fn write_csv<T: Serialize>(path: PathBuf, rows: &[T]) -> Result<()> {
