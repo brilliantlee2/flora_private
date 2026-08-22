@@ -685,7 +685,8 @@ run_stage prepare_read_tags "${DOWNSTREAM_DIR}/prepare_read_tags.py" \
 run_stage add_cb_ur_tags "${DOWNSTREAM_DIR}/add_cb_ur_tags.py" \
   --bam "${SAMPLE_ID}.aligned.sorted.bam" \
   --tags "${SAMPLE_ID}.read_tags.tsv" \
-  --output "${SAMPLE_ID}.filtered.cb_ur.sorted.bam" 2>&1 | tee -a "${TAG_LOG}"
+  --output "${SAMPLE_ID}.filtered.cb_ur.sorted.bam" \
+  --threads "${CLUSTER_THREADS}" 2>&1 | tee -a "${TAG_LOG}"
 
 BAMTOBED_TS=$(date +%s)
 if bedtools bamtobed -i "${SAMPLE_ID}.filtered.cb_ur.sorted.bam" > "${SAMPLE_ID}.filtered.cb_ur.bed"; then
@@ -712,11 +713,12 @@ run_stage assign_genes "${DOWNSTREAM_DIR}/assign_genes.py" \
 
 run_stage add_gene_tags "${DOWNSTREAM_DIR}/add_gene_tags.py" \
   --output "${SAMPLE_ID}.filtered.cb_ur.gn.sorted.bam" \
+  --threads "${CLUSTER_THREADS}" \
   "${ALIGN_DIR}/${SAMPLE_ID}.filtered.cb_ur.sorted.bam" \
   "${SAMPLE_ID}.filtered.read_gene_assigns.tsv" 2>&1 | tee -a "${GENE_LOG}"
 
 GENE_INDEX_TS=$(date +%s)
-if samtools index "${SAMPLE_ID}.filtered.cb_ur.gn.sorted.bam"; then
+if samtools index -@ "${CLUSTER_THREADS}" "${SAMPLE_ID}.filtered.cb_ur.gn.sorted.bam"; then
   GENE_INDEX_STATUS=0
 else
   GENE_INDEX_STATUS=$?

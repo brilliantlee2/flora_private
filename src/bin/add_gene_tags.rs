@@ -1,9 +1,11 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
+use std::time::Instant;
 
 use anyhow::{Context, Result};
 use clap::Parser;
+use flora::bam_runtime::bounded_hts_threads;
 use rust_htslib::bam::{self, Read};
 
 #[derive(Debug, Parser)]
@@ -14,15 +16,22 @@ struct Cli {
 
     #[arg(long = "output", default_value = "gene.sorted.bam")]
     output: PathBuf,
+
+    #[arg(short = 't', long = "threads", default_value_t = 4)]
+    threads: usize,
 }
 
 pub fn main() -> Result<()> {
     let cli = Cli::parse();
+    let threads = bounded_hts_threads(cli.threads);
+    let phase = Instant::now();
     let mut bam =
         bam::Reader::from_path(&cli.bam).with_context(|| format!("open {}", cli.bam.display()))?;
+    bam.set_threads(threads)?;
     let header = bam::Header::from_template(bam.header());
     let mut out = bam::Writer::from_path(&cli.output, &header, bam::Format::Bam)
         .with_context(|| format!("create {}", cli.output.display()))?;
+    out.set_threads(threads)?;
     let mut lines = BufReader::new(
         File::open(&cli.gene_assigns)
             .with_context(|| format!("open {}", cli.gene_assigns.display()))?,
@@ -47,5 +56,11 @@ pub fn main() -> Result<()> {
         }
         out.write(&rec)?;
     }
+    drop(out);
+    drop(bam);
+    eprintln!(
+        "[timing] add_gene_tags.read_tag_write: {:.2}s",
+        phase.elapsed().as_secs_f64()
+    );
     Ok(())
 }

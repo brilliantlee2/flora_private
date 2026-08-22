@@ -1,7 +1,9 @@
 use std::path::PathBuf;
+use std::time::Instant;
 
 use anyhow::{Context, Result};
 use clap::Parser;
+use flora::bam_runtime::bounded_hts_threads;
 use flora::umi_cluster::cluster_directional;
 use rust_htslib::bam::{self, ext::BamRecordExtensions, Read};
 use rustc_hash::FxHashMap as HashMap;
@@ -44,11 +46,13 @@ struct ReadState {
 
 pub fn main() -> Result<()> {
     let cli = Cli::parse();
+    let threads = bounded_hts_threads(cli.threads);
     let mut bam = bam::IndexedReader::from_path(&cli.bam).with_context(|| "open indexed BAM")?;
+    bam.set_threads(threads)?;
     let header = bam::Header::from_template(bam.header());
     let mut out = bam::Writer::from_path(&cli.output, &header, bam::Format::Bam)
         .with_context(|| format!("create {}", cli.output.display()))?;
-    out.set_threads(cli.threads)?;
+    out.set_threads(threads)?;
 
     let header_view = bam.header().clone();
     let targets = header_view
@@ -64,6 +68,7 @@ pub fn main() -> Result<()> {
         })
         .collect::<Vec<_>>();
 
+    let process_phase = Instant::now();
     for (tid, chrom, target_len) in targets {
         bam.fetch((tid, 0, target_len))?;
         let tag_updates = collect_and_cluster(&mut bam, &chrom, &cli)?;
@@ -80,7 +85,16 @@ pub fn main() -> Result<()> {
         }
     }
     drop(out);
-    bam::index::build(&cli.output, None, bam::index::Type::Bai, cli.threads as u32)?;
+    eprintln!(
+        "[timing] cluster_umis.chromosome_passes: {:.2}s",
+        process_phase.elapsed().as_secs_f64()
+    );
+    let phase = Instant::now();
+    bam::index::build(&cli.output, None, bam::index::Type::Bai, threads as u32)?;
+    eprintln!(
+        "[timing] cluster_umis.index: {:.2}s",
+        phase.elapsed().as_secs_f64()
+    );
     Ok(())
 }
 

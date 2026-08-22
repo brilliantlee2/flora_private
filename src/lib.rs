@@ -1,6 +1,7 @@
 extern crate self as flora;
 
 pub mod annotation;
+pub mod bam_runtime;
 pub mod barcode;
 pub mod fastq;
 pub mod glycine;

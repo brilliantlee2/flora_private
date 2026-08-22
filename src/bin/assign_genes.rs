@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter};
 use std::path::PathBuf;
+use std::time::Instant;
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -34,7 +35,12 @@ pub fn main() -> Result<()> {
 }
 
 fn run(cli: Cli) -> Result<()> {
+    let phase = Instant::now();
     let genes = load_gene_gtf(&cli.gtf)?;
+    eprintln!(
+        "[timing] assign_genes.load_gtf: {:.2}s",
+        phase.elapsed().as_secs_f64()
+    );
     if genes.is_empty() {
         File::create(&cli.output).with_context(|| format!("create {}", cli.output.display()))?;
         return Ok(());
@@ -45,6 +51,7 @@ fn run(cli: Cli) -> Result<()> {
     let mut writer = BufWriter::new(
         File::create(&cli.output).with_context(|| format!("create {}", cli.output.display()))?,
     );
+    let phase = Instant::now();
 
     for line in reader.lines() {
         let line = line?;
@@ -56,6 +63,10 @@ fn run(cli: Cli) -> Result<()> {
             write_gene_assignment(&mut writer, &row)?;
         }
     }
+    eprintln!(
+        "[timing] assign_genes.assign_records: {:.2}s",
+        phase.elapsed().as_secs_f64()
+    );
     Ok(())
 }
 
