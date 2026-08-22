@@ -226,14 +226,30 @@ pub fn run_pipeline(config: &PipelineConfig) -> Result<PipelineSummary> {
 
     println!("[Flora] Step 3/7: correcting reads with unique-barcode caches");
     let step_t0 = Instant::now();
+    let phase_t0 = Instant::now();
     let wl3: HashSet<String> = observed_wl3.into_iter().collect();
     let wl5: HashSet<String> = observed_wl5.into_iter().collect();
-    let wl3_index = BarcodeIndex::new(wl3.into_iter());
-    let wl5_index = BarcodeIndex::new(wl5.into_iter());
+    let wl3_index = BarcodeIndex::with_max_ed(wl3.into_iter(), config.max_ed);
+    let wl5_index = BarcodeIndex::with_max_ed(wl5.into_iter(), config.max_ed);
+    println!(
+        "[timing] barcode_correction.build_indexes: {:.2}s",
+        phase_t0.elapsed().as_secs_f64()
+    );
+    let phase_t0 = Instant::now();
     let correction_cache_3p =
         build_correction_cache(&putative, true, &wl3_index, config.max_ed, config.min_q);
+    println!(
+        "[timing] barcode_correction.cache_3p: {:.2}s",
+        phase_t0.elapsed().as_secs_f64()
+    );
+    let phase_t0 = Instant::now();
     let correction_cache_5p =
         build_correction_cache(&putative, false, &wl5_index, config.max_ed, config.min_q);
+    println!(
+        "[timing] barcode_correction.cache_5p: {:.2}s",
+        phase_t0.elapsed().as_secs_f64()
+    );
+    let phase_t0 = Instant::now();
     let corrected: Vec<CorrectedRead> = putative
         .par_iter()
         .map(|row| {
@@ -245,6 +261,11 @@ pub fn run_pipeline(config: &PipelineConfig) -> Result<PipelineSummary> {
             )
         })
         .collect();
+    println!(
+        "[timing] barcode_correction.materialize_reads: {:.2}s",
+        phase_t0.elapsed().as_secs_f64()
+    );
+    let phase_t0 = Instant::now();
     if config.save_intermediate {
         write_corrected(config.out_dir.join("BC_corrected.csv"), &corrected)?;
     }
@@ -254,6 +275,10 @@ pub fn run_pipeline(config: &PipelineConfig) -> Result<PipelineSummary> {
         &putative,
         &corrected,
     )?;
+    println!(
+        "[timing] barcode_correction.write_maps: {:.2}s",
+        phase_t0.elapsed().as_secs_f64()
+    );
     write_correction_map(
         config.out_dir.join("correction_map_5p.tsv"),
         "5p",
