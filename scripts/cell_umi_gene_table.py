@@ -31,6 +31,13 @@ def parse_args():
     )
 
     parser.add_argument(
+        "--gene-expression-output",
+        help="Optional gene expression matrix written during the same BAM pass",
+        type=str,
+        default=None,
+    )
+
+    parser.add_argument(
         "--verbosity",
         help="logging level: <=2 logs info, <=3 logs warnings",
         type=int,
@@ -111,6 +118,24 @@ def main(args):
 
     logger.info(f"Writing data to {args.output}")
     df.to_csv(args.output, sep="\t", index=False)
+    if args.gene_expression_output:
+        logger.info(f"Writing gene expression matrix to {args.gene_expression_output}")
+        cells = sorted(df["barcode"].astype(str).unique())
+        known = df[
+            ~df["gene"].astype(str).str.contains(
+                r"[a-zA-Z0-9]+_\d+_\d+", regex=True, na=False
+            )
+        ]
+        counts = (
+            known.drop_duplicates(["gene", "barcode", "umi"])
+            .groupby(["gene", "barcode"], sort=True)
+            .size()
+            .unstack(fill_value=0)
+            .reindex(columns=cells, fill_value=0)
+            .sort_index()
+        )
+        counts.index.name = "gene"
+        counts.to_csv(args.gene_expression_output, sep="\t")
 
 
 if __name__ == "__main__":

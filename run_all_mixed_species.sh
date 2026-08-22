@@ -737,10 +737,7 @@ run_stage cluster_umis_allbam "${DOWNSTREAM_DIR}/cluster_umis_allbam.py" \
 
 run_stage cell_umi_gene_table "${DOWNSTREAM_DIR}/cell_umi_gene_table.py" \
   --output "${SAMPLE_ID}.cell_umi_gene.tsv" \
-  "${SAMPLE_ID}.filtered.tagged.sorted.bam" 2>&1 | tee -a "${GENE_LOG}"
-
-run_stage gene_expression "${DOWNSTREAM_DIR}/gene_expression.py" \
-  --output "${SAMPLE_ID}.gene_expression.tsv" \
+  --gene-expression-output "${SAMPLE_ID}.gene_expression.tsv" \
   "${SAMPLE_ID}.filtered.tagged.sorted.bam" 2>&1 | tee -a "${GENE_LOG}"
 
 RNA_CLUSTER_TS=$(date +%s)

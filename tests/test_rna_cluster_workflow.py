@@ -27,7 +27,11 @@ class RnaClusterWorkflowTests(unittest.TestCase):
                 )
 
                 gene_position = source.index(
-                    'run_stage gene_expression "${DOWNSTREAM_DIR}/gene_expression.py"'
+                    '--gene-expression-output "${SAMPLE_ID}.gene_expression.tsv"'
+                )
+                self.assertNotIn(
+                    'run_stage gene_expression "${DOWNSTREAM_DIR}/gene_expression.py"',
+                    source,
                 )
                 cluster_position = source.index(
                     'python3 "$(python_asset "${DOWNSTREAM_DIR}/rna_cluster_analysis.py")"'
