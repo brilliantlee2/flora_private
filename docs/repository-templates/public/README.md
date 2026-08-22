@@ -254,6 +254,35 @@ The integrated Glycine stage runs automatically:
   --sample-id sample
 ```
 
+For chunked sequencing output, provide multiple files after one `--fastq`:
+
+```bash
+./flora \
+  --fastq /data/sample_1.fastq.gz /data/sample_2.fastq.gz /data/sample_10.fastq.gz \
+  --barcode-list-10bp /data/BC_1536.txt \
+  --ref-dir /data/GRCh38_flora \
+  --out-dir ./sample_output \
+  --sample-id sample
+```
+
+Alternatively, let Flora discover `.fastq.gz` and `.fq.gz` files directly in
+one directory (subdirectories are not searched):
+
+```bash
+./flora --fastq-dir /data/sample_chunks \
+  --barcode-list-10bp /data/BC_1536.txt \
+  --ref-dir /data/GRCh38_flora \
+  --out-dir ./sample_output \
+  --sample-id sample
+```
+
+Glycine runs up to 10 files concurrently by default and shares a total budget
+of 64 threads across them. Override these independently with
+`--glycine-jobs` and `--glycine-threads`. Flora writes one merged
+`*.full-length-plus-rescued.fq.gz` and one merged
+`*.identifying_statistic.txt`; counts are summed and percentages are
+recalculated from the merged totals.
+
 ## Analyze an existing full-length FASTQ
 
 ```bash

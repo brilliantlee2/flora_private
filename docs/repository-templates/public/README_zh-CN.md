@@ -245,6 +245,33 @@ cut -f1,2 genome.fa.fai | sort -V > chrom_sizes.tsv
   --sample-id sample
 ```
 
+对于拆分为多个文件的下机数据，可以在一个 `--fastq` 后用空格传入多个文件：
+
+```bash
+./flora \
+  --fastq /data/sample_1.fastq.gz /data/sample_2.fastq.gz /data/sample_10.fastq.gz \
+  --barcode-list-10bp /data/BC_1536.txt \
+  --ref-dir /data/GRCh38_flora \
+  --out-dir ./sample_output \
+  --sample-id sample
+```
+
+也可以直接传入目录。Flora 只搜索该目录当前层的 `.fastq.gz` 和
+`.fq.gz`，不递归搜索子目录：
+
+```bash
+./flora --fastq-dir /data/sample_chunks \
+  --barcode-list-10bp /data/BC_1536.txt \
+  --ref-dir /data/GRCh38_flora \
+  --out-dir ./sample_output \
+  --sample-id sample
+```
+
+Glycine 默认最多同时运行10个任务，并在这些任务之间共享64个线程。可使用
+`--glycine-jobs` 和 `--glycine-threads` 分别调整。最终只生成一个合并后的
+`*.full-length-plus-rescued.fq.gz` 和一个
+`*.identifying_statistic.txt`；计数逐项求和，比例按合并后的总数重新计算。
+
 ## 分析已有全长 FASTQ
 
 ```bash

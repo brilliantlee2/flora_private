@@ -93,6 +93,10 @@ Verify the main CLI:
 bash run_all.sh -h
 ```
 
+The full workflow accepts multiple paths after one `--fastq`, or a
+non-recursive `--fastq-dir`. Parallel Glycine defaults are 10 concurrent jobs
+sharing 64 total threads; verify these options in `flora --help` after changes.
+
 Before producing a single-binary public release, `flora run --help` and
 `flora run-mixed --help` must also succeed. The packaging script deliberately
 stops when either command is unavailable.
