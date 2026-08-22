@@ -753,5 +753,39 @@ class WorkflowContractTest(unittest.TestCase):
             loads_contract('{"id": "single", "id": "mixed"}')
 
 
+class WorkflowTimingContractTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        root = Path(__file__).resolve().parents[1]
+        cls.scripts = {
+            name: (root / name).read_text(encoding="utf-8")
+            for name in ("run_all.sh", "run_all_mixed_species.sh")
+        }
+
+    def test_internal_stages_report_implementation_and_elapsed_time(self):
+        for name, script in self.scripts.items():
+            with self.subTest(script=name):
+                self.assertIn('stage_impl="rust"', script)
+                self.assertIn('stage_impl="python"', script)
+                self.assertIn(
+                    'Stage ${rust_name} (${stage_impl}) elapsed:', script
+                )
+                self.assertIn('return "${stage_status}"', script)
+
+    def test_direct_expensive_stages_have_named_timing(self):
+        expected = (
+            "Stage glycine (rust) elapsed:",
+            "Stage alignment_pipeline (external) elapsed:",
+            "Stage aligned_bam_index (external) elapsed:",
+            "Stage bamtobed (external) elapsed:",
+            "Stage gene_bam_index (external) elapsed:",
+            "Stage rna_cluster_analysis (python) elapsed:",
+        )
+        for name, script in self.scripts.items():
+            for marker in expected:
+                with self.subTest(script=name, marker=marker):
+                    self.assertIn(marker, script)
+
+
 if __name__ == "__main__":
     unittest.main()

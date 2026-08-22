@@ -222,6 +222,8 @@ run_stage() {
     "${SCRIPT_DIR}/target/release/${rust_name}"
   )
   local rust_bin=""
+  local stage_start_ts stage_end_ts stage_status stage_impl
+  stage_start_ts=$(date +%s)
   for candidate in "${rust_candidates[@]}"; do
     if [[ -x "${candidate}" ]]; then
       rust_bin="${candidate}"
@@ -229,11 +231,16 @@ run_stage() {
     fi
   done
   if [[ -n "${rust_bin}" ]]; then
-    "${rust_bin}" "$@"
-    return 0
-  fi
+    stage_impl="rust"
+    if "${rust_bin}" "$@"; then stage_status=0; else stage_status=$?; fi
+  else
+    stage_impl="python"
     py_path="$(python_asset "${py_path}")"
-    python3 "${py_path}" "$@"
+    if python3 "${py_path}" "$@"; then stage_status=0; else stage_status=$?; fi
+  fi
+  stage_end_ts=$(date +%s)
+  log "Stage ${rust_name} (${stage_impl}) elapsed: $((stage_end_ts - stage_start_ts))s"
+  return "${stage_status}"
 }
 
 abspath_for_output() {
@@ -508,7 +515,8 @@ if [[ "${SKIP_GLYCINE}" -eq 0 ]]; then
   fi
   step_start
   log "Step 0/6: running parallel Glycine full-length identification"
-  "${FLORA_BIN}" glycine \
+  GLYCINE_STAGE_TS=$(date +%s)
+  if "${FLORA_BIN}" glycine \
     "${GLYCINE_FASTQ_ARGS[@]}" \
     --tso_seq "${TSO_SEQ}" \
     --rtp_seq "${RTP_SEQ}" \
@@ -519,7 +527,13 @@ if [[ "${SKIP_GLYCINE}" -eq 0 ]]; then
     --umi_len "${UMI_LEN}" \
     --sample "${SAMPLE_ID}" \
     --jobs "${GLYCINE_JOBS}" \
-    --total-threads "${GLYCINE_THREADS}" 2>&1 | tee "${LOG_DIR}/00_glycine.log"
+    --total-threads "${GLYCINE_THREADS}" 2>&1 | tee "${LOG_DIR}/00_glycine.log"; then
+    GLYCINE_STAGE_STATUS=0
+  else
+    GLYCINE_STAGE_STATUS=$?
+  fi
+  log "Stage glycine (rust) elapsed: $(($(date +%s) - GLYCINE_STAGE_TS))s"
+  if (( GLYCINE_STAGE_STATUS != 0 )); then exit "${GLYCINE_STAGE_STATUS}"; fi
   step_end "Step 0/6"
 
   FULL_LENGTH_FASTQ="${GLYCINE_OUTDIR}/${SAMPLE_ID}.full-length-plus-rescued.fq.gz"
@@ -544,14 +558,28 @@ step_start
 log "Step 1/6: alignment-first minimap2 reference alignment"
 pushd "${ALIGN_DIR}" >/dev/null
 
-minimap2 -ax splice -uf --MD -t "${THREADS}" \
+ALIGNMENT_STAGE_TS=$(date +%s)
+if minimap2 -ax splice -uf --MD -t "${THREADS}" \
   --junc-bed "${JUNCTION_BED}" \
   --secondary=no \
   "${GENE_FASTA}" "${FULL_LENGTH_FASTQ}" \
 | samtools view --no-PG -b -t "${CHROM_SIZES}" - \
-| samtools sort --no-PG -@ "${THREADS}" -o "${SAMPLE_ID}.aligned.sorted.bam" - 2>&1 | tee "${ALIGN_LOG}"
+| samtools sort --no-PG -@ "${THREADS}" -o "${SAMPLE_ID}.aligned.sorted.bam" - 2>&1 | tee "${ALIGN_LOG}"; then
+  ALIGNMENT_STAGE_STATUS=0
+else
+  ALIGNMENT_STAGE_STATUS=$?
+fi
+log "Stage alignment_pipeline (external) elapsed: $(($(date +%s) - ALIGNMENT_STAGE_TS))s" | tee -a "${ALIGN_LOG}"
+if (( ALIGNMENT_STAGE_STATUS != 0 )); then exit "${ALIGNMENT_STAGE_STATUS}"; fi
 
-samtools index "${SAMPLE_ID}.aligned.sorted.bam" 2>&1 | tee -a "${ALIGN_LOG}"
+ALIGNED_INDEX_TS=$(date +%s)
+if samtools index "${SAMPLE_ID}.aligned.sorted.bam" 2>&1 | tee -a "${ALIGN_LOG}"; then
+  ALIGNED_INDEX_STATUS=0
+else
+  ALIGNED_INDEX_STATUS=$?
+fi
+log "Stage aligned_bam_index (external) elapsed: $(($(date +%s) - ALIGNED_INDEX_TS))s" | tee -a "${ALIGN_LOG}"
+if (( ALIGNED_INDEX_STATUS != 0 )); then exit "${ALIGNED_INDEX_STATUS}"; fi
 
 popd >/dev/null
 step_end "Step 1/6"
@@ -659,7 +687,14 @@ run_stage add_cb_ur_tags "${DOWNSTREAM_DIR}/add_cb_ur_tags.py" \
   --tags "${SAMPLE_ID}.read_tags.tsv" \
   --output "${SAMPLE_ID}.filtered.cb_ur.sorted.bam" 2>&1 | tee -a "${TAG_LOG}"
 
-bedtools bamtobed -i "${SAMPLE_ID}.filtered.cb_ur.sorted.bam" > "${SAMPLE_ID}.filtered.cb_ur.bed"
+BAMTOBED_TS=$(date +%s)
+if bedtools bamtobed -i "${SAMPLE_ID}.filtered.cb_ur.sorted.bam" > "${SAMPLE_ID}.filtered.cb_ur.bed"; then
+  BAMTOBED_STATUS=0
+else
+  BAMTOBED_STATUS=$?
+fi
+log "Stage bamtobed (external) elapsed: $(($(date +%s) - BAMTOBED_TS))s" | tee -a "${TAG_LOG}"
+if (( BAMTOBED_STATUS != 0 )); then exit "${BAMTOBED_STATUS}"; fi
 
 popd >/dev/null
 step_end "Step 3/6"
@@ -680,7 +715,14 @@ run_stage add_gene_tags "${DOWNSTREAM_DIR}/add_gene_tags.py" \
   "${ALIGN_DIR}/${SAMPLE_ID}.filtered.cb_ur.sorted.bam" \
   "${SAMPLE_ID}.filtered.read_gene_assigns.tsv" 2>&1 | tee -a "${GENE_LOG}"
 
-samtools index "${SAMPLE_ID}.filtered.cb_ur.gn.sorted.bam"
+GENE_INDEX_TS=$(date +%s)
+if samtools index "${SAMPLE_ID}.filtered.cb_ur.gn.sorted.bam"; then
+  GENE_INDEX_STATUS=0
+else
+  GENE_INDEX_STATUS=$?
+fi
+log "Stage gene_bam_index (external) elapsed: $(($(date +%s) - GENE_INDEX_TS))s" | tee -a "${GENE_LOG}"
+if (( GENE_INDEX_STATUS != 0 )); then exit "${GENE_INDEX_STATUS}"; fi
 
 run_stage cluster_umis_allbam "${DOWNSTREAM_DIR}/cluster_umis_allbam.py" \
   --output "${SAMPLE_ID}.filtered.tagged.sorted.bam" \
@@ -697,9 +739,16 @@ run_stage gene_expression "${DOWNSTREAM_DIR}/gene_expression.py" \
   --output "${SAMPLE_ID}.gene_expression.tsv" \
   "${SAMPLE_ID}.filtered.tagged.sorted.bam" 2>&1 | tee -a "${GENE_LOG}"
 
-python3 "$(python_asset "${DOWNSTREAM_DIR}/rna_cluster_analysis.py")" \
+RNA_CLUSTER_TS=$(date +%s)
+if python3 "$(python_asset "${DOWNSTREAM_DIR}/rna_cluster_analysis.py")" \
   --input "${SAMPLE_ID}.gene_expression.tsv" \
-  --output "${SAMPLE_ID}.rna_cluster.tsv" 2>&1 | tee -a "${GENE_LOG}"
+  --output "${SAMPLE_ID}.rna_cluster.tsv" 2>&1 | tee -a "${GENE_LOG}"; then
+  RNA_CLUSTER_STATUS=0
+else
+  RNA_CLUSTER_STATUS=$?
+fi
+log "Stage rna_cluster_analysis (python) elapsed: $(($(date +%s) - RNA_CLUSTER_TS))s" | tee -a "${GENE_LOG}"
+if (( RNA_CLUSTER_STATUS != 0 )); then exit "${RNA_CLUSTER_STATUS}"; fi
 
 popd >/dev/null
 step_end "Step 4/6"
