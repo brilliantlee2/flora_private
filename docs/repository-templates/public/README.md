@@ -100,17 +100,48 @@ The SIF includes Flora, Python 3.11, samtools, minimap2, bedtools, and the Pytho
 dependencies. Do not run `conda env create` or `conda activate flora` when using
 the SIF.
 
-Create a build directory and place the Flora archive downloaded from the GitHub
-Release in it:
+### 1. Create the build directory
 
 ```bash
 mkdir -p flora_singularity_build
 cd flora_singularity_build
+```
 
+Run the remaining commands from this directory.
+
+### 2. Download the Flora release archive
+
+Open [GitHub Releases](https://github.com/brilliantlee2/Flora/releases), download
+the archive and checksum matching the version referenced by `Flora.def`, and
+save or copy both files into the new `flora_singularity_build` directory. The
+current `Flora.def` expects:
+
+```text
+Flora-0.1.1-linux-x86_64.tar.gz
+Flora-0.1.1-linux-x86_64.tar.gz.sha256
+```
+
+Verify the archive from inside the build directory:
+
+```bash
+sha256sum -c Flora-0.1.1-linux-x86_64.tar.gz.sha256
+```
+
+Do not extract the archive for the SIF build. `Flora.def` copies and extracts it
+inside the image automatically.
+
+### 3. Download Flora.def
+
+Still inside `flora_singularity_build`, run:
+
+```bash
 wget https://raw.githubusercontent.com/brilliantlee2/Flora/main/Flora.def
 ```
 
-Prepare the validated Ubuntu 22.04/glibc 2.35 base image:
+### 4. Prepare the Ubuntu 22.04 base SIF
+
+The following commands create the validated Ubuntu 22.04/glibc 2.35 base SIF
+from the Docker image:
 
 ```bash
 docker run --rm quay.io/nf-core/ubuntu:22.04 \
@@ -125,10 +156,12 @@ singularity build --fakeroot \
 ```
 
 If the build host cannot access the Docker socket, run `docker save` on a
-machine with Docker access and copy the tar. Do not make
-`/var/run/docker.sock` world-writable.
+machine with Docker access, then copy `flora-base-ubuntu22.04.tar` into the
+current build directory. Do not make `/var/run/docker.sock` world-writable. If
+`flora-base-ubuntu22.04.sif` is already available, place it in the build
+directory and skip this step.
 
-Download the Miniforge installer:
+### 5. Download the Miniforge installer
 
 ```bash
 curl -L --fail --retry 5 --retry-delay 5 \
@@ -136,17 +169,22 @@ curl -L --fail --retry 5 --retry-delay 5 \
   https://mirror.nju.edu.cn/github-release/conda-forge/miniforge/LatestRelease/Miniforge3-Linux-x86_64.sh
 ```
 
-The build directory must contain these four files. The Flora archive name must
-match the version referenced by `Flora.def`:
+### 6. Check the build inputs
+
+The `flora_singularity_build` directory should now contain at least:
 
 ```text
 Flora.def
 Flora-0.1.1-linux-x86_64.tar.gz
+Flora-0.1.1-linux-x86_64.tar.gz.sha256
 Miniforge3-Linux-x86_64.sh
 flora-base-ubuntu22.04.sif
 ```
 
-Build and validate the image:
+The `.sha256` file is used only for verification; the other four files are the
+actual SIF build inputs.
+
+### 7. Build and validate the final SIF
 
 ```bash
 env -u LD_LIBRARY_PATH \

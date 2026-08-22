@@ -96,16 +96,45 @@ bedtools --version
 SIF 已包含 Flora、Python 3.11、samtools、minimap2、bedtools 和 Python 依赖，
 使用 SIF 时不需要再执行 `conda env create` 或 `conda activate flora`。
 
-在构建机上准备目录，并放入从 GitHub Release 下载的 Flora 压缩包：
+### 1. 创建构建目录
 
 ```bash
 mkdir -p flora_singularity_build
 cd flora_singularity_build
+```
 
+后续命令都在这个目录中执行。
+
+### 2. 下载 Flora 发行包
+
+打开 [GitHub Releases](https://github.com/brilliantlee2/Flora/releases)，下载与
+`Flora.def` 版本一致的压缩包和校验文件，并确保它们被保存或复制到刚才创建的
+`flora_singularity_build` 目录。当前 `Flora.def` 对应：
+
+```text
+Flora-0.1.1-linux-x86_64.tar.gz
+Flora-0.1.1-linux-x86_64.tar.gz.sha256
+```
+
+进入构建目录后验证压缩包：
+
+```bash
+sha256sum -c Flora-0.1.1-linux-x86_64.tar.gz.sha256
+```
+
+构建 SIF 时不需要解压这个压缩包，`Flora.def` 会自动将其复制并解压到镜像中。
+
+### 3. 下载 Flora.def
+
+仍然在 `flora_singularity_build` 目录执行：
+
+```bash
 wget https://raw.githubusercontent.com/brilliantlee2/Flora/main/Flora.def
 ```
 
-准备经验证的 Ubuntu 22.04/glibc 2.35 基础镜像：
+### 4. 准备 Ubuntu 22.04 基础 SIF
+
+以下命令从 Docker 镜像生成经验证的 Ubuntu 22.04/glibc 2.35 基础 SIF：
 
 ```bash
 docker run --rm quay.io/nf-core/ubuntu:22.04 \
@@ -120,9 +149,11 @@ singularity build --fakeroot \
 ```
 
 如果构建机不能访问 Docker socket，可以在有 Docker 权限的机器执行
-`docker save`，再复制 tar；不要把 `/var/run/docker.sock` 修改为全局可写。
+`docker save`，再把 `flora-base-ubuntu22.04.tar` 复制到当前构建目录；不要把
+`/var/run/docker.sock` 修改为全局可写。如果已经取得
+`flora-base-ubuntu22.04.sif`，直接放入构建目录即可跳过本步骤。
 
-下载 Miniforge 安装器：
+### 5. 下载 Miniforge 安装器
 
 ```bash
 curl -L --fail --retry 5 --retry-delay 5 \
@@ -130,17 +161,21 @@ curl -L --fail --retry 5 --retry-delay 5 \
   https://mirror.nju.edu.cn/github-release/conda-forge/miniforge/LatestRelease/Miniforge3-Linux-x86_64.sh
 ```
 
-构建目录中需要以下四个文件，其中 Flora 压缩包名称必须与 `Flora.def` 中的版本
-一致：
+### 6. 检查构建输入
+
+此时 `flora_singularity_build` 目录至少应包含以下文件：
 
 ```text
 Flora.def
 Flora-0.1.1-linux-x86_64.tar.gz
+Flora-0.1.1-linux-x86_64.tar.gz.sha256
 Miniforge3-Linux-x86_64.sh
 flora-base-ubuntu22.04.sif
 ```
 
-构建并验证：
+其中 `.sha256` 仅用于校验；真正构建 SIF 使用另外四个文件。
+
+### 7. 构建并验证最终 SIF
 
 ```bash
 env -u LD_LIBRARY_PATH \
