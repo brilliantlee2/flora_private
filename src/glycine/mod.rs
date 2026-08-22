@@ -1,4 +1,5 @@
 mod args;
+pub mod batch;
 mod file_system;
 mod identifier;
 mod qc;

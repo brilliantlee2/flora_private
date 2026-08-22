@@ -82,6 +82,17 @@ class ReleaseLayoutTests(unittest.TestCase):
             self.assertNotIn("--glycine-bin-dir", runner)
             self.assertNotIn("require_cmd glycine", runner)
 
+    def test_full_workflows_support_parallel_multi_fastq_glycine(self):
+        for runner_name in ["run_all.sh", "run_all_mixed_species.sh"]:
+            runner = (PROJECT_ROOT / runner_name).read_text(encoding="utf-8")
+            self.assertIn("FASTQ_INPUTS=()", runner)
+            self.assertIn("GLYCINE_JOBS=10", runner)
+            self.assertIn("GLYCINE_THREADS=64", runner)
+            self.assertIn("--fastq-dir", runner)
+            self.assertIn('"${FASTQ_INPUTS[@]}"', runner)
+            self.assertIn('--jobs "${GLYCINE_JOBS}"', runner)
+            self.assertIn('--total-threads "${GLYCINE_THREADS}"', runner)
+
     def test_workflow_thread_defaults_are_resource_conservative(self):
         for runner_name in ["run_all.sh", "run_all_mixed_species.sh"]:
             runner = (PROJECT_ROOT / runner_name).read_text(encoding="utf-8")

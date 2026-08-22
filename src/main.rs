@@ -128,7 +128,7 @@ fn main() -> Result<()> {
         Some("glycine") => {
             args.remove(1);
             args[0] = OsString::from("flora glycine");
-            return flora::glycine::run_from(args);
+            return flora::glycine::batch::run_from(args);
         }
         Some("analyze") => {
             args.remove(1);

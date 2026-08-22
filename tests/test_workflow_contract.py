@@ -402,7 +402,14 @@ def invocation_violations(contract, invocation):
                 violations.append({"code": "missing_value", "option": canonical})
                 index += 1
                 continue
-            parsed = parse_cli_value(raw_value, option)
+            if option["type"] == "string_list" and not separator:
+                raw_values = [raw_value]
+                while index + 1 < len(tokens) and not tokens[index + 1].startswith("-"):
+                    raw_values.append(tokens[index + 1])
+                    index += 1
+                parsed = raw_values
+            else:
+                parsed = parse_cli_value(raw_value, option)
             if parsed is None:
                 violations.append({"code": "invalid_type", "option": canonical})
             elif "choices" in option and parsed not in option["choices"]:
@@ -563,6 +570,9 @@ class WorkflowContractTest(unittest.TestCase):
                 self.assertEqual(workflow_aliases, aliases)
                 self.assertEqual(32, options["--threads"]["default"])
                 self.assertEqual(16, options["--cluster-threads"]["default"])
+                self.assertEqual(10, options["--glycine-jobs"]["default"])
+                self.assertEqual(64, options["--glycine-threads"]["default"])
+                self.assertEqual("string_list", options["--fastq"]["type"])
                 self.assertTrue(options["--light-output"]["default"])
                 self.assertFalse(options["--full-output"]["default"])
                 self.assertIsNone(options["--python"]["default"])
@@ -571,7 +581,9 @@ class WorkflowContractTest(unittest.TestCase):
         self.assertEqual("0.25,0.25", glycine["--err"]["default"])
         self.assertEqual("100,100", glycine["--shift"]["default"])
         self.assertEqual(100, glycine["--min_len"]["default"])
-        self.assertEqual(4, glycine["--thread"]["default"])
+        self.assertEqual(10, glycine["--jobs"]["default"])
+        self.assertEqual(64, glycine["--total-threads"]["default"])
+        self.assertEqual("string_list", glycine["--fastq"]["type"])
 
         analyze = option_map(self.contracts["analyze"])
         self.assertEqual("Flora", analyze["--out_dir"]["default"])
@@ -589,8 +601,14 @@ class WorkflowContractTest(unittest.TestCase):
             contract = self.contracts[fixture_name]
             with self.subTest(fixture=fixture_name):
                 self.assertEqual(expected_rules, contract["resolution_rules"][:2])
-                self.assertFalse(
-                    any(option["conflicts"] for option in contract["options"])
+                conflicts = {
+                    option["name"]: option["conflicts"]
+                    for option in contract["options"]
+                    if option["conflicts"]
+                }
+                self.assertEqual(
+                    {"--fastq": ["--fastq-dir"], "--fastq-dir": ["--fastq"]},
+                    conflicts,
                 )
 
     def test_each_contract_has_representative_acceptance_and_rejection(self):

@@ -5,7 +5,7 @@ usage() {
   cat <<'EOF'
 Usage:
   bash run_all.sh \
-    --fastq /path/to/raw.fq.gz \
+    --fastq /path/to/chunk_1.fq.gz [/path/to/chunk_2.fq.gz ...] \
     --tso-seq AAGACCGCTTGGCCTCCGACTTTCTGCG \
     --rtp-seq GAGGTCCATGAAGTGAGCATCTTCTGCG \
     --barcode-list-10bp /path/to/BC_1536.txt \
@@ -18,6 +18,9 @@ Usage:
     [--isoform-gtf /path/to/transcripts.gtf] \
     [--sample-id sample] \
     [--threads 32] \
+    [--fastq-dir /path/to/fastq_chunks] \
+    [--glycine-jobs 10] \
+    [--glycine-threads 64] \
     [--glycine-outdir /path/to/glycine_out] \
     [--glycine-err 0.2,0.25] \
     [--glycine-shift 200,200] \
@@ -58,6 +61,8 @@ Notes:
   1. If --skip-glycine is not set, Glycine runs first and the pipeline uses:
      <glycine-outdir>/<sample-id>.full-length-plus-rescued.fq.gz
   2. Glycine is built into the Flora executable; no separate installation is needed.
+     Multiple paths after --fastq run concurrently. --fastq-dir discovers only
+     *.fastq.gz and *.fq.gz files in that directory (not subdirectories).
   3. --barcode-list-10bp accepts a plain text/CSV/TSV/XLSX file with 10bp barcodes
      and expands them into 26bp 3p/5p whitelists before Flora cell assignment.
   4. If --barcode-list-10bp is omitted, the bundled
@@ -162,6 +167,8 @@ write_parameters_tsv() {
     printf "out_dir\t%s\n" "${OUT_DIR}"
     printf "threads\t%s\n" "${THREADS}"
     printf "cluster_threads\t%s\n" "${CLUSTER_THREADS}"
+    printf "glycine_jobs\t%s\n" "${GLYCINE_JOBS}"
+    printf "glycine_threads\t%s\n" "${GLYCINE_THREADS}"
     printf "exp_cells\t%s\n" "${EXP_CELLS}"
     printf "min_q\t%s\n" "${MIN_Q}"
     printf "max_ed\t%s\n" "${MAX_ED}"
@@ -241,6 +248,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOWNSTREAM_DIR="${SCRIPT_DIR}/scripts"
 
 FASTQ=""
+FASTQ_INPUTS=()
+FASTQ_DIR=""
 FULL_LENGTH_FASTQ=""
 TSO_SEQ="AAGACCGCTTGGCCTCCGACTTTCTGCG"
 RTP_SEQ="GAGGTCCATGAAGTGAGCATCTTCTGCG"
@@ -255,6 +264,8 @@ OUT_DIR=""
 SAMPLE_ID="sample"
 THREADS=32
 CLUSTER_THREADS=16
+GLYCINE_JOBS=10
+GLYCINE_THREADS=64
 EXP_CELLS=5000
 MIN_Q=2
 MAX_ED=2
@@ -292,7 +303,14 @@ CELL_GENE_MAX_READS=20000
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --fastq) FASTQ="$2"; shift 2 ;;
+    --fastq)
+      shift
+      while [[ $# -gt 0 && "$1" != --* ]]; do
+        FASTQ_INPUTS+=("$1")
+        shift
+      done
+      ;;
+    --fastq-dir) FASTQ_DIR="$2"; shift 2 ;;
     --full-length-fastq) FULL_LENGTH_FASTQ="$2"; shift 2 ;;
     --tso-seq|--tso_seq) TSO_SEQ="$2"; shift 2 ;;
     --rtp-seq|--rtp_seq) RTP_SEQ="$2"; shift 2 ;;
@@ -311,6 +329,8 @@ while [[ $# -gt 0 ]]; do
     --sample-id|--sample) SAMPLE_ID="$2"; shift 2 ;;
     --threads|--thread) THREADS="$2"; shift 2 ;;
     --cluster-threads) CLUSTER_THREADS="$2"; shift 2 ;;
+    --glycine-jobs) GLYCINE_JOBS="$2"; shift 2 ;;
+    --glycine-threads) GLYCINE_THREADS="$2"; shift 2 ;;
     --exp-cells) EXP_CELLS="$2"; shift 2 ;;
     --min-q) MIN_Q="$2"; shift 2 ;;
     --max-ed) MAX_ED="$2"; shift 2 ;;
@@ -468,15 +488,32 @@ if [[ "${SKIP_GLYCINE}" -eq 0 && ! -x "${FLORA_BIN}" ]]; then
 fi
 
 if [[ "${SKIP_GLYCINE}" -eq 0 ]]; then
-  if [[ -z "${FASTQ}" || -z "${TSO_SEQ}" || -z "${RTP_SEQ}" ]]; then
+  if [[ ${#FASTQ_INPUTS[@]} -gt 0 && -n "${FASTQ_DIR}" ]]; then
+    echo "[ERROR] --fastq and --fastq-dir cannot be used together." >&2
+    exit 1
+  fi
+  if [[ ${#FASTQ_INPUTS[@]} -eq 0 && -z "${FASTQ_DIR}" ]] || [[ -z "${TSO_SEQ}" || -z "${RTP_SEQ}" ]]; then
     echo "[ERROR] --fastq, --tso-seq, and --rtp-seq are required unless --skip-glycine is set." >&2
     exit 1
   fi
-  require_file "${FASTQ}" "raw FASTQ"
+  for fastq_path in "${FASTQ_INPUTS[@]}"; do
+    require_file "${fastq_path}" "raw FASTQ"
+  done
+  if [[ -n "${FASTQ_DIR}" && ! -d "${FASTQ_DIR}" ]]; then
+    echo "[ERROR] FASTQ directory does not exist: ${FASTQ_DIR}" >&2
+    exit 1
+  fi
+  if [[ ${#FASTQ_INPUTS[@]} -gt 0 ]]; then
+    FASTQ="$(IFS=';'; echo "${FASTQ_INPUTS[*]}")"
+    GLYCINE_FASTQ_ARGS=(--fastq "${FASTQ_INPUTS[@]}")
+  else
+    FASTQ="${FASTQ_DIR}"
+    GLYCINE_FASTQ_ARGS=(--fastq-dir "${FASTQ_DIR}")
+  fi
   step_start
-  log "Step 0/6: running Glycine full-length identification"
+  log "Step 0/6: running parallel Glycine full-length identification"
   "${FLORA_BIN}" glycine \
-    --fastq "${FASTQ}" \
+    "${GLYCINE_FASTQ_ARGS[@]}" \
     --tso_seq "${TSO_SEQ}" \
     --rtp_seq "${RTP_SEQ}" \
     --outdir "${GLYCINE_OUTDIR}" \
@@ -485,7 +522,8 @@ if [[ "${SKIP_GLYCINE}" -eq 0 ]]; then
     --shift "${GLYCINE_SHIFT}" \
     --umi_len "${UMI_LEN}" \
     --sample "${SAMPLE_ID}" \
-    --thread "${THREADS}" 2>&1 | tee "${LOG_DIR}/00_glycine.log"
+    --jobs "${GLYCINE_JOBS}" \
+    --total-threads "${GLYCINE_THREADS}" 2>&1 | tee "${LOG_DIR}/00_glycine.log"
   step_end "Step 0/6"
 
   FULL_LENGTH_FASTQ="${GLYCINE_OUTDIR}/${SAMPLE_ID}.full-length-plus-rescued.fq.gz"
@@ -706,7 +744,7 @@ ln -sf "${ALIGN_DIR}/${SAMPLE_ID}.aligned.sorted.bam" filtered.sorted.bam
 ln -sf "${ALIGN_DIR}/${SAMPLE_ID}.aligned.sorted.bam.bai" filtered.sorted.bam.bai
 
 if [[ "${SKIP_GLYCINE}" -eq 0 ]]; then
-  RAW_FASTQ_FOR_QC="${FASTQ}"
+  RAW_FASTQ_FOR_QC="${FULL_LENGTH_FASTQ}"
 else
   RAW_FASTQ_FOR_QC="${FULL_LENGTH_FASTQ}"
 fi
@@ -724,7 +762,7 @@ if [[ "${SKIP_ISOFORM}" -eq 0 ]]; then
   QC_ARGS+=(--transcript-assigns "${MATRIX_DIR}/${SAMPLE_ID}.read_transcript_assigns.tsv")
 fi
 if [[ "${SKIP_GLYCINE}" -eq 0 ]]; then
-  QC_ARGS+=(--glycine-log "${LOG_DIR}/00_glycine.log")
+  QC_ARGS+=(--glycine-log "${LOG_DIR}/00_glycine.log" --glycine-stats "${GLYCINE_STATS}")
 fi
 
 run_stage rna_qc_metrics "${DOWNSTREAM_DIR}/rna_qc_metrics_mixed.py" \

@@ -51,6 +51,11 @@ def parse_args():
         default=None,
         help="Optional Glycine stdout/stderr log. When present, the top-level Glycine Full-length count is used for full-length/pass-read metrics.",
     )
+    parser.add_argument(
+        "--glycine-stats",
+        default=None,
+        help="Merged Glycine identifying_statistic.txt used for total raw and full-length counts.",
+    )
     return parser.parse_args()
 
 
@@ -180,6 +185,26 @@ def load_glycine_total_full_length_reads(path):
     return None
 
 
+def load_glycine_summary_counts(path):
+    if path is None or not os.path.exists(path):
+        return {}
+    counts = {}
+    in_summary = False
+    with open(path, "r", encoding="utf-8", errors="ignore") as handle:
+        for line in handle:
+            stripped = line.strip()
+            if stripped == "Type\tRead_count\tRead_proportion(%)":
+                in_summary = True
+                continue
+            if stripped == "Non-chimeric":
+                break
+            if in_summary and stripped:
+                parts = stripped.split("\t")
+                if len(parts) >= 2:
+                    counts[parts[0]] = int(parts[1])
+    return counts
+
+
 def main():
     args = parse_args()
 
@@ -195,11 +220,18 @@ def main():
     bam_alignment_summary = summarize_bam_alignments(args.bam)
     mapped_read_ids = bam_alignment_summary["mapped_unique_reads"]
     aligned_bam_unique_reads = len(mapped_read_ids)
-    raw_fastq_reads = count_fastq_reads(args.raw_fastq)
+    glycine_counts = load_glycine_summary_counts(args.glycine_stats)
+    raw_fastq_reads = (
+        glycine_counts["Total"]
+        if "Total" in glycine_counts
+        else count_fastq_reads(args.raw_fastq)
+    )
     full_length_reads = count_fastq_reads(args.full_length_fastq) if args.full_length_fastq else raw_fastq_reads
     glycine_total_full_length_reads = load_glycine_total_full_length_reads(args.glycine_log)
     if glycine_total_full_length_reads is not None:
         full_length_reads = glycine_total_full_length_reads
+    elif "Full-length+rescued" in glycine_counts:
+        full_length_reads = glycine_counts["Full-length+rescued"]
     final_cell_read_ids = set(df["read_id"].astype(str).str.strip())
     cell_associated_reads = len(final_cell_read_ids)
     aligned_genome_reads = len(final_cell_read_ids & mapped_read_ids)
