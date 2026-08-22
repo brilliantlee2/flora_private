@@ -51,9 +51,9 @@ struct Cli {
 
 #[derive(Default)]
 struct CellStats {
-    read_ids: HashSet<String>,
-    known_umis: HashSet<String>,
-    known_genes: HashSet<String>,
+    read_ids: HashSet<u32>,
+    known_umis: HashSet<u32>,
+    known_genes: HashSet<u32>,
     mito_rows: usize,
 }
 
@@ -127,7 +127,7 @@ pub fn main() -> Result<()> {
 
     let cell_umi_gene = load_cell_umi_gene(&cli.cell_umi_gene_tsv, cli.mixed_species)?;
     let estimated_cells = cell_umi_gene.per_cell.len();
-    let cell_associated_reads = cell_umi_gene.final_cell_read_ids.len();
+    let cell_associated_reads = cell_umi_gene.final_cell_reads.len();
     let assigned_cell_reads = match &cli.read_tags {
         Some(path) => count_read_tags(path)?,
         None => cell_associated_reads,
@@ -137,10 +137,10 @@ pub fn main() -> Result<()> {
         None => assigned_cell_reads,
     };
     let bam_summary =
-        summarize_bam_alignments(&cli.bam, &cell_umi_gene.final_cell_read_ids, cli.threads)?;
+        summarize_bam_alignments(&cli.bam, &cell_umi_gene.final_cell_reads, cli.threads)?;
 
     let (known_transcript_reads, unique_isoforms) = match &cli.transcript_assigns {
-        Some(path) => load_transcript_assignment_summary(path, &cell_umi_gene.final_cell_read_ids)?,
+        Some(path) => load_transcript_assignment_summary(path, &cell_umi_gene.final_cell_reads)?,
         None => (None, None),
     };
 
@@ -161,7 +161,7 @@ pub fn main() -> Result<()> {
 
 struct CellUmiGeneSummary {
     per_cell: HashMap<String, CellStats>,
-    final_cell_read_ids: HashSet<String>,
+    final_cell_reads: HashMap<String, u32>,
     known_gene_reads: usize,
     unique_genes: usize,
 }
@@ -175,25 +175,29 @@ fn load_cell_umi_gene(path: &PathBuf, mixed_species: bool) -> Result<CellUmiGene
     let row_idx = CellUmiGeneColumns::from_headers(&headers)?;
 
     let mut per_cell: HashMap<String, CellStats> = HashMap::default();
-    let mut final_cell_read_ids = HashSet::default();
+    let mut final_cell_reads = HashMap::default();
+    let mut genes = HashMap::default();
+    let mut umis = HashMap::default();
     let mut known_gene_reads = HashSet::default();
     let mut unique_genes = HashSet::default();
 
     for record in reader.records() {
         let record = record?;
         let row = row_idx.parse(&record)?;
-        final_cell_read_ids.insert(row.read_id.clone());
+        let read_id = intern_string(&mut final_cell_reads, row.read_id);
         let known_gene = is_known_gene(&row.gene);
         let mito_gene = is_mito_gene(&row.gene, mixed_species);
+        let gene_id = known_gene.then(|| intern_string(&mut genes, row.gene));
+        let umi_id = known_gene.then(|| intern_string(&mut umis, row.umi));
         if known_gene {
-            known_gene_reads.insert(row.read_id.clone());
-            unique_genes.insert(row.gene.clone());
+            known_gene_reads.insert(read_id);
+            unique_genes.insert(gene_id.expect("known gene ID"));
         }
         let cell = per_cell.entry(row.barcode).or_default();
-        cell.read_ids.insert(row.read_id);
+        cell.read_ids.insert(read_id);
         if known_gene {
-            cell.known_umis.insert(row.umi);
-            cell.known_genes.insert(row.gene);
+            cell.known_umis.insert(umi_id.expect("known UMI ID"));
+            cell.known_genes.insert(gene_id.expect("known gene ID"));
         }
         if mito_gene {
             cell.mito_rows += 1;
@@ -202,10 +206,19 @@ fn load_cell_umi_gene(path: &PathBuf, mixed_species: bool) -> Result<CellUmiGene
 
     Ok(CellUmiGeneSummary {
         per_cell,
-        final_cell_read_ids,
+        final_cell_reads,
         known_gene_reads: known_gene_reads.len(),
         unique_genes: unique_genes.len(),
     })
+}
+
+fn intern_string(values: &mut HashMap<String, u32>, value: String) -> u32 {
+    if let Some(id) = values.get(value.as_str()) {
+        return *id;
+    }
+    let id = values.len() as u32;
+    values.insert(value, id);
+    id
 }
 
 struct CellUmiGeneColumns {
@@ -241,7 +254,7 @@ impl CellUmiGeneColumns {
 
 fn summarize_bam_alignments(
     path: &PathBuf,
-    final_cell_reads: &HashSet<String>,
+    final_cell_reads: &HashMap<String, u32>,
     threads: usize,
 ) -> Result<BamSummary> {
     let mut bam =
@@ -258,11 +271,11 @@ fn summarize_bam_alignments(
             summary.unmapped_reads += 1;
             continue;
         }
-        let read_id = String::from_utf8_lossy(rec.qname()).into_owned();
-        mapped_unique_reads.insert(read_id.clone());
-        if final_cell_reads.contains(read_id.as_str()) {
-            aligned_genome_reads.insert(read_id.clone());
+        let read_id = String::from_utf8_lossy(rec.qname());
+        if let Some(id) = final_cell_reads.get(read_id.as_ref()) {
+            aligned_genome_reads.insert(*id);
         }
+        mapped_unique_reads.insert(read_id.into_owned());
         if rec.is_supplementary() {
             summary.supplementary_alignments += 1;
         } else if !rec.is_secondary() {
@@ -339,7 +352,7 @@ fn load_barcode_valid_reads(path: &PathBuf) -> Result<Option<usize>> {
 
 fn load_transcript_assignment_summary(
     path: &PathBuf,
-    final_cell_reads: &HashSet<String>,
+    final_cell_reads: &HashMap<String, u32>,
 ) -> Result<(Option<usize>, Option<usize>)> {
     let reader =
         BufReader::new(File::open(path).with_context(|| format!("open {}", path.display()))?);
@@ -355,10 +368,10 @@ fn load_transcript_assignment_summary(
             continue;
         }
         let read_id = fields[0].trim();
-        if !final_cell_reads.contains(read_id) {
+        let Some(read_id) = final_cell_reads.get(read_id) else {
             continue;
-        }
-        known_reads.insert(read_id.to_string());
+        };
+        known_reads.insert(*read_id);
         isoforms.insert(fields[4].trim().to_string());
     }
     Ok((Some(known_reads.len()), Some(isoforms.len())))
@@ -469,7 +482,7 @@ fn write_metrics_files(
     known_transcript_reads: Option<usize>,
     unique_isoforms: Option<usize>,
 ) -> Result<()> {
-    let cell_associated_reads = cell_umi_gene.final_cell_read_ids.len();
+    let cell_associated_reads = cell_umi_gene.final_cell_reads.len();
     let aligned_genome_reads = bam.aligned_genome_reads_in_final_cells;
     let mean_reads_per_cell = if estimated_cells > 0 {
         cell_associated_reads as f64 / estimated_cells as f64
@@ -941,6 +954,8 @@ fn format_float_with_commas(value: f64) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Write;
+
     use super::*;
 
     #[test]
@@ -996,5 +1011,25 @@ mod tests {
             Some(10000)
         );
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn cell_summary_interns_ids_without_changing_deduplication() {
+        let mut input = tempfile::NamedTempFile::new().unwrap();
+        writeln!(input, "read_id\tgene\tbarcode\tumi").unwrap();
+        writeln!(input, "r1\tACTB\tC1\tU1").unwrap();
+        writeln!(input, "r1\tACTB\tC1\tU1").unwrap();
+        writeln!(input, "r2\tchr1_100_200\tC2\tU2").unwrap();
+        writeln!(input, "r3\tMT-CO1\tC1\tU3").unwrap();
+
+        let summary = load_cell_umi_gene(&input.path().to_path_buf(), false).unwrap();
+        assert_eq!(summary.final_cell_reads.len(), 3);
+        assert_eq!(summary.known_gene_reads, 2);
+        assert_eq!(summary.unique_genes, 2);
+        assert_eq!(summary.per_cell["C1"].read_ids.len(), 2);
+        assert_eq!(summary.per_cell["C1"].known_umis.len(), 2);
+        assert_eq!(summary.per_cell["C1"].known_genes.len(), 2);
+        assert_eq!(summary.per_cell["C1"].mito_rows, 1);
+        assert_eq!(summary.per_cell["C2"].known_umis.len(), 0);
     }
 }
