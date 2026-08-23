@@ -304,15 +304,26 @@ Mixed-species 模式还会生成 `qc/barnyard_qc/barnyard_summary.tsv`、`barnya
 
 ## 主要输出
 
+默认轻量输出模式下，输出目录包括：
+
 ```text
 upstream/    barcode 矫正、cell assignment 和 knee plot
-alignment/   比对与标签 BAM
-matrix/      基因/转录本矩阵和 RNA 聚类坐标
-qc/          RNA QC、饱和度和报告输入
+matrix/      最终带标签 BAM、基因/转录本矩阵和 RNA 聚类坐标
+qc/          RNA QC、饱和度、metrics_summary.xlsx 和报告输入
 logs/        各步骤日志
 ```
 
-关键结果包括 `read_assigned_cell.csv`、`barcode_to_cell.csv`、带标签 BAM、基因和转录本表达矩阵、Scanpy UMAP 坐标和 `<sample>.single_cell_report.html`。Mixed-species 分析还会在 `qc/barnyard_qc/` 中输出逐细胞的人/鼠 UMI 分类结果。
+关键结果包括 `barcode_to_cell.csv`、最终的
+`<sample>.filtered.tagged.sorted.bam` 及索引、基因和转录本表达矩阵、Scanpy UMAP
+坐标、`qc/metrics_summary.xlsx` 和
+`<sample>.single_cell_report.html`。Mixed-species 分析还会在
+`qc/barnyard_qc/` 中输出逐细胞的人/鼠 UMI 分类结果。
+
+报告成功生成后，默认轻量输出模式会删除可重新生成的大型中间文件，包括加标签前的
+aligned BAM、read-level assignment CSV 和 assignment TSV；清理后为空的
+`alignment/` 目录也不会保留。需要这些调试文件时添加
+`--save-intermediate`；需要保留全部上游 FASTQ 和中间文件时使用
+`--full-output`。这些选项只影响文件保留，不改变分析结果。
 
 ## 问题反馈
 

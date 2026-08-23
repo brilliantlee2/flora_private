@@ -101,6 +101,21 @@ Before producing a single-binary public release, `flora run --help` and
 `flora run-mixed --help` must also succeed. The packaging script deliberately
 stops when either command is unavailable.
 
+## Workflow output policy
+
+The default light-output mode retains the final tagged BAM and index, gene and
+isoform expression matrices, cell/barcode mapping, RNA clustering results, QC
+tables, `qc/metrics_summary.xlsx`, logs, and the self-contained HTML
+report. After the report is built successfully, Flora removes reproducible
+read-level tables, the pre-tagging aligned BAM, assignment TSVs, and other
+large intermediates. If cleanup leaves `alignment/` empty, that directory is
+removed as well.
+
+Use `--save-intermediate` when debugging or when read-level assignment and
+pre-tagging files are required. Use `--full-output` when all upstream FASTQ
+outputs and intermediates must be retained. Neither option changes analytical
+thresholds or the final matrices; they only control retained files.
+
 ## Version update checklist
 
 1. Update the package version in `Cargo.toml`.

@@ -77,11 +77,11 @@ Notes:
      BAM tags: CB/CR/UR plus dual-end custom tags C5/C3/U5/U3.
   11. --barcode-extract-mode fixed_seq is the current validated mode. probe is
      reserved for a future Sockeye-style local-alignment extractor and exits clearly.
-  12. Light output is enabled by default. Use --full-output to restore all
-     upstream FASTQ outputs.
-  13. --light-output skips large upstream FASTQ outputs that are not consumed by
-     the current Flora downstream alignment-first path:
-     matched_reads.fastq.gz, unmatched_reads.fastq.gz, and cell_reads.fastq.gz.
+  12. Light output is enabled by default. It suppresses unused upstream FASTQs
+     and removes large, reproducible BAM/read-level intermediates only after the
+     complete workflow and report finish successfully.
+  13. Use --full-output to restore all upstream FASTQs. Use --save-intermediate
+     to retain intermediate BAM, read-assignment, and annotation files.
   14. Alignment uses minimap2 --secondary=no and downstream tagging uses
       aligned.sorted.bam directly, matching run_all_mixed_species.sh.
   15. --skip-isoform skips transcript assignment and isoform matrix generation.
@@ -249,6 +249,44 @@ abspath_for_output() {
   local path="$1"
   mkdir -p "$(dirname "$path")"
   echo "$(cd "$(dirname "$path")" && pwd)/$(basename "$path")"
+}
+
+remove_intermediate() {
+  local path="$1"
+  if [[ -e "${path}" || -L "${path}" ]]; then
+    rm -f "${path}"
+    log "Removed intermediate: ${path}"
+  fi
+}
+
+cleanup_large_intermediates() {
+  local path
+  local paths=(
+    "${ALIGN_DIR}/${SAMPLE_ID}.aligned.sorted.bam"
+    "${ALIGN_DIR}/${SAMPLE_ID}.aligned.sorted.bam.bai"
+    "${ALIGN_DIR}/${SAMPLE_ID}.filtered.cb_ur.sorted.bam"
+    "${ALIGN_DIR}/${SAMPLE_ID}.filtered.cb_ur.sorted.bam.bai"
+    "${ALIGN_DIR}/${SAMPLE_ID}.filtered.cb_ur.bed"
+    "${ALIGN_DIR}/${SAMPLE_ID}.read_tags.tsv"
+    "${MATRIX_DIR}/${SAMPLE_ID}.filtered.cb_ur.gn.sorted.bam"
+    "${MATRIX_DIR}/${SAMPLE_ID}.filtered.cb_ur.gn.sorted.bam.bai"
+    "${MATRIX_DIR}/${SAMPLE_ID}.filtered.read_gene_assigns.tsv"
+    "${MATRIX_DIR}/${SAMPLE_ID}.read_transcript_assigns.tsv"
+    "${MATRIX_DIR}/${SAMPLE_ID}.cell_umi_gene.tsv"
+    "${UPSTREAM_DIR}/ReadIDs_UMI_BC_clean.csv"
+    "${UPSTREAM_DIR}/read_assigned_cell.csv"
+    "${UPSTREAM_DIR}/correction_map_3p.tsv"
+    "${UPSTREAM_DIR}/correction_map_5p.tsv"
+    "${UPSTREAM_DIR}/read_qc_summary.json"
+    "${UPSTREAM_DIR}/full_length_fastq_count.txt"
+    "${QC_DIR}/cell_umi_gene.tsv"
+    "${QC_DIR}/filtered.sorted.bam"
+    "${QC_DIR}/filtered.sorted.bam.bai"
+  )
+  for path in "${paths[@]}"; do
+    remove_intermediate "${path}"
+  done
+  rmdir "${ALIGN_DIR}" 2>/dev/null || true
 }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -480,7 +518,7 @@ require_file "${GENE_GTF}" "gene GTF"
 require_file "${ISOFORM_GTF}" "isoform GTF"
 python_asset "${SCRIPT_DIR}/main.py" >/dev/null
 
-for script in prepare_read_tags.py add_cb_ur_tags.py assign_genes.py add_gene_tags.py cluster_umis_allbam.py cell_umi_gene_table.py gene_expression.py rna_cluster_analysis.py assign_transcripts.py isoform_expression.py rna_qc_metrics.py Saturation.py read_qc_summary.py build_report.py generate_26bp_whitelists.py generate_knee_plots.py; do
+for script in prepare_read_tags.py add_cb_ur_tags.py assign_genes.py add_gene_tags.py cluster_umis_allbam.py cell_umi_gene_table.py gene_expression.py rna_cluster_analysis.py assign_transcripts.py isoform_expression.py rna_qc_metrics.py Saturation.py read_qc_summary.py metrics_summary.py build_report.py generate_26bp_whitelists.py generate_knee_plots.py; do
   python_asset "${DOWNSTREAM_DIR}/${script}" >/dev/null
 done
 require_file "${DOWNSTREAM_DIR}/report_template.html" "report_template.html"
@@ -890,6 +928,22 @@ if [[ ! -f "${SAMPLE_ID}.saturation_curves.png" ]]; then
     --output-png "${SAMPLE_ID}.saturation_curves.png" 2>&1 | tee -a "${QC_LOG}"
 fi
 
+METRICS_SUMMARY_ARGS=(
+  --sample-id "${SAMPLE_ID}"
+  --species "$(basename "${REF_DIR:-$(dirname "${GENE_FASTA}")}")"
+  --read-qc-json "${SAMPLE_ID}.read_qc_summary.json"
+  --rna-qc-metrics-tsv "${SAMPLE_ID}.rna_qc_metrics.tsv"
+  --saturation-tsv "${SAMPLE_ID}.saturation.tsv"
+  --output-xlsx "metrics_summary.xlsx"
+)
+if [[ "${SKIP_GLYCINE}" -eq 1 ]]; then
+  METRICS_SUMMARY_ARGS+=(--skip-glycine)
+else
+  METRICS_SUMMARY_ARGS+=(--glycine-stats "${GLYCINE_STATS}")
+fi
+run_stage metrics_summary "${DOWNSTREAM_DIR}/metrics_summary.py" \
+  "${METRICS_SUMMARY_ARGS[@]}" 2>&1 | tee -a "${QC_LOG}"
+
 BUILD_REPORT_ARGS=(
   --sample-id "${SAMPLE_ID}"
   --output-html "${SAMPLE_ID}.single_cell_report.html"
@@ -905,6 +959,7 @@ BUILD_REPORT_ARGS=(
   --whitelist-3p "${UPSTREAM_DIR}/whitelist_3p.csv"
   --whitelist-5p "${UPSTREAM_DIR}/whitelist_5p.csv"
   --read-assigned-cell "${READ_ASSIGNED_CELL}"
+  --barcode-to-cell "${UPSTREAM_DIR}/barcode_to_cell.csv"
   --knee-plot-3p "${UPSTREAM_DIR}/knee_plot_3p.png"
   --knee-plot-5p "${UPSTREAM_DIR}/knee_plot_5p.png"
   --saturation-png "${SAMPLE_ID}.saturation_curves.png"
@@ -921,14 +976,17 @@ run_stage build_report "${DOWNSTREAM_DIR}/build_report.py" \
 popd >/dev/null
 step_end "Step 6/6"
 
+if [[ "${LIGHT_OUTPUT}" -eq 1 && "${SAVE_INTERMEDIATE}" -eq 0 ]]; then
+  log "Light output: removing reproducible BAM and read-level intermediates"
+  cleanup_large_intermediates
+fi
+
 log "Pipeline completed successfully."
 SCRIPT_END_TS=$(date +%s)
 log "Total elapsed: $((SCRIPT_END_TS - SCRIPT_START_TS))s"
 log "Key outputs:"
 echo "  full-length fastq        : ${FULL_LENGTH_FASTQ}"
-echo "  aligned mother BAM       : ${ALIGN_DIR}/${SAMPLE_ID}.aligned.sorted.bam"
-echo "  upstream read assignments: ${READ_ASSIGNED_CELL}"
-echo "  Sockeye-style read tags   : ${ALIGN_DIR}/${SAMPLE_ID}.read_tags.tsv"
+echo "  barcode-to-cell mapping  : ${UPSTREAM_DIR}/barcode_to_cell.csv"
 if [[ "${SKIP_CELL_FASTQ}" -eq 0 ]]; then
   echo "  cell reads fastq         : ${CELL_READS_FASTQ}"
 fi
@@ -944,6 +1002,7 @@ else
   echo "  isoform expression      : skipped (--skip-isoform)"
 fi
 echo "  RNA QC                  : ${QC_DIR}/${SAMPLE_ID}.rna_qc_metrics.tsv"
+echo "  metrics workbook        : ${QC_DIR}/metrics_summary.xlsx"
 echo "  report metrics         : ${QC_DIR}/${SAMPLE_ID}.single_cell_report_metrics.tsv"
 echo "  html report            : ${QC_DIR}/${SAMPLE_ID}.single_cell_report.html"
 echo "  saturation table        : ${QC_DIR}/${SAMPLE_ID}.saturation.tsv"

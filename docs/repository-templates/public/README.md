@@ -315,17 +315,28 @@ A monitored memory-optimized `flora mixed --skip-glycine` run used a 149 GB comp
 
 ## Outputs
 
-The output directory contains:
+In the default light-output mode, the output directory contains:
 
 ```text
 upstream/    Barcode correction, cell assignment, and knee plots
-alignment/   Aligned and tagged BAM files
-matrix/      Gene/isoform matrices and RNA clustering coordinates
-qc/          RNA QC, saturation, and report inputs
+matrix/      Final tagged BAM, gene/isoform matrices, and RNA clustering coordinates
+qc/          RNA QC, saturation, metrics_summary.xlsx, and report inputs
 logs/        Per-stage logs
 ```
 
-Key outputs include `read_assigned_cell.csv`, `barcode_to_cell.csv`, tagged BAM files, gene and isoform expression matrices, Scanpy UMAP coordinates, and `<sample>.single_cell_report.html`. Mixed-species analysis also reports the per-cell human/mouse UMI classification under `qc/barnyard_qc/`.
+Key outputs include `barcode_to_cell.csv`, the final
+`<sample>.filtered.tagged.sorted.bam` and index, gene and isoform expression
+matrices, Scanpy UMAP coordinates, `qc/metrics_summary.xlsx`, and
+`<sample>.single_cell_report.html`. Mixed-species analysis also reports the
+per-cell human/mouse UMI classification under `qc/barnyard_qc/`.
+
+After the report is generated successfully, default light-output mode removes
+large reproducible intermediates such as the pre-tagging aligned BAM,
+read-level assignment CSVs, and assignment TSVs. The empty `alignment/`
+directory is then omitted. Add `--save-intermediate` to retain these debugging
+files, or `--full-output` to retain all upstream FASTQ outputs and
+intermediates. These options affect retained files only, not analytical
+results.
 
 ## Support
 

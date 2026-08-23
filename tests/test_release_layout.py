@@ -65,8 +65,10 @@ class ReleaseLayoutTests(unittest.TestCase):
         runtime = (PROJECT_ROOT / "src/workflow_runtime.rs").read_text(encoding="utf-8")
         self.assertIn('include_bytes!("../run_all.sh")', runtime)
         self.assertIn('pyc!("build_report.pyc")', runtime)
+        self.assertIn('pyc!("metrics_summary.pyc")', runtime)
         build_script = (PROJECT_ROOT / "build.rs").read_text(encoding="utf-8")
         self.assertIn('"scripts/build_report.py"', build_script)
+        self.assertIn('"scripts/metrics_summary.py"', build_script)
         self.assertIn("Python 3.11", build_script)
 
     def test_runners_require_report_static_assets(self):
@@ -145,6 +147,8 @@ class ReleaseLayoutTests(unittest.TestCase):
             self.assertIn("conda env create -f environment.yml", readme)
             self.assertIn("./flora \\", readme)
             self.assertIn("./flora mixed \\", readme)
+            self.assertIn("metrics_summary.xlsx", readme)
+            self.assertIn("--save-intermediate", readme)
 
         for private_name in ["README.md", "README_zh-CN.md"]:
             private_readme = (PROJECT_ROOT / private_name).read_text(encoding="utf-8")

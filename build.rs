@@ -19,6 +19,7 @@ const PYTHON_SOURCES: &[&str] = &[
     "scripts/generate_26bp_whitelists.py",
     "scripts/generate_knee_plots.py",
     "scripts/isoform_expression.py",
+    "scripts/metrics_summary.py",
     "scripts/prepare_read_tags.py",
     "scripts/read_qc_summary.py",
     "scripts/rna_cluster_analysis.py",
