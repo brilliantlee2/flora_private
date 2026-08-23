@@ -4,6 +4,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 use anyhow::{bail, Context, Result};
+use rust_htslib::bam;
 use rustc_hash::FxHashMap as HashMap;
 
 #[derive(Clone, Debug)]
@@ -144,6 +145,32 @@ pub fn parse_bed6_line(line: &str) -> Option<BedRecord> {
         name: fields.next()?.to_string(),
         score: fields.next()?.parse().ok().unwrap_or(0),
         strand: fields.next()?.trim().to_string(),
+    })
+}
+
+/// Reproduce the default, unsplit `bedtools bamtobed` BED6 projection.
+pub fn bed_record_from_bam(record: &bam::Record, header: &bam::HeaderView) -> Option<BedRecord> {
+    if record.is_unmapped() || record.tid() < 0 || record.pos() < 0 {
+        return None;
+    }
+    let tid = record.tid() as u32;
+    let chrom = std::str::from_utf8(header.tid2name(tid)).ok()?.to_string();
+    let mut name = String::from_utf8_lossy(record.qname()).to_string();
+    if record.is_first_in_template() {
+        name.push_str("/1");
+    }
+    if record.is_last_in_template() {
+        name.push_str("/2");
+    }
+    let start = u32::try_from(record.pos()).ok()?;
+    let end = u32::try_from(record.cigar().end_pos()).ok()?;
+    Some(BedRecord {
+        chrom,
+        start,
+        end,
+        name,
+        score: i32::from(record.mapq()),
+        strand: if record.is_reverse() { "-" } else { "+" }.to_string(),
     })
 }
 
@@ -414,6 +441,85 @@ fn candidate_exons(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rust_htslib::bam;
+    use rust_htslib::bam::header::HeaderRecord;
+    use rust_htslib::bam::record::{Cigar, CigarString};
+
+    fn bam_header() -> bam::HeaderView {
+        let mut header = bam::Header::new();
+        header.push_record(
+            HeaderRecord::new(b"SQ")
+                .push_tag(b"SN", "chr1")
+                .push_tag(b"LN", 1_000_000),
+        );
+        bam::HeaderView::from_header(&header)
+    }
+
+    fn bam_record(cigar: Vec<Cigar>, pos: i64) -> bam::Record {
+        let cigar = CigarString(cigar);
+        let query_len = cigar
+            .iter()
+            .map(|op| match op {
+                Cigar::Match(n)
+                | Cigar::Ins(n)
+                | Cigar::SoftClip(n)
+                | Cigar::Equal(n)
+                | Cigar::Diff(n) => *n as usize,
+                _ => 0,
+            })
+            .sum::<usize>();
+        let mut record = bam::Record::new();
+        record.set(
+            b"read1",
+            Some(&cigar),
+            &vec![b'A'; query_len],
+            &vec![30; query_len],
+        );
+        record.set_tid(0);
+        record.set_pos(pos);
+        record.set_mapq(60);
+        record.unset_unmapped();
+        record
+    }
+
+    #[test]
+    fn bam_record_matches_unsplit_bamtobed_coordinates() {
+        let header = bam_header();
+        let record = bam_record(
+            vec![
+                Cigar::SoftClip(5),
+                Cigar::Match(10),
+                Cigar::Ins(3),
+                Cigar::Match(5),
+                Cigar::Del(4),
+                Cigar::RefSkip(100),
+                Cigar::Equal(6),
+                Cigar::Diff(2),
+            ],
+            100,
+        );
+        let bed = bed_record_from_bam(&record, &header).unwrap();
+        assert_eq!(bed.chrom, "chr1");
+        assert_eq!(bed.start, 100);
+        assert_eq!(bed.end, 227);
+        assert_eq!(bed.name, "read1");
+        assert_eq!(bed.score, 60);
+        assert_eq!(bed.strand, "+");
+    }
+
+    #[test]
+    fn bam_record_matches_bamtobed_name_strand_and_unmapped_rules() {
+        let header = bam_header();
+        let mut reverse_first = bam_record(vec![Cigar::Match(20)], 500);
+        reverse_first.set_reverse();
+        reverse_first.set_first_in_template();
+        let bed = bed_record_from_bam(&reverse_first, &header).unwrap();
+        assert_eq!(bed.name, "read1/1");
+        assert_eq!(bed.strand, "-");
+
+        reverse_first.set_unmapped();
+        assert!(bed_record_from_bam(&reverse_first, &header).is_none());
+    }
 
     #[test]
     fn assign_gene_prefers_largest_same_strand_overlap() {

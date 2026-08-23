@@ -14,6 +14,10 @@ def parse_args():
     parser.add_argument("--fastq", required=True, help="FASTQ or FASTQ.GZ to summarize")
     parser.add_argument("--output-json", required=True, help="Output JSON path")
     parser.add_argument(
+        "--output-fastq-count",
+        help="Optional output path for the FASTQ record count",
+    )
+    parser.add_argument(
         "--curve-points",
         type=int,
         default=300,
@@ -149,6 +153,10 @@ def main():
 
     with open(args.output_json, "w", encoding="utf-8") as handle:
         json.dump(payload, handle)
+
+    if args.output_fastq_count:
+        with open(args.output_fastq_count, "w", encoding="utf-8") as handle:
+            handle.write(f"{payload['n_reads']}\n")
 
     print(args.output_json)
 

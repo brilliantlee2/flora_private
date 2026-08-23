@@ -2,6 +2,7 @@ use super::qc::*;
 use super::utils::*;
 use edlib_rs::edlibrs::*;
 use fxread::Record;
+use std::ops::Range;
 
 fn chimeric_tail_search_span(tail_len: usize, umi_len: usize) -> usize {
     (tail_len * 3).max(umi_len + tail_len + 10)
@@ -17,6 +18,31 @@ fn build_rescued_record_id(raw_id: &[u8], record_number: &[u8], strand: &[u8]) -
         strand,
     ]
     .concat()
+}
+
+fn checked_rescue_range(start: usize, end: usize, read_len: usize) -> Option<Range<usize>> {
+    (start < end && end <= read_len).then_some(start..end)
+}
+
+fn plus_rescue_range(
+    tso_end: usize,
+    rtp_rev_comp_start: usize,
+    polya_offset: usize,
+    read_len: usize,
+) -> Option<Range<usize>> {
+    let start = tso_end.checked_add(1)?;
+    let end = rtp_rev_comp_start.checked_sub(polya_offset)?;
+    checked_rescue_range(start, end, read_len)
+}
+
+fn minus_rescue_range(
+    rtp_end: usize,
+    polyt_offset: usize,
+    tso_rev_comp_start: usize,
+    read_len: usize,
+) -> Option<Range<usize>> {
+    let start = rtp_end.checked_add(polyt_offset)?.checked_add(1)?;
+    checked_rescue_range(start, tso_rev_comp_start, read_len)
 }
 
 pub struct PrimerSequences {
@@ -234,31 +260,34 @@ pub fn classify_reads(
                         .map(|(idx, _)| idx);
                     if polya_loc_option.is_some() {
                         let polya_loc = polya_loc_option.unwrap();
-                        let record_number = (fq_content.len() + 1)
-                            .to_string()
-                            .chars()
-                            .map(|c| c as u8)
-                            .collect::<Vec<u8>>();
+                        if let Some(range) = plus_rescue_range(
+                            tso_loc_option.unwrap(),
+                            rtp_rev_comp_loc_option.unwrap(),
+                            polya_loc,
+                            raw_record_len,
+                        ) {
+                            let record_number = (fq_content.len() + 1)
+                                .to_string()
+                                .chars()
+                                .map(|c| c as u8)
+                                .collect::<Vec<u8>>();
 
-                        let rescued_record_id =
-                            build_rescued_record_id(raw_record.id(), &record_number, b"plus");
-                        let rescued_record = ProcessedRecord::new(
-                            rescued_record_id,
-                            raw_record.seq()[tso_loc_option.unwrap() + 1
-                                ..rtp_rev_comp_loc_option.unwrap() - polya_loc]
-                                .to_vec(),
-                            raw_record.plus().unwrap().to_vec(),
-                            raw_record.qual().unwrap()[tso_loc_option.unwrap() + 1
-                                ..rtp_rev_comp_loc_option.unwrap() - polya_loc]
-                                .to_vec(),
-                        );
+                            let rescued_record_id =
+                                build_rescued_record_id(raw_record.id(), &record_number, b"plus");
+                            let rescued_record = ProcessedRecord::new(
+                                rescued_record_id,
+                                raw_record.seq()[range.clone()].to_vec(),
+                                raw_record.plus().unwrap().to_vec(),
+                                raw_record.qual().unwrap()[range].to_vec(),
+                            );
 
-                        fq_content.push((rescued_record, 19));
-                        rescued_base_num += rtp_rev_comp_loc_option.unwrap()
-                            - tso_loc_option.unwrap()
-                            + tso_seq.len()
-                            + rtp_seq.len()
-                            - 1;
+                            fq_content.push((rescued_record, 19));
+                            rescued_base_num += rtp_rev_comp_loc_option.unwrap()
+                                - tso_loc_option.unwrap()
+                                + tso_seq.len()
+                                + rtp_seq.len()
+                                - 1;
+                        }
                     }
                 }
 
@@ -283,41 +312,44 @@ pub fn classify_reads(
                         .map(|(idx, _)| idx);
                     if polyt_loc_option.is_some() {
                         let polyt_loc = polyt_loc_option.unwrap();
-                        let record_number = (fq_content.len() + 1)
-                            .to_string()
-                            .chars()
-                            .map(|c| c as u8)
-                            .collect::<Vec<u8>>();
+                        if let Some(range) = minus_rescue_range(
+                            rtp_loc_option.unwrap(),
+                            polyt_loc,
+                            tso_rev_comp_loc_option.unwrap(),
+                            raw_record_len,
+                        ) {
+                            let record_number = (fq_content.len() + 1)
+                                .to_string()
+                                .chars()
+                                .map(|c| c as u8)
+                                .collect::<Vec<u8>>();
 
-                        let rescued_record_id =
-                            build_rescued_record_id(raw_record.id(), &record_number, b"minus");
-                        let rescued_record_seq =
-                            raw_record.seq()[rtp_loc_option.unwrap() + polyt_loc + 1
-                                ..tso_rev_comp_loc_option.unwrap()]
+                            let rescued_record_id =
+                                build_rescued_record_id(raw_record.id(), &record_number, b"minus");
+                            let rescued_record_seq = raw_record.seq()[range.clone()]
                                 .iter()
                                 .rev()
                                 .map(|c| if c & 2 == 0 { c ^ 21 } else { c ^ 4 })
                                 .collect::<Vec<u8>>();
-                        let rescued_record_qual =
-                            raw_record.qual().unwrap()[rtp_loc_option.unwrap() + polyt_loc + 1
-                                ..tso_rev_comp_loc_option.unwrap()]
+                            let rescued_record_qual = raw_record.qual().unwrap()[range]
                                 .iter()
                                 .rev()
-                                .map(|&q| q)
+                                .copied()
                                 .collect::<Vec<u8>>();
-                        let rescued_record = ProcessedRecord::new(
-                            rescued_record_id,
-                            rescued_record_seq,
-                            raw_record.plus().unwrap().to_vec(),
-                            rescued_record_qual,
-                        );
+                            let rescued_record = ProcessedRecord::new(
+                                rescued_record_id,
+                                rescued_record_seq,
+                                raw_record.plus().unwrap().to_vec(),
+                                rescued_record_qual,
+                            );
 
-                        fq_content.push((rescued_record, 20));
-                        rescued_base_num += tso_rev_comp_loc_option.unwrap()
-                            - rtp_loc_option.unwrap()
-                            + tso_seq.len()
-                            + rtp_seq.len()
-                            - 1;
+                            fq_content.push((rescued_record, 20));
+                            rescued_base_num += tso_rev_comp_loc_option.unwrap()
+                                - rtp_loc_option.unwrap()
+                                + tso_seq.len()
+                                + rtp_seq.len()
+                                - 1;
+                        }
                     }
                 }
             }
@@ -638,7 +670,10 @@ pub fn classify_reads(
 
 #[cfg(test)]
 mod tests {
-    use super::{build_rescued_record_id, chimeric_tail_search_span, PrimerSequences};
+    use super::{
+        build_rescued_record_id, chimeric_tail_search_span, minus_rescue_range, plus_rescue_range,
+        PrimerSequences,
+    };
     use crate::glycine::utils::{convert_comp, convert_rev_comp};
 
     #[test]
@@ -678,5 +713,24 @@ mod tests {
             primers.rtp_trimmed_comp,
             convert_comp(&primers.rtp[trim_len..])
         );
+    }
+
+    #[test]
+    fn plus_rescue_range_rejects_inverted_or_out_of_bounds_windows() {
+        assert_eq!(plus_rescue_range(10, 80, 5, 100), Some(11..75));
+        assert_eq!(plus_rescue_range(79, 80, 0, 100), None);
+        assert_eq!(plus_rescue_range(80, 80, 5, 100), None);
+        assert_eq!(plus_rescue_range(10, 4, 5, 100), None);
+        assert_eq!(plus_rescue_range(10, 120, 0, 100), None);
+        assert_eq!(plus_rescue_range(usize::MAX, 80, 0, 100), None);
+    }
+
+    #[test]
+    fn minus_rescue_range_rejects_inverted_or_out_of_bounds_windows() {
+        assert_eq!(minus_rescue_range(10, 5, 80, 100), Some(16..80));
+        assert_eq!(minus_rescue_range(79, 0, 80, 100), None);
+        assert_eq!(minus_rescue_range(80, 5, 80, 100), None);
+        assert_eq!(minus_rescue_range(10, 5, 120, 100), None);
+        assert_eq!(minus_rescue_range(usize::MAX, 1, 80, 100), None);
     }
 }

@@ -1,8 +1,11 @@
 use std::path::PathBuf;
+use std::time::Instant;
 
 use anyhow::{Context, Result};
 use clap::Parser;
+use flora::bam_runtime::bounded_hts_threads;
 use flora::umi_cluster::cluster_directional;
+use rayon::prelude::*;
 use rust_htslib::bam::{self, ext::BamRecordExtensions, Read};
 use rustc_hash::FxHashMap as HashMap;
 
@@ -44,11 +47,17 @@ struct ReadState {
 
 pub fn main() -> Result<()> {
     let cli = Cli::parse();
+    let threads = bounded_hts_threads(cli.threads);
+    let cluster_pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(threads)
+        .build()
+        .context("create UMI clustering thread pool")?;
     let mut bam = bam::IndexedReader::from_path(&cli.bam).with_context(|| "open indexed BAM")?;
+    bam.set_threads(threads)?;
     let header = bam::Header::from_template(bam.header());
     let mut out = bam::Writer::from_path(&cli.output, &header, bam::Format::Bam)
         .with_context(|| format!("create {}", cli.output.display()))?;
-    out.set_threads(cli.threads)?;
+    out.set_threads(threads)?;
 
     let header_view = bam.header().clone();
     let targets = header_view
@@ -64,9 +73,10 @@ pub fn main() -> Result<()> {
         })
         .collect::<Vec<_>>();
 
+    let process_phase = Instant::now();
     for (tid, chrom, target_len) in targets {
         bam.fetch((tid, 0, target_len))?;
-        let tag_updates = collect_and_cluster(&mut bam, &chrom, &cli)?;
+        let tag_updates = collect_and_cluster(&mut bam, &chrom, &cli, &cluster_pool)?;
         bam.fetch((tid, 0, target_len))?;
         for rec in bam.records() {
             let mut rec = rec?;
@@ -80,7 +90,16 @@ pub fn main() -> Result<()> {
         }
     }
     drop(out);
-    bam::index::build(&cli.output, None, bam::index::Type::Bai, cli.threads as u32)?;
+    eprintln!(
+        "[timing] cluster_umis.chromosome_passes: {:.2}s",
+        process_phase.elapsed().as_secs_f64()
+    );
+    let phase = Instant::now();
+    bam::index::build(&cli.output, None, bam::index::Type::Bai, threads as u32)?;
+    eprintln!(
+        "[timing] cluster_umis.index: {:.2}s",
+        phase.elapsed().as_secs_f64()
+    );
     Ok(())
 }
 
@@ -88,7 +107,9 @@ fn collect_and_cluster(
     bam: &mut bam::IndexedReader,
     chrom: &str,
     cli: &Cli,
+    cluster_pool: &rayon::ThreadPool,
 ) -> Result<HashMap<Vec<u8>, TagUpdate>> {
+    let collect_phase = Instant::now();
     let mut group_ids: HashMap<(String, String), usize> = HashMap::default();
     let mut groups: Vec<GroupState> = Vec::new();
     let mut read_states: HashMap<Vec<u8>, ReadState> = HashMap::default();
@@ -136,12 +157,19 @@ fn collect_and_cluster(
             },
         );
     }
+    eprintln!(
+        "[timing] cluster_umis.collect_groups[{chrom}]: {:.2}s",
+        collect_phase.elapsed().as_secs_f64()
+    );
 
-    let corrected_by_group = groups
-        .iter()
-        .map(|group| cluster_directional(&group.umi_counts, 3))
-        .collect::<Vec<_>>();
+    let cluster_phase = Instant::now();
+    let corrected_by_group = cluster_groups_in_pool(&groups, cluster_pool);
+    eprintln!(
+        "[timing] cluster_umis.cluster_groups[{chrom}]: {:.2}s",
+        cluster_phase.elapsed().as_secs_f64()
+    );
 
+    let update_phase = Instant::now();
     let mut tag_updates = HashMap::default();
     for (rid, read_state) in read_states {
         if let Some(group_map) = corrected_by_group.get(read_state.group_id) {
@@ -157,7 +185,32 @@ fn collect_and_cluster(
             }
         }
     }
+    eprintln!(
+        "[timing] cluster_umis.build_updates[{chrom}]: {:.2}s",
+        update_phase.elapsed().as_secs_f64()
+    );
     Ok(tag_updates)
+}
+
+#[cfg(test)]
+fn cluster_groups(groups: &[GroupState], threads: usize) -> Result<Vec<HashMap<String, String>>> {
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(bounded_hts_threads(threads))
+        .build()
+        .context("create UMI clustering thread pool")?;
+    Ok(cluster_groups_in_pool(groups, &pool))
+}
+
+fn cluster_groups_in_pool(
+    groups: &[GroupState],
+    pool: &rayon::ThreadPool,
+) -> Vec<HashMap<String, String>> {
+    pool.install(|| {
+        groups
+            .par_iter()
+            .map(|group| cluster_directional(&group.umi_counts, 3))
+            .collect()
+    })
 }
 
 fn create_region_name(rec: &bam::Record, chrom: &str, ref_interval: u32) -> String {
@@ -193,7 +246,8 @@ fn get_string_tag(rec: &bam::Record, tag: &[u8; 2]) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::region_name_from_positions;
+    use super::{cluster_groups, region_name_from_positions, GroupState};
+    use rustc_hash::FxHashMap as HashMap;
 
     #[test]
     fn region_name_matches_python_midpoint_binning() {
@@ -209,5 +263,30 @@ mod tests {
             region_name_from_positions("chr7", 1444, 1555, 1000),
             "chr7_1000_2000"
         );
+    }
+
+    #[test]
+    fn parallel_group_clustering_matches_single_thread_exactly() {
+        let groups = vec![
+            group("GENE1", &[("AAAA", 20), ("AAAT", 3), ("AATT", 1)]),
+            group("GENE2", &[("CCCC", 8), ("CCCA", 2), ("GGGG", 7)]),
+            group("GENE3", &[("TTTT", 1)]),
+        ];
+        assert_eq!(
+            cluster_groups(&groups, 1).unwrap(),
+            cluster_groups(&groups, 4).unwrap()
+        );
+    }
+
+    fn group(gene: &str, counts: &[(&str, usize)]) -> GroupState {
+        let mut umi_counts = HashMap::default();
+        for (umi, count) in counts {
+            umi_counts.insert((*umi).to_string(), *count);
+        }
+        GroupState {
+            gene: gene.to_string(),
+            seen_reads: counts.iter().map(|(_, count)| count).sum(),
+            umi_counts,
+        }
     }
 }

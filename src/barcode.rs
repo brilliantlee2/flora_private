@@ -1,6 +1,6 @@
 use std::cmp::min;
 
-use rustc_hash::FxHashSet as HashSet;
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use serde::Serialize;
 
 use crate::fastq::FastqRecord;
@@ -375,6 +375,10 @@ fn bounded_sub_edit_distance(pattern: &str, text: &str, max_ed: usize) -> Option
 #[derive(Clone, Debug, Default)]
 pub struct BarcodeIndex {
     exact: HashSet<String>,
+    values: Vec<String>,
+    segment_index: HashMap<String, Vec<usize>>,
+    segment_lengths: Vec<usize>,
+    indexed_max_ed: Option<usize>,
 }
 
 impl BarcodeIndex {
@@ -382,22 +386,98 @@ impl BarcodeIndex {
     where
         I: IntoIterator<Item = String>,
     {
-        let mut index = Self::default();
-        for value in values {
-            index.insert(value);
-        }
-        index
+        Self::from_values(values, None)
+    }
+
+    pub fn with_max_ed<I>(values: I, max_ed: usize) -> Self
+    where
+        I: IntoIterator<Item = String>,
+    {
+        Self::from_values(values, Some(max_ed))
     }
 
     pub fn contains(&self, value: &str) -> bool {
         self.exact.contains(value)
     }
 
-    fn insert(&mut self, value: String) {
-        if !value.is_empty() {
-            self.exact.insert(value);
+    fn from_values<I>(values: I, indexed_max_ed: Option<usize>) -> Self
+    where
+        I: IntoIterator<Item = String>,
+    {
+        let mut index = Self {
+            indexed_max_ed,
+            ..Self::default()
+        };
+        for value in values {
+            if !value.is_empty() && index.exact.insert(value.clone()) {
+                index.values.push(value);
+            }
         }
+        if let Some(max_ed) = indexed_max_ed {
+            index.build_segment_index(max_ed);
+        }
+        index
     }
+
+    fn build_segment_index(&mut self, max_ed: usize) {
+        let parts = max_ed.saturating_add(1);
+        if parts == 0 {
+            return;
+        }
+        let mut lengths = HashSet::default();
+        for (candidate_id, candidate) in self.values.iter().enumerate() {
+            if parts > candidate.len() {
+                self.segment_index.clear();
+                self.segment_lengths.clear();
+                self.indexed_max_ed = None;
+                return;
+            }
+            for (start, end) in partition_ranges(candidate.len(), parts) {
+                let segment = candidate[start..end].to_string();
+                lengths.insert(end - start);
+                self.segment_index
+                    .entry(segment)
+                    .or_default()
+                    .push(candidate_id);
+            }
+        }
+        self.segment_lengths = lengths.into_iter().collect();
+        self.segment_lengths.sort_unstable();
+    }
+
+    fn candidate_ids(&self, query: &str, max_ed: usize) -> Vec<usize> {
+        if self.indexed_max_ed != Some(max_ed) || self.segment_index.is_empty() {
+            return (0..self.values.len()).collect();
+        }
+        let mut hits = HashSet::default();
+        for &length in &self.segment_lengths {
+            if length > query.len() {
+                continue;
+            }
+            for start in 0..=query.len() - length {
+                if let Some(ids) = self.segment_index.get(&query[start..start + length]) {
+                    hits.extend(ids.iter().copied());
+                }
+            }
+        }
+        let mut hits = hits.into_iter().collect::<Vec<_>>();
+        hits.sort_unstable();
+        hits
+    }
+}
+
+fn partition_ranges(length: usize, parts: usize) -> Vec<(usize, usize)> {
+    let base = length / parts;
+    let remainder = length % parts;
+    let mut start = 0usize;
+    (0..parts)
+        .map(|part| {
+            let width = base + usize::from(part < remainder);
+            let range = (start, start + width);
+            start += width;
+            range
+        })
+        .collect()
 }
 
 pub fn correct_one_side(bc: &str, whitelist: &HashSet<String>, max_ed: usize) -> String {
@@ -447,7 +527,8 @@ pub fn correct_one_side_indexed(bc: &str, index: &BarcodeIndex, max_ed: usize) -
     let mut best_ed = max_ed;
     let mut bc_hit: Option<&String> = None;
     let mut ambiguous = false;
-    for candidate in &index.exact {
+    for candidate_id in index.candidate_ids(bc, max_ed) {
+        let candidate = &index.values[candidate_id];
         if let Some((ed, _)) = bounded_sub_edit_distance(candidate, bc, best_ed) {
             if ed < best_ed {
                 best_ed = ed;
@@ -570,6 +651,94 @@ mod tests {
             "AAAACCCC"
         );
         assert_eq!(correct_one_side_indexed("CCCCCCCC", &index, 1), "");
+    }
+
+    #[test]
+    fn segmented_index_matches_exhaustive_semiglobal_correction() {
+        let mut seed = 0x5eed_u64;
+        let mut whitelist = HashSet::default();
+        for _ in 0..250 {
+            whitelist.insert(random_dna(&mut seed, 26));
+        }
+        let index = BarcodeIndex::with_max_ed(whitelist.iter().cloned(), 3);
+        for _ in 0..500 {
+            let length = 22 + (next_u64(&mut seed) % 10) as usize;
+            let query = random_dna(&mut seed, length);
+            for max_ed in 1..=3 {
+                assert_eq!(
+                    correct_one_side_indexed(&query, &index, max_ed),
+                    correct_one_side(&query, &whitelist, max_ed),
+                    "query={query} max_ed={max_ed}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn segmented_index_preserves_free_flanks_indels_and_ambiguity() {
+        let whitelist = [
+            "AAAACCCCGGGGTTTT".to_string(),
+            "AAAACCCCGGGGTTTA".to_string(),
+            "TTTTGGGGCCCCAAAA".to_string(),
+        ]
+        .into_iter()
+        .collect::<HashSet<_>>();
+        let index = BarcodeIndex::with_max_ed(whitelist.iter().cloned(), 2);
+        for query in [
+            "GGAAAACCCCGGGGTTTTCC",
+            "AAAACCCGGGGTTTT",
+            "AAAACCCCCGGGGTTTT",
+            "AAAACCCCGGGGTTTC",
+        ] {
+            assert_eq!(
+                correct_one_side_indexed(query, &index, 2),
+                correct_one_side(query, &whitelist, 2),
+                "query={query}"
+            );
+        }
+    }
+
+    #[test]
+    fn segmented_index_exhaustively_matches_small_binary_alphabet() {
+        let whitelist = all_binary_dna(4).into_iter().collect::<HashSet<_>>();
+        let index = BarcodeIndex::with_max_ed(whitelist.iter().cloned(), 2);
+        for length in 1..=7 {
+            for query in all_binary_dna(length) {
+                for max_ed in 1..=2 {
+                    assert_eq!(
+                        correct_one_side_indexed(&query, &index, max_ed),
+                        correct_one_side(&query, &whitelist, max_ed),
+                        "query={query} max_ed={max_ed}"
+                    );
+                }
+            }
+        }
+    }
+
+    fn next_u64(seed: &mut u64) -> u64 {
+        *seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+        *seed
+    }
+
+    fn random_dna(seed: &mut u64, length: usize) -> String {
+        (0..length)
+            .map(|_| match next_u64(seed) & 3 {
+                0 => 'A',
+                1 => 'C',
+                2 => 'G',
+                _ => 'T',
+            })
+            .collect()
+    }
+
+    fn all_binary_dna(length: usize) -> Vec<String> {
+        (0..(1usize << length))
+            .map(|bits| {
+                (0..length)
+                    .map(|shift| if (bits >> shift) & 1 == 0 { 'A' } else { 'C' })
+                    .collect()
+            })
+            .collect()
     }
 
     #[test]

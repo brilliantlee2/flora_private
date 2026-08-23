@@ -18,6 +18,7 @@ use crate::barcode::{
     strip_fixed_5p, umi_a_ratio, BarcodeIndex, CorrectedRead, PutativeRow,
 };
 use crate::fastq::{for_each_fastq_batch, write_fastq_record};
+use crate::read_qc::ReadQcAccumulator;
 
 #[derive(Clone, Debug)]
 pub struct PipelineConfig {
@@ -189,13 +190,18 @@ pub fn run_pipeline(config: &PipelineConfig) -> Result<PipelineSummary> {
 
     println!("[Flora] Step 1/7: streaming FASTQ and extracting putative 3p/5p barcode tables");
     let step_t0 = Instant::now();
-    let putative = extract_putative_rows(
+    let (putative, read_qc) = extract_putative_rows(
         &config.fastq_fns,
         config.batch_size,
         &bc_fixed_3p,
         &umi_fixed_3p,
         &bc_fixed_5p,
         &umi_fixed_5p,
+    )?;
+    read_qc.write_outputs(
+        &config.out_dir.join("read_qc_summary.json"),
+        &config.out_dir.join("full_length_fastq_count.txt"),
+        300,
     )?;
     if config.save_intermediate {
         write_csv(config.out_dir.join("putative_bc.csv"), &putative)?;
@@ -220,14 +226,30 @@ pub fn run_pipeline(config: &PipelineConfig) -> Result<PipelineSummary> {
 
     println!("[Flora] Step 3/7: correcting reads with unique-barcode caches");
     let step_t0 = Instant::now();
+    let phase_t0 = Instant::now();
     let wl3: HashSet<String> = observed_wl3.into_iter().collect();
     let wl5: HashSet<String> = observed_wl5.into_iter().collect();
-    let wl3_index = BarcodeIndex::new(wl3.into_iter());
-    let wl5_index = BarcodeIndex::new(wl5.into_iter());
+    let wl3_index = BarcodeIndex::with_max_ed(wl3.into_iter(), config.max_ed);
+    let wl5_index = BarcodeIndex::with_max_ed(wl5.into_iter(), config.max_ed);
+    println!(
+        "[timing] barcode_correction.build_indexes: {:.2}s",
+        phase_t0.elapsed().as_secs_f64()
+    );
+    let phase_t0 = Instant::now();
     let correction_cache_3p =
         build_correction_cache(&putative, true, &wl3_index, config.max_ed, config.min_q);
+    println!(
+        "[timing] barcode_correction.cache_3p: {:.2}s",
+        phase_t0.elapsed().as_secs_f64()
+    );
+    let phase_t0 = Instant::now();
     let correction_cache_5p =
         build_correction_cache(&putative, false, &wl5_index, config.max_ed, config.min_q);
+    println!(
+        "[timing] barcode_correction.cache_5p: {:.2}s",
+        phase_t0.elapsed().as_secs_f64()
+    );
+    let phase_t0 = Instant::now();
     let corrected: Vec<CorrectedRead> = putative
         .par_iter()
         .map(|row| {
@@ -239,6 +261,11 @@ pub fn run_pipeline(config: &PipelineConfig) -> Result<PipelineSummary> {
             )
         })
         .collect();
+    println!(
+        "[timing] barcode_correction.materialize_reads: {:.2}s",
+        phase_t0.elapsed().as_secs_f64()
+    );
+    let phase_t0 = Instant::now();
     if config.save_intermediate {
         write_corrected(config.out_dir.join("BC_corrected.csv"), &corrected)?;
     }
@@ -248,6 +275,10 @@ pub fn run_pipeline(config: &PipelineConfig) -> Result<PipelineSummary> {
         &putative,
         &corrected,
     )?;
+    println!(
+        "[timing] barcode_correction.write_maps: {:.2}s",
+        phase_t0.elapsed().as_secs_f64()
+    );
     write_correction_map(
         config.out_dir.join("correction_map_5p.tsv"),
         "5p",
@@ -415,9 +446,13 @@ fn extract_putative_rows(
     umi_fixed_3p: &str,
     bc_fixed_5p: &str,
     umi_fixed_5p: &str,
-) -> Result<Vec<PutativeRow>> {
+) -> Result<(Vec<PutativeRow>, ReadQcAccumulator)> {
     let mut putative = Vec::new();
+    let mut read_qc = ReadQcAccumulator::new();
     for_each_fastq_batch(paths, batch_size, |batch| {
+        for rec in &batch {
+            read_qc.observe(rec.seq.as_bytes(), rec.qual.as_bytes());
+        }
         let mut rows: Vec<PutativeRow> = batch
             .par_iter()
             .map(|rec| extract_putative(rec, bc_fixed_3p, umi_fixed_3p, bc_fixed_5p, umi_fixed_5p))
@@ -425,7 +460,7 @@ fn extract_putative_rows(
         putative.append(&mut rows);
         Ok(())
     })?;
-    Ok(putative)
+    Ok((putative, read_qc))
 }
 
 fn write_csv<T: Serialize>(path: PathBuf, rows: &[T]) -> Result<()> {

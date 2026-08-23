@@ -1,8 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::time::Instant;
 
 use anyhow::{Context, Result};
 use clap::{ArgAction, Parser};
+use flora::bam_runtime::bounded_hts_threads;
 use rust_htslib::bam::{self, Read};
 
 #[derive(Debug, Parser)]
@@ -38,16 +40,28 @@ struct Cli {
     umi3_col: String,
     #[arg(long = "keep-untagged", action = ArgAction::SetTrue)]
     keep_untagged: bool,
+
+    #[arg(short = 't', long = "threads", default_value_t = 4)]
+    threads: usize,
 }
 
 pub fn main() -> Result<()> {
     let cli = Cli::parse();
+    let threads = bounded_hts_threads(cli.threads);
+    let phase = Instant::now();
     let tag_map = load_tag_map(&cli)?;
+    eprintln!(
+        "[timing] add_cb_ur.load_tags: {:.2}s",
+        phase.elapsed().as_secs_f64()
+    );
+    let phase = Instant::now();
     let mut bam =
         bam::Reader::from_path(&cli.bam).with_context(|| format!("open {}", cli.bam.display()))?;
+    bam.set_threads(threads)?;
     let header = bam::Header::from_template(bam.header());
     let mut out = bam::Writer::from_path(&cli.output, &header, bam::Format::Bam)
         .with_context(|| format!("create {}", cli.output.display()))?;
+    out.set_threads(threads)?;
 
     let mut total = 0usize;
     let mut tagged = 0usize;
@@ -75,7 +89,16 @@ pub fn main() -> Result<()> {
     }
     drop(out);
     drop(bam);
-    bam::index::build(&cli.output, None, bam::index::Type::Bai, 1)?;
+    eprintln!(
+        "[timing] add_cb_ur.tag_and_write: {:.2}s",
+        phase.elapsed().as_secs_f64()
+    );
+    let phase = Instant::now();
+    bam::index::build(&cli.output, None, bam::index::Type::Bai, threads as u32)?;
+    eprintln!(
+        "[timing] add_cb_ur.index: {:.2}s",
+        phase.elapsed().as_secs_f64()
+    );
     println!("total_alignments\t{}", total_read_ids.len());
     println!("tagged_alignments\t{}", tagged_read_ids.len());
     println!(

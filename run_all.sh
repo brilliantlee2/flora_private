@@ -48,6 +48,7 @@ Usage:
     [--drop-umiA-ratio-gt 0.5] \
     [--gene-assign-mapq 60] \
     [--gene-assign-chunk-size 200000] \
+    [--gene-tagging-backend rust|legacy|validate] \
     [--transcript-assign-mapq 60] \
     [--transcript-assign-chunk-size 200000] \
     [--ref-interval 1000] \
@@ -186,6 +187,7 @@ write_parameters_tsv() {
     printf "umi_len\t%s\n" "${UMI_LEN}"
     printf "gene_assign_mapq\t%s\n" "${GENE_ASSIGN_MAPQ}"
     printf "gene_assign_chunk_size\t%s\n" "${GENE_ASSIGN_CHUNK_SIZE}"
+    printf "gene_tagging_backend\t%s\n" "${GENE_TAGGING_BACKEND}"
     printf "transcript_assign_mapq\t%s\n" "${TRANSCRIPT_ASSIGN_MAPQ}"
     printf "transcript_assign_chunk_size\t%s\n" "${TRANSCRIPT_ASSIGN_CHUNK_SIZE}"
     printf "ref_interval\t%s\n" "${REF_INTERVAL}"
@@ -222,6 +224,8 @@ run_stage() {
     "${SCRIPT_DIR}/target/release/${rust_name}"
   )
   local rust_bin=""
+  local stage_start_ts stage_end_ts stage_status stage_impl
+  stage_start_ts=$(date +%s)
   for candidate in "${rust_candidates[@]}"; do
     if [[ -x "${candidate}" ]]; then
       rust_bin="${candidate}"
@@ -229,11 +233,16 @@ run_stage() {
     fi
   done
   if [[ -n "${rust_bin}" ]]; then
-    "${rust_bin}" "$@"
-    return 0
-  fi
+    stage_impl="rust"
+    if "${rust_bin}" "$@"; then stage_status=0; else stage_status=$?; fi
+  else
+    stage_impl="python"
     py_path="$(python_asset "${py_path}")"
-    python3 "${py_path}" "$@"
+    if python3 "${py_path}" "$@"; then stage_status=0; else stage_status=$?; fi
+  fi
+  stage_end_ts=$(date +%s)
+  log "Stage ${rust_name} (${stage_impl}) elapsed: $((stage_end_ts - stage_start_ts))s"
+  return "${stage_status}"
 }
 
 abspath_for_output() {
@@ -293,6 +302,7 @@ SAVE_INTERMEDIATE=0
 REQUIRE_PASS_BOTH_ENDS=0
 GENE_ASSIGN_MAPQ=60
 GENE_ASSIGN_CHUNK_SIZE=200000
+GENE_TAGGING_BACKEND="rust"
 TRANSCRIPT_ASSIGN_MAPQ=60
 TRANSCRIPT_ASSIGN_CHUNK_SIZE=200000
 REF_INTERVAL=1000
@@ -356,6 +366,7 @@ while [[ $# -gt 0 ]]; do
     --require-pass-both-ends) REQUIRE_PASS_BOTH_ENDS=1; shift ;;
     --gene-assign-mapq) GENE_ASSIGN_MAPQ="$2"; shift 2 ;;
     --gene-assign-chunk-size) GENE_ASSIGN_CHUNK_SIZE="$2"; shift 2 ;;
+    --gene-tagging-backend) GENE_TAGGING_BACKEND="$2"; shift 2 ;;
     --transcript-assign-mapq) TRANSCRIPT_ASSIGN_MAPQ="$2"; shift 2 ;;
     --transcript-assign-chunk-size) TRANSCRIPT_ASSIGN_CHUNK_SIZE="$2"; shift 2 ;;
     --ref-interval) REF_INTERVAL="$2"; shift 2 ;;
@@ -368,6 +379,11 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ "${GENE_TAGGING_BACKEND}" != "rust" && "${GENE_TAGGING_BACKEND}" != "legacy" && "${GENE_TAGGING_BACKEND}" != "validate" ]]; then
+  echo "[ERROR] --gene-tagging-backend must be rust, legacy, or validate." >&2
+  exit 1
+fi
 
 if [[ "${LIGHT_OUTPUT}" -eq 1 ]]; then
   SKIP_MATCHED_FASTQ=1
@@ -452,7 +468,9 @@ fi
 require_cmd python3
 require_cmd samtools
 require_cmd minimap2
-require_cmd bedtools
+if [[ "${GENE_TAGGING_BACKEND}" != "rust" || "${SKIP_ISOFORM}" -eq 0 ]]; then
+  require_cmd bedtools
+fi
 require_file "${WHITELIST_3P}" "3p whitelist"
 require_file "${WHITELIST_5P}" "5p whitelist"
 require_file "${GENE_FASTA}" "gene FASTA"
@@ -508,7 +526,8 @@ if [[ "${SKIP_GLYCINE}" -eq 0 ]]; then
   fi
   step_start
   log "Step 0/6: running parallel Glycine full-length identification"
-  "${FLORA_BIN}" glycine \
+  GLYCINE_STAGE_TS=$(date +%s)
+  if "${FLORA_BIN}" glycine \
     "${GLYCINE_FASTQ_ARGS[@]}" \
     --tso_seq "${TSO_SEQ}" \
     --rtp_seq "${RTP_SEQ}" \
@@ -519,7 +538,13 @@ if [[ "${SKIP_GLYCINE}" -eq 0 ]]; then
     --umi_len "${UMI_LEN}" \
     --sample "${SAMPLE_ID}" \
     --jobs "${GLYCINE_JOBS}" \
-    --total-threads "${GLYCINE_THREADS}" 2>&1 | tee "${LOG_DIR}/00_glycine.log"
+    --total-threads "${GLYCINE_THREADS}" 2>&1 | tee "${LOG_DIR}/00_glycine.log"; then
+    GLYCINE_STAGE_STATUS=0
+  else
+    GLYCINE_STAGE_STATUS=$?
+  fi
+  log "Stage glycine (rust) elapsed: $(($(date +%s) - GLYCINE_STAGE_TS))s"
+  if (( GLYCINE_STAGE_STATUS != 0 )); then exit "${GLYCINE_STAGE_STATUS}"; fi
   step_end "Step 0/6"
 
   FULL_LENGTH_FASTQ="${GLYCINE_OUTDIR}/${SAMPLE_ID}.full-length-plus-rescued.fq.gz"
@@ -544,14 +569,28 @@ step_start
 log "Step 1/6: alignment-first minimap2 reference alignment"
 pushd "${ALIGN_DIR}" >/dev/null
 
-minimap2 -ax splice -uf --MD -t "${THREADS}" \
+ALIGNMENT_STAGE_TS=$(date +%s)
+if minimap2 -ax splice -uf --MD -t "${THREADS}" \
   --junc-bed "${JUNCTION_BED}" \
   --secondary=no \
   "${GENE_FASTA}" "${FULL_LENGTH_FASTQ}" \
 | samtools view --no-PG -b -t "${CHROM_SIZES}" - \
-| samtools sort --no-PG -@ "${THREADS}" -o "${SAMPLE_ID}.aligned.sorted.bam" - 2>&1 | tee "${ALIGN_LOG}"
+| samtools sort --no-PG -@ "${THREADS}" -o "${SAMPLE_ID}.aligned.sorted.bam" - 2>&1 | tee "${ALIGN_LOG}"; then
+  ALIGNMENT_STAGE_STATUS=0
+else
+  ALIGNMENT_STAGE_STATUS=$?
+fi
+log "Stage alignment_pipeline (external) elapsed: $(($(date +%s) - ALIGNMENT_STAGE_TS))s" | tee -a "${ALIGN_LOG}"
+if (( ALIGNMENT_STAGE_STATUS != 0 )); then exit "${ALIGNMENT_STAGE_STATUS}"; fi
 
-samtools index "${SAMPLE_ID}.aligned.sorted.bam" 2>&1 | tee -a "${ALIGN_LOG}"
+ALIGNED_INDEX_TS=$(date +%s)
+if samtools index "${SAMPLE_ID}.aligned.sorted.bam" 2>&1 | tee -a "${ALIGN_LOG}"; then
+  ALIGNED_INDEX_STATUS=0
+else
+  ALIGNED_INDEX_STATUS=$?
+fi
+log "Stage aligned_bam_index (external) elapsed: $(($(date +%s) - ALIGNED_INDEX_TS))s" | tee -a "${ALIGN_LOG}"
+if (( ALIGNED_INDEX_STATUS != 0 )); then exit "${ALIGNED_INDEX_STATUS}"; fi
 
 popd >/dev/null
 step_end "Step 1/6"
@@ -654,12 +693,24 @@ run_stage prepare_read_tags "${DOWNSTREAM_DIR}/prepare_read_tags.py" \
   --input "${READ_ASSIGNED_CELL}" \
   --output "${SAMPLE_ID}.read_tags.tsv" 2>&1 | tee "${TAG_LOG}"
 
-run_stage add_cb_ur_tags "${DOWNSTREAM_DIR}/add_cb_ur_tags.py" \
-  --bam "${SAMPLE_ID}.aligned.sorted.bam" \
-  --tags "${SAMPLE_ID}.read_tags.tsv" \
-  --output "${SAMPLE_ID}.filtered.cb_ur.sorted.bam" 2>&1 | tee -a "${TAG_LOG}"
+if [[ "${GENE_TAGGING_BACKEND}" != "rust" ]]; then
+  run_stage add_cb_ur_tags "${DOWNSTREAM_DIR}/add_cb_ur_tags.py" \
+    --bam "${SAMPLE_ID}.aligned.sorted.bam" \
+    --tags "${SAMPLE_ID}.read_tags.tsv" \
+    --output "${SAMPLE_ID}.filtered.cb_ur.sorted.bam" \
+    --threads "${CLUSTER_THREADS}" 2>&1 | tee -a "${TAG_LOG}"
 
-bedtools bamtobed -i "${SAMPLE_ID}.filtered.cb_ur.sorted.bam" > "${SAMPLE_ID}.filtered.cb_ur.bed"
+  BAMTOBED_TS=$(date +%s)
+  if bedtools bamtobed -i "${SAMPLE_ID}.filtered.cb_ur.sorted.bam" > "${SAMPLE_ID}.filtered.cb_ur.bed"; then
+    BAMTOBED_STATUS=0
+  else
+    BAMTOBED_STATUS=$?
+  fi
+  log "Stage bamtobed (external) elapsed: $(($(date +%s) - BAMTOBED_TS))s" | tee -a "${TAG_LOG}"
+  if (( BAMTOBED_STATUS != 0 )); then exit "${BAMTOBED_STATUS}"; fi
+else
+  log "Fused Rust gene tagging selected; intermediate CB/UR BAM and BED are skipped" | tee -a "${TAG_LOG}"
+fi
 
 popd >/dev/null
 step_end "Step 3/6"
@@ -668,19 +719,59 @@ step_start
 log "Step 4/6: Sockeye-style gene tagging, directional UMI clustering, and matrix generation"
 pushd "${MATRIX_DIR}" >/dev/null
 
-run_stage assign_genes "${DOWNSTREAM_DIR}/assign_genes.py" \
-  --output "${SAMPLE_ID}.filtered.read_gene_assigns.tsv" \
-  --mapq "${GENE_ASSIGN_MAPQ}" \
-  --chunk_size "${GENE_ASSIGN_CHUNK_SIZE}" \
-  "${ALIGN_DIR}/${SAMPLE_ID}.filtered.cb_ur.bed" \
-  "${GENE_GTF}" 2>&1 | tee "${GENE_LOG}"
+if [[ "${GENE_TAGGING_BACKEND}" != "rust" ]]; then
+  run_stage assign_genes "${DOWNSTREAM_DIR}/assign_genes.py" \
+    --output "${SAMPLE_ID}.filtered.read_gene_assigns.tsv" \
+    --mapq "${GENE_ASSIGN_MAPQ}" \
+    --chunk_size "${GENE_ASSIGN_CHUNK_SIZE}" \
+    "${ALIGN_DIR}/${SAMPLE_ID}.filtered.cb_ur.bed" \
+    "${GENE_GTF}" 2>&1 | tee "${GENE_LOG}"
 
-run_stage add_gene_tags "${DOWNSTREAM_DIR}/add_gene_tags.py" \
-  --output "${SAMPLE_ID}.filtered.cb_ur.gn.sorted.bam" \
-  "${ALIGN_DIR}/${SAMPLE_ID}.filtered.cb_ur.sorted.bam" \
-  "${SAMPLE_ID}.filtered.read_gene_assigns.tsv" 2>&1 | tee -a "${GENE_LOG}"
+  run_stage add_gene_tags "${DOWNSTREAM_DIR}/add_gene_tags.py" \
+    --output "${SAMPLE_ID}.filtered.cb_ur.gn.sorted.bam" \
+    --threads "${CLUSTER_THREADS}" \
+    "${ALIGN_DIR}/${SAMPLE_ID}.filtered.cb_ur.sorted.bam" \
+    "${SAMPLE_ID}.filtered.read_gene_assigns.tsv" 2>&1 | tee -a "${GENE_LOG}"
 
-samtools index "${SAMPLE_ID}.filtered.cb_ur.gn.sorted.bam"
+  GENE_INDEX_TS=$(date +%s)
+  if samtools index -@ "${CLUSTER_THREADS}" "${SAMPLE_ID}.filtered.cb_ur.gn.sorted.bam"; then
+    GENE_INDEX_STATUS=0
+  else
+    GENE_INDEX_STATUS=$?
+  fi
+  log "Stage gene_bam_index (external) elapsed: $(($(date +%s) - GENE_INDEX_TS))s" | tee -a "${GENE_LOG}"
+  if (( GENE_INDEX_STATUS != 0 )); then exit "${GENE_INDEX_STATUS}"; fi
+fi
+
+if [[ "${GENE_TAGGING_BACKEND}" == "rust" || "${GENE_TAGGING_BACKEND}" == "validate" ]]; then
+  FUSED_ASSIGNMENTS="${SAMPLE_ID}.filtered.read_gene_assigns.tsv"
+  FUSED_BAM="${SAMPLE_ID}.filtered.cb_ur.gn.sorted.bam"
+  if [[ "${GENE_TAGGING_BACKEND}" == "validate" ]]; then
+    FUSED_ASSIGNMENTS="${SAMPLE_ID}.rust.read_gene_assigns.tsv"
+    FUSED_BAM="${SAMPLE_ID}.rust.cb_ur.gn.sorted.bam"
+  fi
+  run_stage tag_and_assign_genes "${DOWNSTREAM_DIR}/tag_and_assign_genes.py" \
+    --bam "${ALIGN_DIR}/${SAMPLE_ID}.aligned.sorted.bam" \
+    --tags "${ALIGN_DIR}/${SAMPLE_ID}.read_tags.tsv" \
+    --gtf "${GENE_GTF}" \
+    --gene-assigns "${FUSED_ASSIGNMENTS}" \
+    --output "${FUSED_BAM}" \
+    --mapq "${GENE_ASSIGN_MAPQ}" \
+    --threads "${CLUSTER_THREADS}" 2>&1 | tee -a "${GENE_LOG}"
+fi
+
+if [[ "${GENE_TAGGING_BACKEND}" == "validate" ]]; then
+  VALIDATE_DIR="$(mktemp -d "${MATRIX_DIR}/gene-tag-validation.XXXXXX")"
+  cmp "${SAMPLE_ID}.filtered.read_gene_assigns.tsv" "${SAMPLE_ID}.rust.read_gene_assigns.tsv"
+  samtools view -h "${SAMPLE_ID}.filtered.cb_ur.gn.sorted.bam" > "${VALIDATE_DIR}/legacy.sam"
+  samtools view -h "${SAMPLE_ID}.rust.cb_ur.gn.sorted.bam" > "${VALIDATE_DIR}/rust.sam"
+  cmp "${VALIDATE_DIR}/legacy.sam" "${VALIDATE_DIR}/rust.sam"
+  rm -f "${VALIDATE_DIR}/legacy.sam" "${VALIDATE_DIR}/rust.sam" \
+    "${SAMPLE_ID}.rust.read_gene_assigns.tsv" "${SAMPLE_ID}.rust.cb_ur.gn.sorted.bam" \
+    "${SAMPLE_ID}.rust.cb_ur.gn.sorted.bam.bai"
+  rmdir "${VALIDATE_DIR}"
+  log "Gene-tag validation passed: assignments and SAM records are identical" | tee -a "${GENE_LOG}"
+fi
 
 run_stage cluster_umis_allbam "${DOWNSTREAM_DIR}/cluster_umis_allbam.py" \
   --output "${SAMPLE_ID}.filtered.tagged.sorted.bam" \
@@ -691,15 +782,19 @@ run_stage cluster_umis_allbam "${DOWNSTREAM_DIR}/cluster_umis_allbam.py" \
 
 run_stage cell_umi_gene_table "${DOWNSTREAM_DIR}/cell_umi_gene_table.py" \
   --output "${SAMPLE_ID}.cell_umi_gene.tsv" \
+  --gene-expression-output "${SAMPLE_ID}.gene_expression.tsv" \
   "${SAMPLE_ID}.filtered.tagged.sorted.bam" 2>&1 | tee -a "${GENE_LOG}"
 
-run_stage gene_expression "${DOWNSTREAM_DIR}/gene_expression.py" \
-  --output "${SAMPLE_ID}.gene_expression.tsv" \
-  "${SAMPLE_ID}.filtered.tagged.sorted.bam" 2>&1 | tee -a "${GENE_LOG}"
-
-python3 "$(python_asset "${DOWNSTREAM_DIR}/rna_cluster_analysis.py")" \
+RNA_CLUSTER_TS=$(date +%s)
+if python3 "$(python_asset "${DOWNSTREAM_DIR}/rna_cluster_analysis.py")" \
   --input "${SAMPLE_ID}.gene_expression.tsv" \
-  --output "${SAMPLE_ID}.rna_cluster.tsv" 2>&1 | tee -a "${GENE_LOG}"
+  --output "${SAMPLE_ID}.rna_cluster.tsv" 2>&1 | tee -a "${GENE_LOG}"; then
+  RNA_CLUSTER_STATUS=0
+else
+  RNA_CLUSTER_STATUS=$?
+fi
+log "Stage rna_cluster_analysis (python) elapsed: $(($(date +%s) - RNA_CLUSTER_TS))s" | tee -a "${GENE_LOG}"
+if (( RNA_CLUSTER_STATUS != 0 )); then exit "${RNA_CLUSTER_STATUS}"; fi
 
 popd >/dev/null
 step_end "Step 4/6"
@@ -739,17 +834,30 @@ ln -sf "${MATRIX_DIR}/${SAMPLE_ID}.cell_umi_gene.tsv" cell_umi_gene.tsv
 ln -sf "${ALIGN_DIR}/${SAMPLE_ID}.aligned.sorted.bam" filtered.sorted.bam
 ln -sf "${ALIGN_DIR}/${SAMPLE_ID}.aligned.sorted.bam.bai" filtered.sorted.bam.bai
 
-if [[ "${SKIP_GLYCINE}" -eq 0 ]]; then
-  RAW_FASTQ_FOR_QC="${FULL_LENGTH_FASTQ}"
+PRECOMPUTED_READ_QC_JSON="${UPSTREAM_DIR}/read_qc_summary.json"
+PRECOMPUTED_FASTQ_COUNT="${UPSTREAM_DIR}/full_length_fastq_count.txt"
+if [[ -s "${PRECOMPUTED_READ_QC_JSON}" && -s "${PRECOMPUTED_FASTQ_COUNT}" ]]; then
+  cp "${PRECOMPUTED_READ_QC_JSON}" "${SAMPLE_ID}.read_qc_summary.json"
+  cp "${PRECOMPUTED_FASTQ_COUNT}" "${SAMPLE_ID}.full_length_fastq_count.txt"
+  log "Reused Read QC accumulated during the barcode FASTQ scan" | tee -a "${QC_LOG}"
 else
-  RAW_FASTQ_FOR_QC="${FULL_LENGTH_FASTQ}"
+  log "Precomputed Read QC unavailable; scanning the full-length FASTQ" | tee -a "${QC_LOG}"
+  run_stage read_qc_summary "${DOWNSTREAM_DIR}/read_qc_summary.py" \
+    --fastq "${FULL_LENGTH_FASTQ}" \
+    --output-json "${SAMPLE_ID}.read_qc_summary.json" \
+    --output-fastq-count "${SAMPLE_ID}.full_length_fastq_count.txt" 2>&1 | tee -a "${QC_LOG}"
 fi
+
+RAW_FASTQ_FOR_QC="${FULL_LENGTH_FASTQ}"
+QC_THREADS=$(( THREADS < 8 ? THREADS : 8 ))
 
 QC_ARGS=(
   --cell-umi-gene-tsv cell_umi_gene.tsv
   --bam filtered.sorted.bam
   --raw-fastq "${RAW_FASTQ_FOR_QC}"
   --full-length-fastq "${FULL_LENGTH_FASTQ}"
+  --fastq-count-file "${SAMPLE_ID}.full_length_fastq_count.txt"
+  --threads "${QC_THREADS}"
   --read-tags "${ALIGN_DIR}/${SAMPLE_ID}.read_tags.tsv"
   --barcode-validity-tsv "${BARCODE_VALIDITY_SUMMARY}"
 )
@@ -776,10 +884,11 @@ run_stage saturation "${DOWNSTREAM_DIR}/Saturation.py" \
   --input cell_umi_gene.tsv \
   --output-tsv "${SAMPLE_ID}.saturation.tsv" \
   --output-png "${SAMPLE_ID}.saturation_curves.png" 2>&1 | tee -a "${QC_LOG}"
-
-run_stage read_qc_summary "${DOWNSTREAM_DIR}/read_qc_summary.py" \
-  --fastq "${FULL_LENGTH_FASTQ}" \
-  --output-json "${SAMPLE_ID}.read_qc_summary.json" 2>&1 | tee -a "${QC_LOG}"
+if [[ ! -f "${SAMPLE_ID}.saturation_curves.png" ]]; then
+  python3 "$(python_asset "${DOWNSTREAM_DIR}/Saturation.py")" \
+    --plot-existing-tsv "${SAMPLE_ID}.saturation.tsv" \
+    --output-png "${SAMPLE_ID}.saturation_curves.png" 2>&1 | tee -a "${QC_LOG}"
+fi
 
 BUILD_REPORT_ARGS=(
   --sample-id "${SAMPLE_ID}"

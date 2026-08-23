@@ -1,11 +1,13 @@
 extern crate self as flora;
 
 pub mod annotation;
+pub mod bam_runtime;
 pub mod barcode;
 pub mod fastq;
 pub mod glycine;
 pub mod matrices;
 pub mod pipeline;
+pub mod read_qc;
 pub mod umi_cluster;
 pub mod workflow_runtime;
 
@@ -33,3 +35,7 @@ pub mod stage_prepare_read_tags;
 pub mod stage_read_qc_summary;
 #[path = "bin/rna_qc_metrics.rs"]
 pub mod stage_rna_qc_metrics;
+#[path = "bin/saturation.rs"]
+pub mod stage_saturation;
+#[path = "bin/tag_and_assign_genes.rs"]
+pub mod stage_tag_and_assign_genes;

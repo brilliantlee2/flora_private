@@ -74,6 +74,8 @@ const INTERNAL_STAGE_NAMES: &[&str] = &[
     "prepare_read_tags",
     "read_qc_summary",
     "rna_qc_metrics",
+    "saturation",
+    "tag_and_assign_genes",
 ];
 
 pub fn run(kind: WorkflowKind, mut args: Vec<OsString>) -> Result<()> {
