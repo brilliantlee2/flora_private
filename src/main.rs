@@ -92,7 +92,7 @@ struct Cli {
     save_intermediate: bool,
 
     #[arg(long = "save_merge_debug", action = ArgAction::SetTrue)]
-    _save_merge_debug: bool,
+    save_merge_debug: bool,
 
     #[arg(long = "require_pass_both_ends", action = ArgAction::SetTrue)]
     require_pass_both_ends: bool,
@@ -244,6 +244,7 @@ where
         skip_unmatched_fastq: skip_fastq,
         skip_cell_fastq: skip_fastq,
         save_intermediate: cli.save_intermediate,
+        save_correction_maps: cli.save_merge_debug,
     };
 
     let summary = run_pipeline(&config)?;

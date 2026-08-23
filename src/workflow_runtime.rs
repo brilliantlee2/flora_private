@@ -42,6 +42,7 @@ const PYTHON_ASSETS: &[(&str, &[u8])] = &[
     ),
     ("generate_knee_plots.pyc", pyc!("generate_knee_plots.pyc")),
     ("isoform_expression.pyc", pyc!("isoform_expression.pyc")),
+    ("metrics_summary.pyc", pyc!("metrics_summary.pyc")),
     ("prepare_read_tags.pyc", pyc!("prepare_read_tags.pyc")),
     ("read_qc_summary.pyc", pyc!("read_qc_summary.pyc")),
     ("rna_cluster_analysis.pyc", pyc!("rna_cluster_analysis.pyc")),

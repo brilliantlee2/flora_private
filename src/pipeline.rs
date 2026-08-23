@@ -52,6 +52,7 @@ pub struct PipelineConfig {
     pub skip_unmatched_fastq: bool,
     pub skip_cell_fastq: bool,
     pub save_intermediate: bool,
+    pub save_correction_maps: bool,
 }
 
 #[derive(Debug)]
@@ -269,22 +270,26 @@ pub fn run_pipeline(config: &PipelineConfig) -> Result<PipelineSummary> {
     if config.save_intermediate {
         write_corrected(config.out_dir.join("BC_corrected.csv"), &corrected)?;
     }
-    write_correction_map(
-        config.out_dir.join("correction_map_3p.tsv"),
-        "3p",
-        &putative,
-        &corrected,
-    )?;
-    println!(
-        "[timing] barcode_correction.write_maps: {:.2}s",
-        phase_t0.elapsed().as_secs_f64()
-    );
-    write_correction_map(
-        config.out_dir.join("correction_map_5p.tsv"),
-        "5p",
-        &putative,
-        &corrected,
-    )?;
+    if config.save_intermediate || config.save_correction_maps {
+        write_correction_map(
+            config.out_dir.join("correction_map_3p.tsv"),
+            "3p",
+            &putative,
+            &corrected,
+        )?;
+        write_correction_map(
+            config.out_dir.join("correction_map_5p.tsv"),
+            "5p",
+            &putative,
+            &corrected,
+        )?;
+        println!(
+            "[timing] barcode_correction.write_maps: {:.2}s",
+            phase_t0.elapsed().as_secs_f64()
+        );
+    } else {
+        println!("[timing] barcode_correction.write_maps: skipped");
+    }
     let reads_total = putative.len();
     let reads_demultiplexed = corrected
         .iter()

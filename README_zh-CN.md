@@ -98,6 +98,24 @@ bash run_all.sh -h
 生成单二进制公开发行包前，`flora run --help` 和
 `flora run-mixed --help` 也必须成功。如果任意命令不可用，打包脚本会主动停止。
 
+## 流程输出策略
+
+默认轻量输出模式会保留最终带标签的 BAM 及其索引、基因和转录本表达矩阵、
+cell/barcode 对应关系、RNA 聚类结果、QC 表格、`qc/metrics_summary.xlsx`、
+日志和自包含 HTML 报告。报告成功生成后，Flora 会删除可重新生成的 read-level
+表格、加标签前的 aligned BAM、assignment TSV 和其他大型中间文件；如果清理后
+`alignment/` 为空，该目录也会被移除。
+
+调试或需要 read-level assignment、加标签前文件时请添加
+`--save-intermediate`；需要保留全部上游 FASTQ 和中间文件时请使用
+`--full-output`。这两个选项只控制文件保留，不改变分析阈值和最终矩阵结果。
+
+添加 `--remove-final-bam` 后，Flora 会在矩阵、QC 和报告全部成功生成后，删除
+`alignment/` 与 `matrix/` 下的全部 BAM 和 BAM 索引，其中也包括最终 tagged
+BAM；表达矩阵、QC、`metrics_summary.xlsx` 和 HTML 报告仍会保留。该参数可与
+`--save-intermediate` 或 `--full-output` 组合，非 BAM 中间文件仍遵循后两者的
+设置。
+
 ## 版本更新清单
 
 1. 修改 `Cargo.toml` 中的版本号。

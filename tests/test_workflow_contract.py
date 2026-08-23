@@ -767,10 +767,76 @@ class WorkflowTimingContractTest(unittest.TestCase):
             with self.subTest(script=name):
                 self.assertIn('stage_impl="rust"', script)
                 self.assertIn('stage_impl="python"', script)
+            self.assertIn(
+                'Stage ${rust_name} (${stage_impl}) elapsed:', script
+            )
+            self.assertIn('return "${stage_status}"', script)
+
+    def test_metrics_workbook_and_compact_cleanup_are_wired_into_both_workflows(self):
+        project_root = Path(__file__).resolve().parents[1]
+        for runner in ("run_all.sh", "run_all_mixed_species.sh"):
+            script = (project_root / runner).read_text(encoding="utf-8")
+            self.assertIn(
+                'run_stage metrics_summary "${DOWNSTREAM_DIR}/metrics_summary.py"',
+                script,
+            )
+            self.assertIn('--output-xlsx "metrics_summary.xlsx"', script)
+            self.assertIn(
+                '--barcode-to-cell "${UPSTREAM_DIR}/barcode_to_cell.csv"', script
+            )
+            self.assertIn("cleanup_large_intermediates", script)
+            self.assertIn(
+                'if [[ "${LIGHT_OUTPUT}" -eq 1 && "${SAVE_INTERMEDIATE}" -eq 0 ]]',
+                script,
+            )
+            self.assertIn("${SAMPLE_ID}.filtered.tagged.sorted.bam", script)
+
+            cleanup = script.split("cleanup_large_intermediates() {", 1)[1].split(
+                "\n}", 1
+            )[0]
+            for retained in (
+                "filtered.tagged.sorted.bam",
+                "gene_expression.tsv",
+                "isoform_expression.tsv",
+                "rna_cluster.tsv",
+                "barcode_to_cell.csv",
+                "metrics_summary.xlsx",
+                "single_cell_report.html",
+                "barnyard_qc",
+            ):
+                self.assertNotIn(retained, cleanup)
+
+    def test_correction_maps_are_opt_in_debug_outputs(self):
+        project_root = Path(__file__).resolve().parents[1]
+        pipeline = (project_root / "src" / "pipeline.rs").read_text(encoding="utf-8")
+        main = (project_root / "src" / "main.rs").read_text(encoding="utf-8")
+        self.assertIn(
+            "config.save_intermediate || config.save_correction_maps", pipeline
+        )
+        self.assertIn("barcode_correction.write_maps: skipped", pipeline)
+        self.assertIn("save_correction_maps: cli.save_merge_debug", main)
+
+    def test_remove_final_bam_is_opt_in_and_runs_only_after_the_report(self):
+        for name, script in self.scripts.items():
+            with self.subTest(script=name):
+                self.assertIn("REMOVE_FINAL_BAM=0", script)
                 self.assertIn(
-                    'Stage ${rust_name} (${stage_impl}) elapsed:', script
+                    "--remove-final-bam) REMOVE_FINAL_BAM=1; shift ;;", script
                 )
-                self.assertIn('return "${stage_status}"', script)
+                self.assertIn("cleanup_all_bam_outputs()", script)
+                all_bam_cleanup = script.split("cleanup_all_bam_outputs() {", 1)[
+                    1
+                ].split("\n}", 1)[0]
+                for bam in (
+                    "${ALIGN_DIR}/${SAMPLE_ID}.aligned.sorted.bam",
+                    "${MATRIX_DIR}/${SAMPLE_ID}.filtered.cb_ur.gn.sorted.bam",
+                    "${MATRIX_DIR}/${SAMPLE_ID}.filtered.tagged.sorted.bam",
+                ):
+                    self.assertIn(bam, all_bam_cleanup)
+                self.assertLess(
+                    script.index("run_stage build_report"),
+                    script.index('if [[ "${REMOVE_FINAL_BAM}" -eq 1 ]]'),
+                )
 
     def test_direct_expensive_stages_have_named_timing(self):
         expected = (
