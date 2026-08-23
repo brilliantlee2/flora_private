@@ -110,6 +110,12 @@ cell/barcode 对应关系、RNA 聚类结果、QC 表格、`qc/metrics_summary.x
 `--save-intermediate`；需要保留全部上游 FASTQ 和中间文件时请使用
 `--full-output`。这两个选项只控制文件保留，不改变分析阈值和最终矩阵结果。
 
+添加 `--remove-final-bam` 后，Flora 会在矩阵、QC 和报告全部成功生成后，删除
+`alignment/` 与 `matrix/` 下的全部 BAM 和 BAM 索引，其中也包括最终 tagged
+BAM；表达矩阵、QC、`metrics_summary.xlsx` 和 HTML 报告仍会保留。该参数可与
+`--save-intermediate` 或 `--full-output` 组合，非 BAM 中间文件仍遵循后两者的
+设置。
+
 ## 版本更新清单
 
 1. 修改 `Cargo.toml` 中的版本号。

@@ -50,6 +50,7 @@
     {"name":"--no-revcomp-whitelist","aliases":[],"type":"bool","required":false,"required_when":[],"default":false,"conflicts":[],"description":"Disable reverse complementation of whitelist barcodes."},
     {"name":"--save-merge-debug","aliases":[],"type":"bool","required":false,"required_when":[],"default":false,"conflicts":[],"description":"Retain barcode merge debug outputs."},
     {"name":"--save-intermediate","aliases":[],"type":"bool","required":false,"required_when":[],"default":false,"conflicts":[],"description":"Retain assignment intermediate outputs."},
+    {"name":"--remove-final-bam","aliases":[],"type":"bool","required":false,"required_when":[],"default":false,"conflicts":[],"description":"Remove all alignment and matrix BAM files after successful report generation."},
     {"name":"--require-pass-both-ends","aliases":[],"type":"bool","required":false,"required_when":[],"default":false,"conflicts":[],"description":"Require both barcode ends to pass."},
     {"name":"--gene-assign-mapq","aliases":[],"type":"int","required":false,"required_when":[],"default":60,"conflicts":[],"description":"Minimum gene-assignment MAPQ."},
     {"name":"--gene-assign-chunk-size","aliases":[],"type":"int","required":false,"required_when":[],"default":200000,"conflicts":[],"description":"Gene-assignment chunk size."},

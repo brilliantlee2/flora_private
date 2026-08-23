@@ -55,6 +55,7 @@ Usage:
     [--cell-gene-max-reads 20000] \
     [--save-merge-debug] \
     [--save-intermediate] \
+    [--remove-final-bam] \
     [--require-pass-both-ends]
 
 Notes:
@@ -82,6 +83,8 @@ Notes:
      complete workflow and report finish successfully.
   13. Use --full-output to restore all upstream FASTQs. Use --save-intermediate
      to retain intermediate BAM, read-assignment, and annotation files.
+     Use --remove-final-bam to remove every alignment/matrix BAM and index after
+     matrices, QC, and the report finish successfully.
   14. Alignment uses minimap2 --secondary=no and downstream tagging uses
       aligned.sorted.bam directly, matching run_all_mixed_species.sh.
   15. --skip-isoform skips transcript assignment and isoform matrix generation.
@@ -149,6 +152,7 @@ write_parameters_tsv() {
     printf "skip_isoform\t%s\n" "${SKIP_ISOFORM}"
     printf "upstream_only\t%s\n" "${UPSTREAM_ONLY}"
     printf "light_output\t%s\n" "${LIGHT_OUTPUT}"
+    printf "remove_final_bam\t%s\n" "${REMOVE_FINAL_BAM}"
     printf "skip_matched_fastq\t%s\n" "${SKIP_MATCHED_FASTQ}"
     printf "skip_unmatched_fastq\t%s\n" "${SKIP_UNMATCHED_FASTQ}"
     printf "skip_cell_fastq\t%s\n" "${SKIP_CELL_FASTQ}"
@@ -289,6 +293,26 @@ cleanup_large_intermediates() {
   rmdir "${ALIGN_DIR}" 2>/dev/null || true
 }
 
+cleanup_all_bam_outputs() {
+  local path
+  local paths=(
+    "${ALIGN_DIR}/${SAMPLE_ID}.aligned.sorted.bam"
+    "${ALIGN_DIR}/${SAMPLE_ID}.aligned.sorted.bam.bai"
+    "${ALIGN_DIR}/${SAMPLE_ID}.filtered.cb_ur.sorted.bam"
+    "${ALIGN_DIR}/${SAMPLE_ID}.filtered.cb_ur.sorted.bam.bai"
+    "${MATRIX_DIR}/${SAMPLE_ID}.filtered.cb_ur.gn.sorted.bam"
+    "${MATRIX_DIR}/${SAMPLE_ID}.filtered.cb_ur.gn.sorted.bam.bai"
+    "${MATRIX_DIR}/${SAMPLE_ID}.filtered.tagged.sorted.bam"
+    "${MATRIX_DIR}/${SAMPLE_ID}.filtered.tagged.sorted.bam.bai"
+    "${QC_DIR}/filtered.sorted.bam"
+    "${QC_DIR}/filtered.sorted.bam.bai"
+  )
+  for path in "${paths[@]}"; do
+    remove_intermediate "${path}"
+  done
+  rmdir "${ALIGN_DIR}" 2>/dev/null || true
+}
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOWNSTREAM_DIR="${SCRIPT_DIR}/scripts"
 
@@ -337,6 +361,7 @@ SKIP_CELL_FASTQ=0
 REVCOMP_WHITELIST=1
 SAVE_MERGE_DEBUG=0
 SAVE_INTERMEDIATE=0
+REMOVE_FINAL_BAM=0
 REQUIRE_PASS_BOTH_ENDS=0
 GENE_ASSIGN_MAPQ=60
 GENE_ASSIGN_CHUNK_SIZE=200000
@@ -401,6 +426,7 @@ while [[ $# -gt 0 ]]; do
     --no-revcomp-whitelist) REVCOMP_WHITELIST=0; shift ;;
     --save-merge-debug) SAVE_MERGE_DEBUG=1; shift ;;
     --save-intermediate) SAVE_INTERMEDIATE=1; shift ;;
+    --remove-final-bam) REMOVE_FINAL_BAM=1; shift ;;
     --require-pass-both-ends) REQUIRE_PASS_BOTH_ENDS=1; shift ;;
     --gene-assign-mapq) GENE_ASSIGN_MAPQ="$2"; shift 2 ;;
     --gene-assign-chunk-size) GENE_ASSIGN_CHUNK_SIZE="$2"; shift 2 ;;
@@ -980,6 +1006,10 @@ if [[ "${LIGHT_OUTPUT}" -eq 1 && "${SAVE_INTERMEDIATE}" -eq 0 ]]; then
   log "Light output: removing reproducible BAM and read-level intermediates"
   cleanup_large_intermediates
 fi
+if [[ "${REMOVE_FINAL_BAM}" -eq 1 ]]; then
+  log "--remove-final-bam: removing all alignment and matrix BAM outputs"
+  cleanup_all_bam_outputs
+fi
 
 log "Pipeline completed successfully."
 SCRIPT_END_TS=$(date +%s)
@@ -993,7 +1023,11 @@ fi
 if [[ "${SKIP_MATCHED_FASTQ}" -eq 0 ]]; then
   echo "  matched reads fastq      : ${MATCHED_READS_FASTQ}"
 fi
-echo "  tagged bam              : ${MATRIX_DIR}/${SAMPLE_ID}.filtered.tagged.sorted.bam"
+if [[ "${REMOVE_FINAL_BAM}" -eq 0 ]]; then
+  echo "  tagged bam              : ${MATRIX_DIR}/${SAMPLE_ID}.filtered.tagged.sorted.bam"
+else
+  echo "  tagged bam              : removed (--remove-final-bam)"
+fi
 echo "  gene expression         : ${MATRIX_DIR}/${SAMPLE_ID}.gene_expression.tsv"
 echo "  RNA cluster table       : ${MATRIX_DIR}/${SAMPLE_ID}.rna_cluster.tsv"
 if [[ "${SKIP_ISOFORM}" -eq 0 ]]; then

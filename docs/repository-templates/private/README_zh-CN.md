@@ -106,6 +106,10 @@ Flora 会删除可重新生成的 read-level 表格、加标签前的 aligned BA
 TSV 和其他大型中间文件。调试时使用 `--save-intermediate`；需要全部上游 FASTQ
 和中间文件时使用 `--full-output`。这些选项不会改变分析结果。
 
+使用 `--remove-final-bam` 可在报告成功后删除全部 alignment/matrix BAM 及索引，
+包括最终 tagged BAM；表达矩阵、QC、`metrics_summary.xlsx` 和 HTML 报告仍会
+保留。
+
 ## 版本更新清单
 
 1. 修改 `Cargo.toml` 中的版本号。

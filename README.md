@@ -116,6 +116,13 @@ pre-tagging files are required. Use `--full-output` when all upstream FASTQ
 outputs and intermediates must be retained. Neither option changes analytical
 thresholds or the final matrices; they only control retained files.
 
+Add `--remove-final-bam` to remove every BAM and BAM index under `alignment/`
+and `matrix/` after matrices, QC, and the report complete successfully. This
+also removes the final tagged BAM, while retaining expression matrices, QC,
+`metrics_summary.xlsx`, and the HTML report. The option can be combined with
+`--save-intermediate` or `--full-output`; non-BAM intermediates still follow
+those options.
+
 ## Version update checklist
 
 1. Update the package version in `Cargo.toml`.

@@ -325,6 +325,10 @@ aligned BAM、read-level assignment CSV 和 assignment TSV；清理后为空的
 `--save-intermediate`；需要保留全部上游 FASTQ 和中间文件时使用
 `--full-output`。这些选项只影响文件保留，不改变分析结果。
 
+不需要交付 BAM 时可添加 `--remove-final-bam`。Flora 会在矩阵、QC 和报告全部
+成功后删除 `alignment/` 与 `matrix/` 下的全部 BAM 及索引，包括最终 tagged
+BAM；表达矩阵、聚类结果、`metrics_summary.xlsx` 和 HTML 报告仍会保留。
+
 ## 问题反馈
 
 请通过 [GitHub Issues](https://github.com/brilliantlee2/Flora/issues) 提交可复现的问题，并附上 Flora 版本、运行命令、操作系统、输入大小、资源申请和相关日志。请勿上传私有 FASTQ/BAM 数据。

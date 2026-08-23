@@ -338,6 +338,12 @@ files, or `--full-output` to retain all upstream FASTQ outputs and
 intermediates. These options affect retained files only, not analytical
 results.
 
+Add `--remove-final-bam` when no BAM deliverable is required. Flora then
+removes every BAM and index under `alignment/` and `matrix/`, including the
+final tagged BAM, only after matrices, QC, and the report finish successfully.
+Expression matrices, clustering results, `metrics_summary.xlsx`, and the HTML
+report are retained.
+
 ## Support
 
 Please report reproducible problems through [GitHub Issues](https://github.com/brilliantlee2/Flora/issues). Include the Flora version, command, operating system, input size, requested resources, and the relevant stage log. Do not upload private FASTQ/BAM data.

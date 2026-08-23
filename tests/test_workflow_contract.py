@@ -816,6 +816,28 @@ class WorkflowTimingContractTest(unittest.TestCase):
         self.assertIn("barcode_correction.write_maps: skipped", pipeline)
         self.assertIn("save_correction_maps: cli.save_merge_debug", main)
 
+    def test_remove_final_bam_is_opt_in_and_runs_only_after_the_report(self):
+        for name, script in self.scripts.items():
+            with self.subTest(script=name):
+                self.assertIn("REMOVE_FINAL_BAM=0", script)
+                self.assertIn(
+                    "--remove-final-bam) REMOVE_FINAL_BAM=1; shift ;;", script
+                )
+                self.assertIn("cleanup_all_bam_outputs()", script)
+                all_bam_cleanup = script.split("cleanup_all_bam_outputs() {", 1)[
+                    1
+                ].split("\n}", 1)[0]
+                for bam in (
+                    "${ALIGN_DIR}/${SAMPLE_ID}.aligned.sorted.bam",
+                    "${MATRIX_DIR}/${SAMPLE_ID}.filtered.cb_ur.gn.sorted.bam",
+                    "${MATRIX_DIR}/${SAMPLE_ID}.filtered.tagged.sorted.bam",
+                ):
+                    self.assertIn(bam, all_bam_cleanup)
+                self.assertLess(
+                    script.index("run_stage build_report"),
+                    script.index('if [[ "${REMOVE_FINAL_BAM}" -eq 1 ]]'),
+                )
+
     def test_direct_expensive_stages_have_named_timing(self):
         expected = (
             "Stage glycine (rust) elapsed:",
