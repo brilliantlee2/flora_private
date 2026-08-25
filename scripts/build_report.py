@@ -1884,7 +1884,7 @@ def main():
                 ("Estimated number of cells", "The number of barcodes identified as real cells in the sequencing data after barcode merging and cell calling."),
                 ("Median UMI counts per cell", "The median number of unique molecular identifiers detected per cell among all identified cells."),
                 ("Median genes per cell", "The median number of unique genes with detectable expression in each cell."),
-                ("Mean reads per cell", "The average number of sequencing reads per cell, calculated by dividing the total reads assigned to cells by the number of identified cells."),
+                ("Mean reads per cell", "The average sequencing depth per identified cell, calculated by dividing raw reads by the estimated number of cells."),
             ]),
         ),
         "summary_cards": pbmc_summary_cards(summary_card_rows),
