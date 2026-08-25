@@ -123,7 +123,12 @@ def metric_rows(sample_id, species, read_qc, metrics, saturation, clean_count):
         ("Median read length(b)", length.get("median"), "decimal", True),
         ("N50(b)", yield_data.get("n50_bp"), "integer", True),
         ("Estimated number of cell", metrics.get("Estimated number of cells"), "integer", False),
-        ("Mean reads per cell", metrics.get("Mean reads per cell"), "decimal", False),
+        (
+            "Mean reads per cell",
+            ratio(raw_reads, metrics.get("Estimated number of cells")),
+            "decimal",
+            False,
+        ),
         ("Mean UMI counts per cell", metrics.get("Mean UMI counts per cell"), "decimal", False),
         ("Median UMI counts per cell", metrics.get("Median UMI counts per cell"), "decimal", False),
         ("Total genes detected", metrics.get("Total genes detected"), "integer", False),
@@ -163,30 +168,34 @@ def cell(reference, value, kind, style):
     return f'<c r="{reference}" s="{style}"><v>{number}</v></c>'
 
 
+def excel_column_name(index):
+    name = ""
+    while index > 0:
+        index, remainder = divmod(index - 1, 26)
+        name = chr(ord("A") + remainder) + name
+    return name
+
+
 def worksheet_xml(rows):
-    xml_rows = [
-        '<row r="1" ht="24" customHeight="1">'
-        + cell("A1", "Metric", "text", 1)
-        + cell("B1", "Value", "text", 1)
-        + "</row>"
-    ]
-    styles = {"text": 2, "integer": 4, "decimal": 5, "percent": 6}
-    for row_number, (label, value, kind, highlight) in enumerate(rows, start=2):
-        label_style = 3 if highlight else 2
-        value_style = 7 if highlight else styles[kind]
-        xml_rows.append(
-            f'<row r="{row_number}">'
-            + cell(f"A{row_number}", label, "text", label_style)
-            + cell(f"B{row_number}", value, kind, value_style)
-            + "</row>"
+    styles = {"text": 2, "integer": 3, "decimal": 4, "percent": 5}
+    header_cells = []
+    value_cells = []
+    column_specs = []
+    for index, (label, value, kind, _highlight) in enumerate(rows, start=1):
+        column = excel_column_name(index)
+        header_cells.append(cell(f"{column}1", label, "text", 1))
+        value_cells.append(cell(f"{column}2", value, kind, styles[kind]))
+        width = min(max(len(label) + 2, 14), 34)
+        column_specs.append(
+            f'<col min="{index}" max="{index}" width="{width}" customWidth="1"/>'
         )
-    last_row = len(rows) + 1
+    last_column = excel_column_name(len(rows))
     return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="{SHEET_NS}">
   <sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
-  <cols><col min="1" max="1" width="38" customWidth="1"/><col min="2" max="2" width="22" customWidth="1"/></cols>
-  <sheetData>{''.join(xml_rows)}</sheetData>
-  <autoFilter ref="A1:B{last_row}"/>
+  <cols>{''.join(column_specs)}</cols>
+  <sheetData><row r="1" ht="30" customHeight="1">{''.join(header_cells)}</row><row r="2">{''.join(value_cells)}</row></sheetData>
+  <autoFilter ref="A1:{last_column}2"/>
 </worksheet>'''
 
 
@@ -216,19 +225,17 @@ def write_xlsx(path, rows):
 </Relationships>''',
         "xl/styles.xml": f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="{SHEET_NS}">
-  <fonts count="3"><font><sz val="11"/><name val="Calibri"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="12"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>
-  <fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF4472C4"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFC000"/><bgColor indexed="64"/></patternFill></fill></fills>
+  <fonts count="2"><font><sz val="11"/><name val="Arial"/></font><font><b/><sz val="11"/><name val="Arial"/></font></fonts>
+  <fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>
   <borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FFD9D9D9"/></left><right style="thin"><color rgb="FFD9D9D9"/></right><top style="thin"><color rgb="FFD9D9D9"/></top><bottom style="thin"><color rgb="FFD9D9D9"/></bottom><diagonal/></border></borders>
   <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-  <cellXfs count="8">
+  <cellXfs count="6">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
-    <xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center"/></xf>
-    <xf numFmtId="0" fontId="2" fillId="0" borderId="1" xfId="0"/>
-    <xf numFmtId="0" fontId="2" fillId="3" borderId="1" xfId="0"/>
-    <xf numFmtId="3" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1"/>
-    <xf numFmtId="4" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1"/>
-    <xf numFmtId="10" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1"/>
-    <xf numFmtId="4" fontId="0" fillId="3" borderId="1" xfId="0" applyNumberFormat="1"/>
+    <xf numFmtId="0" fontId="1" fillId="0" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center"/></xf>
+    <xf numFmtId="3" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyAlignment="1"><alignment horizontal="center"/></xf>
+    <xf numFmtId="4" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyAlignment="1"><alignment horizontal="center"/></xf>
+    <xf numFmtId="10" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyAlignment="1"><alignment horizontal="center"/></xf>
   </cellXfs>
   <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>''',

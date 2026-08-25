@@ -484,11 +484,7 @@ fn write_metrics_files(
 ) -> Result<()> {
     let cell_associated_reads = cell_umi_gene.final_cell_reads.len();
     let aligned_genome_reads = bam.aligned_genome_reads_in_final_cells;
-    let mean_reads_per_cell = if estimated_cells > 0 {
-        cell_associated_reads as f64 / estimated_cells as f64
-    } else {
-        0.0
-    };
+    let mean_reads_per_cell = mean_reads_per_cell_from_raw(raw_fastq_reads, estimated_cells);
 
     let mut reads_per_cell = Vec::with_capacity(cell_umi_gene.per_cell.len());
     let mut umis_per_cell = Vec::with_capacity(cell_umi_gene.per_cell.len());
@@ -893,6 +889,10 @@ fn ratio(numerator: usize, denominator: usize) -> f64 {
     }
 }
 
+fn mean_reads_per_cell_from_raw(raw_fastq_reads: usize, estimated_cells: usize) -> f64 {
+    ratio(raw_fastq_reads, estimated_cells)
+}
+
 fn mean(values: &[f64]) -> f64 {
     if values.is_empty() {
         0.0
@@ -990,6 +990,12 @@ mod tests {
             "12,345"
         );
         assert_eq!(format_float_with_commas(1234.5), "1,234.50");
+    }
+
+    #[test]
+    fn mean_reads_per_cell_uses_raw_reads() {
+        assert_eq!(mean_reads_per_cell_from_raw(1_000, 4), 250.0);
+        assert_eq!(mean_reads_per_cell_from_raw(1_000, 0), 0.0);
     }
 
     #[test]

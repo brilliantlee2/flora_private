@@ -44,6 +44,11 @@ def workbook_rows(path):
     return rows
 
 
+def workbook_styles(path):
+    with zipfile.ZipFile(path) as archive:
+        return archive.read("xl/styles.xml").decode("utf-8")
+
+
 class MetricsSummaryTests(unittest.TestCase):
     def test_writes_requested_metrics_with_glycine_clean_read_definition(self):
         module = load_module()
@@ -116,15 +121,18 @@ class MetricsSummaryTests(unittest.TestCase):
             )
 
             rows = workbook_rows(output)
-            values = {row[0]: row[1] for row in rows[1:]}
+            self.assertEqual(len(rows), 2)
+            values = dict(zip(rows[0], rows[1]))
             self.assertEqual(values["SampleName"], "sample-A")
             self.assertEqual(values["species"], "GRCH38")
             self.assertEqual(values["Mean read quality"], "18.25")
             self.assertEqual(values["N50(b)"], "1500")
+            self.assertEqual(values["Mean reads per cell"], "500.0")
             self.assertEqual(values["Clean reads"], "850")
             self.assertEqual(values["Sequencing saturation"], "0.4")
             self.assertEqual(values["Aligned BAM reads / total reads"], "0.8")
             self.assertEqual(values["Unmapped / total reads"], "0.2")
+            self.assertNotIn('patternType="solid"', workbook_styles(output))
 
     def test_skip_glycine_sets_clean_reads_to_full_length(self):
         module = load_module()
