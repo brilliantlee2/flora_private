@@ -25,9 +25,9 @@ def parse_args():
     parser.add_argument(
         "-q",
         "--mapq",
-        help="Minimum MAPQ to use for transcript assignment [60]",
+        help="Minimum MAPQ to use for transcript assignment [30]",
         type=int,
-        default=60,
+        default=30,
     )
     parser.add_argument(
         "-c",

@@ -47,10 +47,10 @@ Usage:
     [--singlet-threshold 0.9] \
     [--dominance-min 0.8] \
     [--drop-umiA-ratio-gt 0.5] \
-    [--gene-assign-mapq 60] \
+    [--gene-assign-mapq 30] \
     [--gene-assign-chunk-size 200000] \
     [--gene-tagging-backend rust|legacy|validate] \
-    [--transcript-assign-mapq 60] \
+    [--transcript-assign-mapq 30] \
     [--transcript-assign-chunk-size 200000] \
     [--ref-interval 1000] \
     [--cell-gene-max-reads 20000] \
@@ -366,10 +366,10 @@ SAVE_MERGE_DEBUG=0
 SAVE_INTERMEDIATE=0
 REMOVE_FINAL_BAM=0
 REQUIRE_PASS_BOTH_ENDS=0
-GENE_ASSIGN_MAPQ=60
+GENE_ASSIGN_MAPQ=30
 GENE_ASSIGN_CHUNK_SIZE=200000
 GENE_TAGGING_BACKEND="rust"
-TRANSCRIPT_ASSIGN_MAPQ=60
+TRANSCRIPT_ASSIGN_MAPQ=30
 TRANSCRIPT_ASSIGN_CHUNK_SIZE=200000
 REF_INTERVAL=1000
 CELL_GENE_MAX_READS=20000

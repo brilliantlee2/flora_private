@@ -28,9 +28,9 @@ def parse_args():
     parser.add_argument(
         "-q",
         "--mapq",
-        help="Minimum mapping quality to use for feature assignment [60]",
+        help="Minimum mapping quality to use for feature assignment [30]",
         type=int,
-        default=60,
+        default=30,
     )
 
     parser.add_argument(

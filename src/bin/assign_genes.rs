@@ -16,7 +16,7 @@ struct Cli {
     bed: PathBuf,
     gtf: PathBuf,
 
-    #[arg(short = 'q', long = "mapq", default_value_t = 60)]
+    #[arg(short = 'q', long = "mapq", default_value_t = 30)]
     mapq: i32,
 
     #[arg(long = "output", default_value = "./read_annotations.tsv")]
@@ -84,6 +84,12 @@ mod tests {
             .as_nanos();
         path.push(format!("strint_assign_genes_{name}_{nanos}"));
         path
+    }
+
+    #[test]
+    fn default_mapq_is_30() {
+        let cli = Cli::try_parse_from(["assign_genes", "reads.bed", "genes.gtf"]).unwrap();
+        assert_eq!(cli.mapq, 30);
     }
 
     #[test]

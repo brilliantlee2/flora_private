@@ -28,7 +28,7 @@ struct Cli {
     #[arg(long)]
     output: PathBuf,
 
-    #[arg(short = 'q', long = "mapq", default_value_t = 60)]
+    #[arg(short = 'q', long = "mapq", default_value_t = 30)]
     mapq: i32,
 
     #[arg(short = 't', long = "threads", default_value_t = 4)]
@@ -236,6 +236,25 @@ mod tests {
     use rust_htslib::bam::header::HeaderRecord;
     use rust_htslib::bam::record::{Aux, Cigar, CigarString};
     use tempfile::tempdir;
+
+    #[test]
+    fn default_mapq_is_30() {
+        let cli = Cli::try_parse_from([
+            "tag_and_assign_genes",
+            "--bam",
+            "reads.bam",
+            "--tags",
+            "tags.tsv",
+            "--gtf",
+            "genes.gtf",
+            "--gene-assigns",
+            "assigns.tsv",
+            "--output",
+            "output.bam",
+        ])
+        .unwrap();
+        assert_eq!(cli.mapq, 30);
+    }
 
     #[test]
     fn fused_stage_writes_the_same_tags_and_assignment_shape() {
