@@ -51,13 +51,88 @@ pub struct TranscriptAssignment {
     pub transcript_id: String,
 }
 
-pub type GeneIndex = HashMap<String, Vec<GeneInterval>>;
-pub type ExonIndex = HashMap<String, Vec<ExonInterval>>;
+trait IntervalCoordinates {
+    fn start(&self) -> u32;
+    fn end(&self) -> u32;
+}
+
+impl IntervalCoordinates for GeneInterval {
+    fn start(&self) -> u32 {
+        self.start
+    }
+
+    fn end(&self) -> u32 {
+        self.end
+    }
+}
+
+impl IntervalCoordinates for ExonInterval {
+    fn start(&self) -> u32 {
+        self.start
+    }
+
+    fn end(&self) -> u32 {
+        self.end
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct IntervalIndex<T> {
+    intervals: Vec<T>,
+    prefix_max_end: Vec<u32>,
+}
+
+impl<T> IntervalIndex<T> {
+    fn new(mut intervals: Vec<T>) -> Self
+    where
+        T: IntervalCoordinates,
+    {
+        intervals.sort_by_key(IntervalCoordinates::start);
+        let mut max_end = 0;
+        let prefix_max_end = intervals
+            .iter()
+            .map(|interval| {
+                max_end = max_end.max(interval.end());
+                max_end
+            })
+            .collect();
+        Self {
+            intervals,
+            prefix_max_end,
+        }
+    }
+
+    fn candidates(&self, start: u32, end: u32) -> impl Iterator<Item = &T>
+    where
+        T: IntervalCoordinates,
+    {
+        let right = self.intervals.partition_point(|x| x.start() < end);
+        let left = self.prefix_max_end[..right].partition_point(|x| *x <= start);
+        self.intervals[left..right]
+            .iter()
+            .filter(move |x| x.end() > start)
+    }
+}
+
+impl From<Vec<GeneInterval>> for IntervalIndex<GeneInterval> {
+    fn from(intervals: Vec<GeneInterval>) -> Self {
+        Self::new(intervals)
+    }
+}
+
+impl From<Vec<ExonInterval>> for IntervalIndex<ExonInterval> {
+    fn from(intervals: Vec<ExonInterval>) -> Self {
+        Self::new(intervals)
+    }
+}
+
+pub type GeneIndex = HashMap<String, IntervalIndex<GeneInterval>>;
+pub type ExonIndex = HashMap<String, IntervalIndex<ExonInterval>>;
 
 pub fn load_gene_gtf(path: &Path) -> Result<GeneIndex> {
     let file = File::open(path).with_context(|| format!("open {}", path.display()))?;
     let reader = BufReader::new(file);
-    let mut index: GeneIndex = HashMap::default();
+    let mut intervals_by_chrom: HashMap<String, Vec<GeneInterval>> = HashMap::default();
     for line in reader.lines() {
         let line = line?;
         if line.is_empty() || line.starts_with('#') {
@@ -80,7 +155,7 @@ pub fn load_gene_gtf(path: &Path) -> Result<GeneIndex> {
         else {
             continue;
         };
-        index
+        intervals_by_chrom
             .entry(fields.chrom.to_string())
             .or_default()
             .push(GeneInterval {
@@ -90,14 +165,16 @@ pub fn load_gene_gtf(path: &Path) -> Result<GeneIndex> {
                 label,
             });
     }
-    sort_gene_index(&mut index);
-    Ok(index)
+    Ok(intervals_by_chrom
+        .into_iter()
+        .map(|(chrom, intervals)| (chrom, intervals.into()))
+        .collect())
 }
 
 pub fn load_exon_gtf(path: &Path) -> Result<ExonIndex> {
     let file = File::open(path).with_context(|| format!("open {}", path.display()))?;
     let reader = BufReader::new(file);
-    let mut index: ExonIndex = HashMap::default();
+    let mut intervals_by_chrom: HashMap<String, Vec<ExonInterval>> = HashMap::default();
     for line in reader.lines() {
         let line = line?;
         if line.is_empty() || line.starts_with('#') {
@@ -121,7 +198,7 @@ pub fn load_exon_gtf(path: &Path) -> Result<ExonIndex> {
         let gene_label = extract_attr(fields.attrs, "gene_name")
             .or_else(|| extract_attr(fields.attrs, "gene_id"))
             .unwrap_or_else(|| "NA".to_string());
-        index
+        intervals_by_chrom
             .entry(fields.chrom.to_string())
             .or_default()
             .push(ExonInterval {
@@ -132,8 +209,10 @@ pub fn load_exon_gtf(path: &Path) -> Result<ExonIndex> {
                 gene_label,
             });
     }
-    sort_exon_index(&mut index);
-    Ok(index)
+    Ok(intervals_by_chrom
+        .into_iter()
+        .map(|(chrom, intervals)| (chrom, intervals.into()))
+        .collect())
 }
 
 pub fn parse_bed6_line(line: &str) -> Option<BedRecord> {
@@ -402,40 +481,20 @@ fn no_gene_assignment(record: &BedRecord) -> ReadAssignment {
     }
 }
 
-fn sort_gene_index(index: &mut GeneIndex) {
-    for intervals in index.values_mut() {
-        intervals.sort_by_key(|x| x.start);
-    }
-}
-
-fn sort_exon_index(index: &mut ExonIndex) {
-    for intervals in index.values_mut() {
-        intervals.sort_by_key(|x| x.start);
-    }
-}
-
 fn candidate_genes(
-    intervals: &[GeneInterval],
+    intervals: &IntervalIndex<GeneInterval>,
     start: u32,
     end: u32,
 ) -> impl Iterator<Item = &GeneInterval> {
-    let start_idx = intervals.partition_point(|x| x.start < end);
-    intervals[..start_idx]
-        .iter()
-        .rev()
-        .take_while(move |x| x.end > start)
+    intervals.candidates(start, end)
 }
 
 fn candidate_exons(
-    intervals: &[ExonInterval],
+    intervals: &IntervalIndex<ExonInterval>,
     start: u32,
     end: u32,
 ) -> impl Iterator<Item = &ExonInterval> {
-    let start_idx = intervals.partition_point(|x| x.start < end);
-    intervals[..start_idx]
-        .iter()
-        .rev()
-        .take_while(move |x| x.end > start)
+    intervals.candidates(start, end)
 }
 
 #[cfg(test)]
@@ -444,6 +503,13 @@ mod tests {
     use rust_htslib::bam;
     use rust_htslib::bam::header::HeaderRecord;
     use rust_htslib::bam::record::{Cigar, CigarString};
+
+    fn next_random(state: &mut u64) -> u32 {
+        *state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1);
+        (*state >> 32) as u32
+    }
 
     fn bam_header() -> bam::HeaderView {
         let mut header = bam::Header::new();
@@ -545,9 +611,9 @@ mod tests {
                     strand: "+".to_string(),
                     label: "gene_c".to_string(),
                 },
-            ],
+            ]
+            .into(),
         );
-        sort_gene_index(&mut index);
         let row = assign_gene(
             &BedRecord {
                 chrom: "chr1".to_string(),
@@ -582,9 +648,9 @@ mod tests {
                     strand: "+".to_string(),
                     label: "gene_b".to_string(),
                 },
-            ],
+            ]
+            .into(),
         );
-        sort_gene_index(&mut index);
         let row = assign_gene(
             &BedRecord {
                 chrom: "chr1".to_string(),
@@ -611,9 +677,9 @@ mod tests {
                 end: 50,
                 strand: "+".to_string(),
                 label: "gene_a".to_string(),
-            }],
+            }]
+            .into(),
         );
-        sort_gene_index(&mut index);
         let row = assign_gene(
             &BedRecord {
                 chrom: "chr1".to_string(),
@@ -628,6 +694,81 @@ mod tests {
         );
         assert_eq!(row.status, "Unassigned_mapq");
         assert_eq!(row.gene, "NA");
+    }
+
+    #[test]
+    fn assign_gene_finds_outer_gene_past_nonoverlapping_inner_gene() {
+        let mut index = GeneIndex::default();
+        index.insert(
+            "chr1".to_string(),
+            vec![
+                GeneInterval {
+                    start: 10,
+                    end: 1_000,
+                    strand: "+".to_string(),
+                    label: "outer_gene".to_string(),
+                },
+                GeneInterval {
+                    start: 100,
+                    end: 200,
+                    strand: "+".to_string(),
+                    label: "inner_gene".to_string(),
+                },
+            ]
+            .into(),
+        );
+
+        let row = assign_gene(
+            &BedRecord {
+                chrom: "chr1".to_string(),
+                start: 500,
+                end: 600,
+                name: "nested_gene_read".to_string(),
+                score: 60,
+                strand: "+".to_string(),
+            },
+            &index,
+            60,
+        );
+
+        assert_eq!(row.status, "Assigned");
+        assert_eq!(row.gene, "outer_gene");
+    }
+
+    #[test]
+    fn candidate_genes_match_brute_force_for_random_intervals() {
+        let mut state = 0x5eed_1234_u64;
+        let intervals = IntervalIndex::new(
+            (0..256)
+                .map(|idx| {
+                    let start = next_random(&mut state) % 10_000;
+                    let length = 1 + next_random(&mut state) % 2_000;
+                    GeneInterval {
+                        start,
+                        end: start + length,
+                        strand: "+".to_string(),
+                        label: format!("gene_{idx}"),
+                    }
+                })
+                .collect::<Vec<_>>(),
+        );
+
+        for _ in 0..512 {
+            let start = next_random(&mut state) % 10_000;
+            let end = start + 1 + next_random(&mut state) % 500;
+            let mut actual = candidate_genes(&intervals, start, end)
+                .map(|x| x.label.as_str())
+                .collect::<Vec<_>>();
+            let mut expected = intervals
+                .intervals
+                .iter()
+                .filter(|x| x.start < end && x.end > start)
+                .map(|x| x.label.as_str())
+                .collect::<Vec<_>>();
+            actual.sort_unstable();
+            expected.sort_unstable();
+            assert_eq!(actual, expected, "query interval {start}..{end}");
+        }
     }
 
     #[test]
@@ -650,9 +791,9 @@ mod tests {
                     transcript_id: "tx2".to_string(),
                     gene_label: "g1".to_string(),
                 },
-            ],
+            ]
+            .into(),
         );
-        sort_exon_index(&mut index);
         let row = assign_transcript(
             &[BedRecord {
                 chrom: "chr1".to_string(),
@@ -703,9 +844,9 @@ mod tests {
                     transcript_id: "tx2".to_string(),
                     gene_label: "g1".to_string(),
                 },
-            ],
+            ]
+            .into(),
         );
-        sort_exon_index(&mut index);
         let row = assign_transcript(
             &[
                 BedRecord {
@@ -744,9 +885,9 @@ mod tests {
                 strand: "+".to_string(),
                 transcript_id: "tx1".to_string(),
                 gene_label: "g1".to_string(),
-            }],
+            }]
+            .into(),
         );
-        sort_exon_index(&mut index);
         let row = assign_transcript(
             &[BedRecord {
                 chrom: "chr1".to_string(),
@@ -761,5 +902,84 @@ mod tests {
         );
         assert_eq!(row.status, "Unassigned_mapq");
         assert_eq!(row.transcript_id, "NA");
+    }
+
+    #[test]
+    fn assign_transcript_finds_outer_exon_past_nonoverlapping_inner_exon() {
+        let mut index = ExonIndex::default();
+        index.insert(
+            "chr1".to_string(),
+            vec![
+                ExonInterval {
+                    start: 10,
+                    end: 1_000,
+                    strand: "+".to_string(),
+                    transcript_id: "outer_tx".to_string(),
+                    gene_label: "outer_gene".to_string(),
+                },
+                ExonInterval {
+                    start: 100,
+                    end: 200,
+                    strand: "+".to_string(),
+                    transcript_id: "inner_tx".to_string(),
+                    gene_label: "inner_gene".to_string(),
+                },
+            ]
+            .into(),
+        );
+
+        let row = assign_transcript(
+            &[BedRecord {
+                chrom: "chr1".to_string(),
+                start: 500,
+                end: 600,
+                name: "nested_exon_read".to_string(),
+                score: 60,
+                strand: "+".to_string(),
+            }],
+            &index,
+            60,
+        );
+
+        assert_eq!(row.status, "Assigned");
+        assert_eq!(row.gene, "outer_gene");
+        assert_eq!(row.transcript_id, "outer_tx");
+    }
+
+    #[test]
+    fn candidate_exons_match_brute_force_for_random_intervals() {
+        let mut state = 0x5eed_5678_u64;
+        let intervals = IntervalIndex::new(
+            (0..256)
+                .map(|idx| {
+                    let start = next_random(&mut state) % 10_000;
+                    let length = 1 + next_random(&mut state) % 2_000;
+                    ExonInterval {
+                        start,
+                        end: start + length,
+                        strand: "+".to_string(),
+                        transcript_id: format!("tx_{idx}"),
+                        gene_label: format!("gene_{idx}"),
+                    }
+                })
+                .collect::<Vec<_>>(),
+        );
+
+        for _ in 0..512 {
+            let start = next_random(&mut state) % 10_000;
+            let end = start + 1 + next_random(&mut state) % 500;
+            let mut actual = candidate_exons(&intervals, start, end)
+                .map(|x| x.transcript_id.as_str())
+                .collect::<Vec<_>>();
+            let mut expected = intervals
+                .intervals
+                .iter()
+                .filter(|x| x.start < end && x.end > start)
+                .map(|x| x.transcript_id.as_str())
+                .collect::<Vec<_>>();
+            actual.sort_unstable();
+            expected.sort_unstable();
+            assert_eq!(actual, expected, "query interval {start}..{end}");
+        }
     }
 }

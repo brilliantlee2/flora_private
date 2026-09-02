@@ -309,7 +309,7 @@ fn normalize_path_options(args: &mut [OsString]) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_path_options;
+    use super::{normalize_path_options, MIXED_RUNNER, SINGLE_RUNNER};
     use std::ffi::OsString;
     use std::path::PathBuf;
 
@@ -330,5 +330,14 @@ mod tests {
         let mut directory = vec![OsString::from("--fastq-dir"), OsString::from("chunks")];
         normalize_path_options(&mut directory).unwrap();
         assert_eq!(PathBuf::from(&directory[1]), cwd.join("chunks"));
+    }
+
+    #[test]
+    fn embedded_workflows_default_annotation_mapq_to_30() {
+        for runner in [SINGLE_RUNNER, MIXED_RUNNER] {
+            let runner = std::str::from_utf8(runner).unwrap();
+            assert!(runner.contains("GENE_ASSIGN_MAPQ=30"));
+            assert!(runner.contains("TRANSCRIPT_ASSIGN_MAPQ=30"));
+        }
     }
 }
