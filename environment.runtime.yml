@@ -6,8 +6,8 @@ channels:
 dependencies:
   - python>=3.11,<3.12
   - pip
-  - samtools>=1.24,<1.25
-  - minimap2>=2.31,<2.32
+  - samtools>=1.21,<1.22
+  - minimap2>=2.28,<2.29
   - bedtools>=2.31,<2.32
   - pandas>=2.3,<2.4
   - numpy>=2.4,<2.5
