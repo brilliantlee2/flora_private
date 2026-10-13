@@ -1037,11 +1037,8 @@ fn filter_pairs_three_stage(
         .filter(|r| !r.bc5n.is_empty() || !r.bc3n.is_empty())
         .filter(|r| umi_a_ratio(&r.putative_umi) <= drop_umi_a_ratio_gt)
         .collect::<Vec<_>>();
-    let (paired, single) = cleaned
-        .into_iter()
-        .partition::<Vec<_>, _>(|r| !r.bc5n.is_empty() && !r.bc3n.is_empty());
     let (pair_counts, pair_stats, prune_stats) = build_pair_counts(
-        &paired,
+        &cleaned,
         pair_min,
         floor,
         q,
@@ -1053,12 +1050,14 @@ fn filter_pairs_three_stage(
         .iter()
         .map(|p| ordered_pair(&p.bc5n, &p.bc3n))
         .collect();
-    let paired_final = paired
+    let final_reads = cleaned
         .into_iter()
-        .filter(|r| kept_pairs.contains(&ordered_pair(&r.bc5n, &r.bc3n)))
+        .filter(|r| {
+            r.bc5n.is_empty()
+                || r.bc3n.is_empty()
+                || kept_pairs.contains(&ordered_pair(&r.bc5n, &r.bc3n))
+        })
         .collect::<Vec<_>>();
-    let mut final_reads = single;
-    final_reads.extend(paired_final);
     (final_reads, pair_counts, pair_stats, prune_stats)
 }
 
@@ -1931,6 +1930,25 @@ read2,3p,FAILED,,failed,\n"
         assert_eq!(ids, vec!["paired-kept", "single-kept"]);
         assert_eq!(clean[0].bc5n, "TTTTTTTTTTGGGGGGGGGG");
         assert_eq!(clean[0].bc3n, "GGGGGGGGGGTTTTTTTTTT");
+    }
+
+    #[test]
+    fn pair_filter_preserves_input_order_for_interleaved_single_and_paired_reads() {
+        let reads = vec![
+            clean_read("paired-1", "PAIR", "PAIR"),
+            clean_read("single-1", "SINGLE_A", ""),
+            clean_read("paired-2", "PAIR", "PAIR"),
+            clean_read("single-2", "SINGLE_B", ""),
+        ];
+
+        let (filtered, _, _, _) =
+            filter_pairs_three_stage(reads, Some(1), 1, 0.1, 0.1, 0.3, false, 0.5);
+
+        let ids = filtered
+            .iter()
+            .map(|read| read.read_id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(ids, vec!["paired-1", "single-1", "paired-2", "single-2"]);
     }
 
     #[test]
