@@ -79,11 +79,10 @@ Notes:
      BAM tags: CB/CR/UR plus dual-end custom tags C5/C3/U5/U3.
   11. --barcode-extract-mode fixed_seq is the current validated mode. probe is
      reserved for a future Sockeye-style local-alignment extractor and exits clearly.
-  12. Light output is enabled by default. It suppresses unused upstream FASTQs
-     and removes large, reproducible BAM/read-level intermediates only after the
-     complete workflow and report finish successfully.
-  13. Use --full-output to restore all upstream FASTQs. Use --save-intermediate
-     to retain intermediate BAM, read-assignment, and annotation files.
+  12. Light output is enabled by default. Trimmed cDNA reads stream directly to
+      minimap2 without creating alignment/<sample>.cdna.fastq.gz on disk.
+  13. Use --full-output or --save-intermediate to retain the trimmed cDNA FASTQ
+      and other intermediate outputs for debugging.
      Use --remove-final-bam to remove every alignment/matrix BAM and index after
      matrices, QC, barnyard QC, and the report finish successfully.
   14. This mixed-species entrypoint expects a combined reference with prefixed
@@ -159,7 +158,7 @@ write_parameters_tsv() {
     printf "skip_cell_fastq\t%s\n" "${SKIP_CELL_FASTQ}"
     printf "fastq\t%s\n" "${FASTQ}"
     printf "full_length_fastq\t%s\n" "${FULL_LENGTH_FASTQ}"
-    printf "alignment_input\t%s\n" "barcode/UMI-trimmed cDNA FASTQ"
+    printf "alignment_input\t%s\n" "${ALIGNMENT_INPUT_MODE}"
     printf "glycine_outdir\t%s\n" "${GLYCINE_OUTDIR}"
     printf "barcode_list_10bp\t%s\n" "${BARCODE_LIST_10BP}"
     printf "tso_seq\t%s\n" "${TSO_SEQ}"
@@ -263,6 +262,31 @@ remove_intermediate() {
   if [[ -e "${path}" || -L "${path}" ]]; then
     rm -f "${path}"
     log "Removed intermediate: ${path}"
+  fi
+}
+
+run_alignment_pipeline() {
+  local input_fastq="$1"
+  minimap2 -ax splice -uf --MD -t "${THREADS}" -K 10M \
+    --junc-bed "${JUNCTION_BED}" \
+    --cap-kalloc 100m \
+    "${GENE_FASTA}" "${input_fastq}" \
+  | samtools view -uh --no-PG - \
+  | samtools view -uh -F 256 - \
+  | samtools sort --no-PG -@ "${THREADS}" -o "${ALIGNED_BAM}" -
+}
+
+cleanup_alignment_stream() {
+  if [[ "${ALIGNMENT_STREAM_ACTIVE:-0}" -ne 1 ]]; then
+    return
+  fi
+  { exec 9>&-; } 2>/dev/null || true
+  if [[ -n "${ALIGNMENT_STREAM_PID:-}" ]]; then
+    kill "${ALIGNMENT_STREAM_PID}" 2>/dev/null || true
+    wait "${ALIGNMENT_STREAM_PID}" 2>/dev/null || true
+  fi
+  if [[ -n "${ALIGNMENT_FASTQ:-}" && -p "${ALIGNMENT_FASTQ}" ]]; then
+    rm -f "${ALIGNMENT_FASTQ}"
   fi
 }
 
@@ -634,7 +658,34 @@ TAG_LOG="${LOG_DIR}/03_bam_tagging.log"
 GENE_LOG="${LOG_DIR}/04_gene.log"
 ISOFORM_LOG="${LOG_DIR}/05_isoform.log"
 QC_LOG="${LOG_DIR}/06_qc.log"
-ALIGNMENT_FASTQ="${ALIGN_DIR}/${SAMPLE_ID}.cdna.fastq.gz"
+ALIGNED_BAM="${ALIGN_DIR}/${SAMPLE_ID}.aligned.sorted.bam"
+ALIGNMENT_STREAMING=0
+ALIGNMENT_STREAM_ACTIVE=0
+ALIGNMENT_STREAM_PID=""
+ALIGNMENT_STAGE_TS=0
+ALIGNMENT_INPUT_MODE="persisted barcode/UMI-trimmed cDNA FASTQ"
+if [[ "${LIGHT_OUTPUT}" -eq 1 && "${SAVE_INTERMEDIATE}" -eq 0 ]]; then
+  ALIGNMENT_STREAMING=1
+  ALIGNMENT_INPUT_MODE="streamed barcode/UMI-trimmed cDNA FASTQ"
+  ALIGNMENT_FASTQ="${ALIGN_DIR}/${SAMPLE_ID}.cdna.fastq.pipe"
+else
+  ALIGNMENT_FASTQ="${ALIGN_DIR}/${SAMPLE_ID}.cdna.fastq.gz"
+fi
+
+if [[ "${UPSTREAM_ONLY}" -eq 0 && "${ALIGNMENT_STREAMING}" -eq 1 ]]; then
+  rm -f "${ALIGNMENT_FASTQ}"
+  mkfifo "${ALIGNMENT_FASTQ}"
+  exec 9<>"${ALIGNMENT_FASTQ}"
+  ALIGNMENT_STREAM_ACTIVE=1
+  trap cleanup_alignment_stream EXIT
+  ALIGNMENT_STAGE_TS=$(date +%s)
+  log "Streaming trimmed cDNA reads directly to minimap2 (no alignment FASTQ on disk)"
+  (
+    exec 9>&-
+    run_alignment_pipeline "${ALIGNMENT_FASTQ}" 2>&1 | tee "${ALIGN_LOG}"
+  ) &
+  ALIGNMENT_STREAM_PID=$!
+fi
 
 step_start
 log "Step 1/6: Flora barcode/UMI extraction, cDNA trimming, and cell assignment"
@@ -681,6 +732,9 @@ if [[ "${REQUIRE_PASS_BOTH_ENDS}" -eq 1 ]]; then
   MAIN_ARGS+=(--require_pass_both_ends)
 fi
 run_stage flora "${SCRIPT_DIR}/main.py" "${MAIN_ARGS[@]}" 2>&1 | tee "${UPSTREAM_LOG}"
+if [[ "${ALIGNMENT_STREAM_ACTIVE}" -eq 1 ]]; then
+  exec 9>&-
+fi
 KNEE_ARGS=(
   --counts-3p "${UPSTREAM_DIR}/barcode_counts_3p.tsv"
   --counts-5p "${UPSTREAM_DIR}/barcode_counts_5p.tsv"
@@ -729,37 +783,38 @@ if [[ "${UPSTREAM_ONLY}" -eq 1 ]]; then
   exit 0
 fi
 
-require_file "${ALIGNMENT_FASTQ}" "barcode/UMI-trimmed alignment FASTQ"
-
 step_start
 log "Step 2/6: ONT-style minimap2 alignment of barcode/UMI-trimmed cDNA reads"
-pushd "${ALIGN_DIR}" >/dev/null
-
-ALIGNMENT_STAGE_TS=$(date +%s)
-if minimap2 -ax splice -uf --MD -t "${THREADS}" -K 10M \
-  --junc-bed "${JUNCTION_BED}" \
-  --cap-kalloc 100m \
-  "${GENE_FASTA}" "${ALIGNMENT_FASTQ}" \
-| samtools view -uh --no-PG - \
-| samtools view -uh -F 256 - \
-| samtools sort --no-PG -@ "${THREADS}" -o "${SAMPLE_ID}.aligned.sorted.bam" - 2>&1 | tee "${ALIGN_LOG}"; then
-  ALIGNMENT_STAGE_STATUS=0
+if [[ "${ALIGNMENT_STREAMING}" -eq 1 ]]; then
+  if wait "${ALIGNMENT_STREAM_PID}"; then
+    ALIGNMENT_STAGE_STATUS=0
+  else
+    ALIGNMENT_STAGE_STATUS=$?
+  fi
+  ALIGNMENT_STREAM_PID=""
+  rm -f "${ALIGNMENT_FASTQ}"
+  ALIGNMENT_STREAM_ACTIVE=0
+  trap - EXIT
 else
-  ALIGNMENT_STAGE_STATUS=$?
+  require_file "${ALIGNMENT_FASTQ}" "barcode/UMI-trimmed alignment FASTQ"
+  ALIGNMENT_STAGE_TS=$(date +%s)
+  if run_alignment_pipeline "${ALIGNMENT_FASTQ}" 2>&1 | tee "${ALIGN_LOG}"; then
+    ALIGNMENT_STAGE_STATUS=0
+  else
+    ALIGNMENT_STAGE_STATUS=$?
+  fi
 fi
 log "Stage alignment_pipeline (external) elapsed: $(($(date +%s) - ALIGNMENT_STAGE_TS))s" | tee -a "${ALIGN_LOG}"
 if (( ALIGNMENT_STAGE_STATUS != 0 )); then exit "${ALIGNMENT_STAGE_STATUS}"; fi
 
 ALIGNED_INDEX_TS=$(date +%s)
-if samtools index "${SAMPLE_ID}.aligned.sorted.bam" 2>&1 | tee -a "${ALIGN_LOG}"; then
+if samtools index "${ALIGNED_BAM}" 2>&1 | tee -a "${ALIGN_LOG}"; then
   ALIGNED_INDEX_STATUS=0
 else
   ALIGNED_INDEX_STATUS=$?
 fi
 log "Stage aligned_bam_index (external) elapsed: $(($(date +%s) - ALIGNED_INDEX_TS))s" | tee -a "${ALIGN_LOG}"
 if (( ALIGNED_INDEX_STATUS != 0 )); then exit "${ALIGNED_INDEX_STATUS}"; fi
-
-popd >/dev/null
 step_end "Step 2/6"
 
 step_start

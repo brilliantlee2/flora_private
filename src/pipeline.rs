@@ -1,5 +1,5 @@
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -388,7 +388,7 @@ pub fn run_pipeline(config: &PipelineConfig) -> Result<PipelineSummary> {
     println!("[Flora] Step 7/7: optional FASTQ outputs");
     let step_t0 = Instant::now();
     if let Some(path) = &config.alignment_fastq {
-        write_alignment_fastq_gz(
+        write_alignment_fastq(
             &config.fastq_fns,
             config.batch_size,
             path,
@@ -514,7 +514,7 @@ fn write_filtered_fastq_gz(
     Ok(())
 }
 
-fn write_alignment_fastq_gz(
+fn write_alignment_fastq(
     paths: &[PathBuf],
     batch_size: usize,
     path: &Path,
@@ -528,7 +528,50 @@ fn write_alignment_fastq_gz(
         fs::create_dir_all(parent)?;
     }
     let file = File::create(path).with_context(|| format!("write {}", path.display()))?;
-    let mut encoder = GzEncoder::new(file, Compression::default());
+    if path.extension().and_then(|value| value.to_str()) == Some("gz") {
+        let mut encoder = GzEncoder::new(file, Compression::default());
+        write_alignment_fastq_records(
+            paths,
+            batch_size,
+            path,
+            clean_reads,
+            bc_fixed_3p,
+            umi_fixed_3p,
+            bc_fixed_5p,
+            umi_fixed_5p,
+            &mut encoder,
+        )?;
+        encoder.finish()?;
+    } else {
+        let mut writer = BufWriter::new(file);
+        write_alignment_fastq_records(
+            paths,
+            batch_size,
+            path,
+            clean_reads,
+            bc_fixed_3p,
+            umi_fixed_3p,
+            bc_fixed_5p,
+            umi_fixed_5p,
+            &mut writer,
+        )?;
+        writer.flush()?;
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn write_alignment_fastq_records<W: Write>(
+    paths: &[PathBuf],
+    batch_size: usize,
+    path: &Path,
+    clean_reads: &[CleanRead],
+    bc_fixed_3p: &str,
+    umi_fixed_3p: &str,
+    bc_fixed_5p: &str,
+    umi_fixed_5p: &str,
+    writer: &mut W,
+) -> Result<()> {
     let mut target_index = 0usize;
     let mut trim_fallbacks = 0usize;
 
@@ -575,13 +618,11 @@ fn write_alignment_fastq_gz(
                 seq: rec.seq[start..end].to_string(),
                 qual: rec.qual[start..end].to_string(),
             };
-            write_fastq_record(&mut encoder, &trimmed)?;
+            write_fastq_record(&mut *writer, &trimmed)?;
             target_index += 1;
         }
         Ok(())
     })?;
-    encoder.finish()?;
-
     if target_index != clean_reads.len() {
         anyhow::bail!(
             "only matched {target_index} of {} clean reads while writing {}",
@@ -2006,7 +2047,7 @@ r2,UMI3,UMI5,BC_A,,cell_000001\n"
         .unwrap();
         let clean = vec![clean_read("read1", "VALID5", "VALID3")];
 
-        write_alignment_fastq_gz(
+        write_alignment_fastq(
             &[input],
             10,
             &output,
@@ -2023,6 +2064,40 @@ r2,UMI3,UMI5,BC_A,,cell_000001\n"
         assert_eq!(records[0].id, "read1");
         assert_eq!(records[0].seq, cdna);
         assert_eq!(records[0].qual, "I".repeat(cdna.len()));
+    }
+
+    #[test]
+    fn alignment_fastq_is_uncompressed_when_output_does_not_end_in_gz() {
+        let root = tempfile::tempdir().unwrap();
+        let input = root.path().join("reads.fastq");
+        let output = root.path().join("alignment.fastq.pipe");
+        let barcode_5p = "AAAAAAAAAACCTTCCGGGGGGGGGG";
+        let umi_5p = "CAGCATTTTTTTTTT";
+        let cdna = "CGTC".repeat(40);
+        let umi_3p = "CCCCCCCCCCAGATC";
+        let barcode_3p = "TTTTTTTTTTGCTACCAAAAAAAAAA";
+        let sequence = format!("{barcode_5p}{umi_5p}{cdna}{umi_3p}{barcode_3p}");
+        fs::write(
+            &input,
+            format!("@read1\n{sequence}\n+\n{}\n", "I".repeat(sequence.len())),
+        )
+        .unwrap();
+
+        write_alignment_fastq(
+            &[input],
+            10,
+            &output,
+            &[clean_read("read1", "VALID5", "VALID3")],
+            "GCTACC",
+            "AGATC",
+            "CCTTCC",
+            "CAGCA",
+        )
+        .unwrap();
+
+        let bytes = fs::read(&output).unwrap();
+        assert!(bytes.starts_with(b"@read1\n"));
+        assert_eq!(crate::fastq::read_fastq(&output).unwrap()[0].seq, cdna);
     }
 
     #[test]
@@ -2043,7 +2118,7 @@ r2,UMI3,UMI5,BC_A,,cell_000001\n"
         .unwrap();
         let clean = vec![clean_read("read1", "VALID5", "VALID3")];
 
-        write_alignment_fastq_gz(
+        write_alignment_fastq(
             &[input],
             10,
             &output,
