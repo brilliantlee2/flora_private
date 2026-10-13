@@ -530,6 +530,7 @@ fn write_alignment_fastq_gz(
     let file = File::create(path).with_context(|| format!("write {}", path.display()))?;
     let mut encoder = GzEncoder::new(file, Compression::default());
     let mut target_index = 0usize;
+    let mut trim_fallbacks = 0usize;
 
     for_each_fastq_batch(paths, batch_size, |batch| {
         for rec in &batch {
@@ -542,13 +543,33 @@ fn write_alignment_fastq_gz(
 
             let putative =
                 extract_putative(rec, bc_fixed_3p, umi_fixed_3p, bc_fixed_5p, umi_fixed_5p);
-            let (start, end) = cdna_trim_bounds(
+            let bounds = cdna_trim_bounds(
                 &putative,
                 rec.seq.len(),
                 !target.bc3n.is_empty(),
                 !target.bc5n.is_empty(),
-            )
-            .with_context(|| format!("invalid cDNA trim interval for read {}", rec.id))?;
+            );
+            let (start, end) = match bounds {
+                Some(bounds) => bounds,
+                None => {
+                    trim_fallbacks += 1;
+                    if trim_fallbacks <= 5 {
+                        eprintln!(
+                            "[Flora] Warning: conflicting cDNA trim coordinates for read {} \
+                             (length={}, 5p_bc={}, 5p_umi={:?}, 3p_bc={}, 3p_umi={:?}, \
+                             poly_a={:?}); keeping the original sequence",
+                            rec.id,
+                            rec.seq.len(),
+                            putative.bc_fixed_locs_50,
+                            putative.umi_fixed_locs_5p,
+                            putative.bc_fixed_locs,
+                            putative.umi_fixed_locs,
+                            putative.poly_a_starts,
+                        );
+                    }
+                    (0, rec.seq.len())
+                }
+            };
             let trimmed = FastqRecord {
                 id: rec.id.clone(),
                 seq: rec.seq[start..end].to_string(),
@@ -566,6 +587,12 @@ fn write_alignment_fastq_gz(
             "only matched {target_index} of {} clean reads while writing {}",
             clean_reads.len(),
             path.display()
+        );
+    }
+    if trim_fallbacks > 0 {
+        eprintln!(
+            "[Flora] Warning: {trim_fallbacks} clean reads had conflicting terminal coordinates \
+             and were written to the alignment FASTQ without terminal trimming"
         );
     }
     Ok(())
@@ -1978,6 +2005,42 @@ r2,UMI3,UMI5,BC_A,,cell_000001\n"
         assert_eq!(records[0].id, "read1");
         assert_eq!(records[0].seq, cdna);
         assert_eq!(records[0].qual, "I".repeat(cdna.len()));
+    }
+
+    #[test]
+    fn alignment_fastq_keeps_original_read_when_terminal_coordinates_conflict() {
+        let root = tempfile::tempdir().unwrap();
+        let input = root.path().join("reads.fastq");
+        let output = root.path().join("alignment.fastq.gz");
+        let barcode_5p = "AAAAAAAAAACCTTCCGGGGGGGGGG";
+        let umi_5p = "CAGCATTTTTTTTTT";
+        let short_cdna = "ACGTACGTACGT";
+        let umi_3p = "CCCCCCCCCCAGATC";
+        let barcode_3p = "TTTTTTTTTTGCTACCAAAAAAAAAA";
+        let sequence = format!("{barcode_5p}{umi_5p}{short_cdna}{umi_3p}{barcode_3p}");
+        fs::write(
+            &input,
+            format!("@read1\n{sequence}\n+\n{}\n", "I".repeat(sequence.len())),
+        )
+        .unwrap();
+        let clean = vec![clean_read("read1", "VALID5", "VALID3")];
+
+        write_alignment_fastq_gz(
+            &[input],
+            10,
+            &output,
+            &clean,
+            "GCTACC",
+            "AGATC",
+            "CCTTCC",
+            "CAGCA",
+        )
+        .unwrap();
+
+        let records = crate::fastq::read_fastq(&output).unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].seq, sequence);
+        assert_eq!(records[0].qual.len(), sequence.len());
     }
 
     fn clean_read(read_id: &str, bc5n: &str, bc3n: &str) -> CleanRead {
