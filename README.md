@@ -44,7 +44,7 @@ tests/                        Rust/Python/release tests
 docs/repository-templates/    Public/private GitHub documentation
 ```
 
-## Create the private build environment
+## Build environment
 
 ```bash
 export LANG=C.UTF-8
@@ -57,7 +57,31 @@ conda activate flora
 
 The private environment includes Python 3.11, Rust/Cargo, GCC/G++, Clang/libclang, CMake, samtools, minimap2, bedtools, and all Python dependencies.
 
-Verify it before building:
+Before the first Rust build, locate Conda's libclang and export its directory.
+This is required by `bindgen` while compiling `rust-htslib`; it is a build-time
+requirement and is not needed when running a packaged Flora executable.
+
+```bash
+LIBCLANG_SO="$(find "$CONDA_PREFIX/lib" -maxdepth 1 -type f \
+  \( -name 'libclang.so' -o -name 'libclang.so.*' \) -print -quit)"
+test -n "$LIBCLANG_SO" || {
+  echo "libclang was not found; update the environment.yml environment" >&2
+  exit 1
+}
+export LIBCLANG_PATH="$(dirname "$LIBCLANG_SO")"
+echo "LIBCLANG_PATH=$LIBCLANG_PATH"
+```
+
+Run the same export after each new shell activation, or persist it for this
+Conda environment and then reactivate the environment:
+
+```bash
+conda env config vars set LIBCLANG_PATH="$LIBCLANG_PATH"
+conda deactivate
+conda activate flora
+```
+
+Verify the toolchain once before building:
 
 ```bash
 python --version
@@ -66,14 +90,13 @@ cargo --version
 cmake --version
 gcc --version
 clang --version
-find "$CONDA_PREFIX" -name 'libclang.so*' | head
+test -n "$LIBCLANG_PATH"
+ls "$LIBCLANG_PATH"/libclang.so* >/dev/null
 ```
 
-If Bindgen cannot locate libclang:
-
-```bash
-export LIBCLANG_PATH="$(dirname "$(find "$CONDA_PREFIX" -name 'libclang.so*' -print -quit)")"
-```
+Python must report `3.11.x`. If the environment already exists, update it with
+`conda env update -n flora -f environment.yml --prune`, reactivate it, and run
+the libclang setup above again.
 
 ## Development build and tests
 
@@ -155,42 +178,17 @@ Linux
 x86_64
 ```
 
-### 2. Create the complete build environment
+### 2. Prepare the build environment
+
+Create or update the Conda environment and configure `LIBCLANG_PATH` by
+following [Build environment](#build-environment). Then verify the runtime
+tools used by the workflow:
 
 ```bash
-export LANG=C.UTF-8
-export LC_ALL=C.UTF-8
-export PYTHONUTF8=1
-
-conda env create -f environment.yml
-conda activate flora
-```
-
-If the environment already exists, update it from the checked-in definition:
-
-```bash
-conda env update -n flora -f environment.yml --prune
-conda activate flora
-```
-
-Verify the required toolchain:
-
-```bash
-python --version
-rustc --version
-cargo --version
-cmake --version
-gcc --version
-clang --version
 samtools --version | head -n 2
 minimap2 --version
 bedtools --version
-
-export LIBCLANG_PATH="$(dirname "$(find "$CONDA_PREFIX" -name 'libclang.so*' -print -quit)")"
-test -n "$LIBCLANG_PATH"
 ```
-
-Python must report `3.11.x`.
 
 ### 3. Validate the source tree
 

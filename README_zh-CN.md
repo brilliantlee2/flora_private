@@ -42,7 +42,7 @@ tests/                        Rust/Python/发行测试
 docs/repository-templates/    公开/私有 GitHub 文档
 ```
 
-## 创建私有构建环境
+## 构建环境
 
 ```bash
 export LANG=C.UTF-8
@@ -55,7 +55,31 @@ conda activate flora
 
 私有环境包含 Python 3.11、Rust/Cargo、GCC/G++、Clang/libclang、CMake、samtools、minimap2、bedtools 和全部 Python 依赖。
 
-构建前验证：
+第一次编译 Rust 代码前，先查找 Conda 环境中的 libclang 并导出其目录。
+`rust-htslib` 编译期间运行的 `bindgen` 需要该变量；它只属于构建依赖，运行已经
+打包好的 Flora 可执行文件不需要 libclang。
+
+```bash
+LIBCLANG_SO="$(find "$CONDA_PREFIX/lib" -maxdepth 1 -type f \
+  \( -name 'libclang.so' -o -name 'libclang.so.*' \) -print -quit)"
+test -n "$LIBCLANG_SO" || {
+  echo "未找到 libclang，请根据 environment.yml 更新 Conda 环境" >&2
+  exit 1
+}
+export LIBCLANG_PATH="$(dirname "$LIBCLANG_SO")"
+echo "LIBCLANG_PATH=$LIBCLANG_PATH"
+```
+
+每次重新打开终端并激活环境后都可以执行上述 export；也可以将它保存为该 Conda
+环境的变量，然后重新激活环境：
+
+```bash
+conda env config vars set LIBCLANG_PATH="$LIBCLANG_PATH"
+conda deactivate
+conda activate flora
+```
+
+首次构建前统一验证工具链：
 
 ```bash
 python --version
@@ -64,14 +88,13 @@ cargo --version
 cmake --version
 gcc --version
 clang --version
-find "$CONDA_PREFIX" -name 'libclang.so*' | head
+test -n "$LIBCLANG_PATH"
+ls "$LIBCLANG_PATH"/libclang.so* >/dev/null
 ```
 
-如果 Bindgen 找不到 libclang：
-
-```bash
-export LIBCLANG_PATH="$(dirname "$(find "$CONDA_PREFIX" -name 'libclang.so*' -print -quit)")"
-```
+Python 必须显示为 `3.11.x`。如果环境已经存在，先执行
+`conda env update -n flora -f environment.yml --prune`，重新激活环境，然后再次完成
+上面的 libclang 设置。
 
 ## 开发构建与测试
 
@@ -148,42 +171,16 @@ Linux
 x86_64
 ```
 
-### 2. 创建完整构建环境
+### 2. 准备构建环境
+
+按照[构建环境](#构建环境)创建或更新 Conda 环境，并完成 `LIBCLANG_PATH` 配置。
+随后检查流程调用的运行工具：
 
 ```bash
-export LANG=C.UTF-8
-export LC_ALL=C.UTF-8
-export PYTHONUTF8=1
-
-conda env create -f environment.yml
-conda activate flora
-```
-
-如果环境已经存在，根据仓库中的环境文件更新：
-
-```bash
-conda env update -n flora -f environment.yml --prune
-conda activate flora
-```
-
-检查必要工具：
-
-```bash
-python --version
-rustc --version
-cargo --version
-cmake --version
-gcc --version
-clang --version
 samtools --version | head -n 2
 minimap2 --version
 bedtools --version
-
-export LIBCLANG_PATH="$(dirname "$(find "$CONDA_PREFIX" -name 'libclang.so*' -print -quit)")"
-test -n "$LIBCLANG_PATH"
 ```
-
-Python 必须显示为 `3.11.x`。
 
 ### 3. 检查源码与测试
 
