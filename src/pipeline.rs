@@ -14,10 +14,11 @@ use serde::Serialize;
 use zip::ZipArchive;
 
 use crate::barcode::{
-    correct_one_side_indexed, extract_putative, revcomp_upper, reverse_complement, strip_fixed_3p,
-    strip_fixed_5p, umi_a_ratio, BarcodeIndex, CorrectedRead, PutativeRow,
+    cdna_trim_bounds, correct_one_side_indexed, extract_putative, revcomp_upper,
+    reverse_complement, strip_fixed_3p, strip_fixed_5p, umi_a_ratio, BarcodeIndex, CorrectedRead,
+    PutativeRow,
 };
-use crate::fastq::{for_each_fastq_batch, write_fastq_record};
+use crate::fastq::{for_each_fastq_batch, write_fastq_record, FastqRecord};
 use crate::read_qc::ReadQcAccumulator;
 
 #[derive(Clone, Debug)]
@@ -51,6 +52,7 @@ pub struct PipelineConfig {
     pub skip_matched_fastq: bool,
     pub skip_unmatched_fastq: bool,
     pub skip_cell_fastq: bool,
+    pub alignment_fastq: Option<PathBuf>,
     pub save_intermediate: bool,
     pub save_correction_maps: bool,
 }
@@ -382,10 +384,21 @@ pub fn run_pipeline(config: &PipelineConfig) -> Result<PipelineSummary> {
         &barcode_validity_stats,
     )?;
     log_step_elapsed(6, 7, step_t0);
-    drop(clean);
 
     println!("[Flora] Step 7/7: optional FASTQ outputs");
     let step_t0 = Instant::now();
+    if let Some(path) = &config.alignment_fastq {
+        write_alignment_fastq_gz(
+            &config.fastq_fns,
+            config.batch_size,
+            path,
+            &clean,
+            &bc_fixed_3p,
+            &umi_fixed_3p,
+            &bc_fixed_5p,
+            &umi_fixed_5p,
+        )?;
+    }
     let assigned_ids = assignment.assigned_ids.as_ref();
     if !config.skip_matched_fastq {
         write_filtered_fastq_gz(
@@ -414,6 +427,7 @@ pub fn run_pipeline(config: &PipelineConfig) -> Result<PipelineSummary> {
             true,
         )?;
     }
+    drop(clean);
     log_step_elapsed(7, 7, step_t0);
 
     Ok(PipelineSummary {
@@ -497,6 +511,63 @@ fn write_filtered_fastq_gz(
         Ok(())
     })?;
     encoder.finish()?;
+    Ok(())
+}
+
+fn write_alignment_fastq_gz(
+    paths: &[PathBuf],
+    batch_size: usize,
+    path: &Path,
+    clean_reads: &[CleanRead],
+    bc_fixed_3p: &str,
+    umi_fixed_3p: &str,
+    bc_fixed_5p: &str,
+    umi_fixed_5p: &str,
+) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let file = File::create(path).with_context(|| format!("write {}", path.display()))?;
+    let mut encoder = GzEncoder::new(file, Compression::default());
+    let mut target_index = 0usize;
+
+    for_each_fastq_batch(paths, batch_size, |batch| {
+        for rec in &batch {
+            let Some(target) = clean_reads.get(target_index) else {
+                break;
+            };
+            if rec.id != target.read_id {
+                continue;
+            }
+
+            let putative =
+                extract_putative(rec, bc_fixed_3p, umi_fixed_3p, bc_fixed_5p, umi_fixed_5p);
+            let (start, end) = cdna_trim_bounds(
+                &putative,
+                rec.seq.len(),
+                !target.bc3n.is_empty(),
+                !target.bc5n.is_empty(),
+            )
+            .with_context(|| format!("invalid cDNA trim interval for read {}", rec.id))?;
+            let trimmed = FastqRecord {
+                id: rec.id.clone(),
+                seq: rec.seq[start..end].to_string(),
+                qual: rec.qual[start..end].to_string(),
+            };
+            write_fastq_record(&mut encoder, &trimmed)?;
+            target_index += 1;
+        }
+        Ok(())
+    })?;
+    encoder.finish()?;
+
+    if target_index != clean_reads.len() {
+        anyhow::bail!(
+            "only matched {target_index} of {} clean reads while writing {}",
+            clean_reads.len(),
+            path.display()
+        );
+    }
     Ok(())
 }
 
@@ -1870,6 +1941,43 @@ read2,3p,FAILED,,failed,\n"
 r1,UMI3,UMI5,BC_A,,cell_000001\n\
 r2,UMI3,UMI5,BC_A,,cell_000001\n"
         );
+    }
+
+    #[test]
+    fn alignment_fastq_preserves_id_and_trims_sequence_and_quality_together() {
+        let root = tempfile::tempdir().unwrap();
+        let input = root.path().join("reads.fastq");
+        let output = root.path().join("alignment.fastq.gz");
+        let barcode_5p = "AAAAAAAAAACCTTCCGGGGGGGGGG";
+        let umi_5p = "CAGCATTTTTTTTTT";
+        let cdna = "CGTC".repeat(40);
+        let umi_3p = "CCCCCCCCCCAGATC";
+        let barcode_3p = "TTTTTTTTTTGCTACCAAAAAAAAAA";
+        let sequence = format!("{barcode_5p}{umi_5p}{cdna}{umi_3p}{barcode_3p}");
+        fs::write(
+            &input,
+            format!("@read1\n{sequence}\n+\n{}\n", "I".repeat(sequence.len())),
+        )
+        .unwrap();
+        let clean = vec![clean_read("read1", "VALID5", "VALID3")];
+
+        write_alignment_fastq_gz(
+            &[input],
+            10,
+            &output,
+            &clean,
+            "GCTACC",
+            "AGATC",
+            "CCTTCC",
+            "CAGCA",
+        )
+        .unwrap();
+
+        let records = crate::fastq::read_fastq(&output).unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].id, "read1");
+        assert_eq!(records[0].seq, cdna);
+        assert_eq!(records[0].qual, "I".repeat(cdna.len()));
     }
 
     fn clean_read(read_id: &str, bc5n: &str, bc3n: &str) -> CleanRead {

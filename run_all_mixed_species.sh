@@ -159,6 +159,7 @@ write_parameters_tsv() {
     printf "skip_cell_fastq\t%s\n" "${SKIP_CELL_FASTQ}"
     printf "fastq\t%s\n" "${FASTQ}"
     printf "full_length_fastq\t%s\n" "${FULL_LENGTH_FASTQ}"
+    printf "alignment_input\t%s\n" "barcode/UMI-trimmed cDNA FASTQ"
     printf "glycine_outdir\t%s\n" "${GLYCINE_OUTDIR}"
     printf "barcode_list_10bp\t%s\n" "${BARCODE_LIST_10BP}"
     printf "tso_seq\t%s\n" "${TSO_SEQ}"
@@ -268,6 +269,7 @@ remove_intermediate() {
 cleanup_large_intermediates() {
   local path
   local paths=(
+    "${ALIGN_DIR}/${SAMPLE_ID}.cdna.fastq.gz"
     "${ALIGN_DIR}/${SAMPLE_ID}.aligned.sorted.bam"
     "${ALIGN_DIR}/${SAMPLE_ID}.aligned.sorted.bam.bai"
     "${ALIGN_DIR}/${SAMPLE_ID}.filtered.cb_ur.sorted.bam"
@@ -632,39 +634,10 @@ TAG_LOG="${LOG_DIR}/03_bam_tagging.log"
 GENE_LOG="${LOG_DIR}/04_gene.log"
 ISOFORM_LOG="${LOG_DIR}/05_isoform.log"
 QC_LOG="${LOG_DIR}/06_qc.log"
+ALIGNMENT_FASTQ="${ALIGN_DIR}/${SAMPLE_ID}.cdna.fastq.gz"
 
 step_start
-log "Step 1/6: alignment-first minimap2 reference alignment"
-pushd "${ALIGN_DIR}" >/dev/null
-
-ALIGNMENT_STAGE_TS=$(date +%s)
-if minimap2 -ax splice -uf --MD -t "${THREADS}" \
-  --junc-bed "${JUNCTION_BED}" \
-  --secondary=no \
-  "${GENE_FASTA}" "${FULL_LENGTH_FASTQ}" \
-| samtools view --no-PG -b -t "${CHROM_SIZES}" - \
-| samtools sort --no-PG -@ "${THREADS}" -o "${SAMPLE_ID}.aligned.sorted.bam" - 2>&1 | tee "${ALIGN_LOG}"; then
-  ALIGNMENT_STAGE_STATUS=0
-else
-  ALIGNMENT_STAGE_STATUS=$?
-fi
-log "Stage alignment_pipeline (external) elapsed: $(($(date +%s) - ALIGNMENT_STAGE_TS))s" | tee -a "${ALIGN_LOG}"
-if (( ALIGNMENT_STAGE_STATUS != 0 )); then exit "${ALIGNMENT_STAGE_STATUS}"; fi
-
-ALIGNED_INDEX_TS=$(date +%s)
-if samtools index "${SAMPLE_ID}.aligned.sorted.bam" 2>&1 | tee -a "${ALIGN_LOG}"; then
-  ALIGNED_INDEX_STATUS=0
-else
-  ALIGNED_INDEX_STATUS=$?
-fi
-log "Stage aligned_bam_index (external) elapsed: $(($(date +%s) - ALIGNED_INDEX_TS))s" | tee -a "${ALIGN_LOG}"
-if (( ALIGNED_INDEX_STATUS != 0 )); then exit "${ALIGNED_INDEX_STATUS}"; fi
-
-popd >/dev/null
-step_end "Step 1/6"
-
-step_start
-log "Step 2/6: Flora dual-end barcode split, correction, merge, and cell assignment"
+log "Step 1/6: Flora barcode/UMI extraction, cDNA trimming, and cell assignment"
 MAIN_ARGS=(
   "${FULL_LENGTH_FASTQ}"
   --full-bc-whitelist-3p "${WHITELIST_3P}"
@@ -684,6 +657,9 @@ MAIN_ARGS=(
   --dominance_min "${DOMINANCE_MIN}"
   --drop_umiA_ratio_gt "${DROP_UMIA_RATIO_GT}"
 )
+if [[ "${UPSTREAM_ONLY}" -eq 0 ]]; then
+  MAIN_ARGS+=(--alignment-fastq "${ALIGNMENT_FASTQ}")
+fi
 if [[ -n "${PAIR_MIN}" ]]; then
   MAIN_ARGS+=(--PAIR_MIN "${PAIR_MIN}")
 fi
@@ -718,7 +694,7 @@ if [[ "${REVCOMP_WHITELIST}" -eq 0 ]]; then
   KNEE_ARGS+=(--no-revcomp-whitelist)
 fi
 python3 "$(python_asset "${DOWNSTREAM_DIR}/generate_knee_plots.py")" "${KNEE_ARGS[@]}" 2>&1 | tee -a "${UPSTREAM_LOG}"
-step_end "Step 2/6"
+step_end "Step 1/6"
 
 READ_ASSIGNED_CELL="${UPSTREAM_DIR}/read_assigned_cell.csv"
 BARCODE_VALIDITY_SUMMARY="${UPSTREAM_DIR}/barcode_validity_summary.tsv"
@@ -752,6 +728,39 @@ if [[ "${UPSTREAM_ONLY}" -eq 1 ]]; then
   fi
   exit 0
 fi
+
+require_file "${ALIGNMENT_FASTQ}" "barcode/UMI-trimmed alignment FASTQ"
+
+step_start
+log "Step 2/6: ONT-style minimap2 alignment of barcode/UMI-trimmed cDNA reads"
+pushd "${ALIGN_DIR}" >/dev/null
+
+ALIGNMENT_STAGE_TS=$(date +%s)
+if minimap2 -ax splice -uf --MD -t "${THREADS}" -K 10M \
+  --junc-bed "${JUNCTION_BED}" \
+  --cap-kalloc 100m \
+  "${GENE_FASTA}" "${ALIGNMENT_FASTQ}" \
+| samtools view -uh --no-PG - \
+| samtools view -uh -F 256 - \
+| samtools sort --no-PG -@ "${THREADS}" -o "${SAMPLE_ID}.aligned.sorted.bam" - 2>&1 | tee "${ALIGN_LOG}"; then
+  ALIGNMENT_STAGE_STATUS=0
+else
+  ALIGNMENT_STAGE_STATUS=$?
+fi
+log "Stage alignment_pipeline (external) elapsed: $(($(date +%s) - ALIGNMENT_STAGE_TS))s" | tee -a "${ALIGN_LOG}"
+if (( ALIGNMENT_STAGE_STATUS != 0 )); then exit "${ALIGNMENT_STAGE_STATUS}"; fi
+
+ALIGNED_INDEX_TS=$(date +%s)
+if samtools index "${SAMPLE_ID}.aligned.sorted.bam" 2>&1 | tee -a "${ALIGN_LOG}"; then
+  ALIGNED_INDEX_STATUS=0
+else
+  ALIGNED_INDEX_STATUS=$?
+fi
+log "Stage aligned_bam_index (external) elapsed: $(($(date +%s) - ALIGNED_INDEX_TS))s" | tee -a "${ALIGN_LOG}"
+if (( ALIGNED_INDEX_STATUS != 0 )); then exit "${ALIGNED_INDEX_STATUS}"; fi
+
+popd >/dev/null
+step_end "Step 2/6"
 
 step_start
 log "Step 3/6: Sockeye-style dual-end barcode/UMI tags on aligned BAM"
