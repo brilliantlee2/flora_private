@@ -50,10 +50,12 @@ Usage:
     [--gene-assign-mapq 30] \
     [--gene-assign-chunk-size 200000] \
     [--gene-tagging-backend rust|legacy|validate] \
+    [--feature-backend ont|legacy] \
+    [--stringtie-opts '-c 2'] \
     [--transcript-assign-mapq 30] \
     [--transcript-assign-chunk-size 200000] \
     [--ref-interval 1000] \
-    [--cell-gene-max-reads 20000] \
+    [--cell-gene-max-reads 0] \
     [--save-merge-debug] \
     [--save-intermediate] \
     [--remove-final-bam] \
@@ -87,12 +89,19 @@ Notes:
      matrices, QC, barnyard QC, and the report finish successfully.
   14. This mixed-species entrypoint expects a combined reference with prefixed
       contigs/IDs/names, for example hs_chr1 and mm_chr1.
-  15. --skip-isoform skips transcript assignment and isoform matrix generation.
+  15. --skip-isoform skips isoform matrices (and legacy transcript assignment).
       Gene-level expression, barnyard QC, RNA QC, and the HTML report still run.
   16. Advanced knobs are available for assignment and memory control:
       --gene-assign-mapq, --gene-assign-chunk-size,
       --transcript-assign-mapq, --transcript-assign-chunk-size,
       --ref-interval, and --cell-gene-max-reads.
+  17. --feature-backend ont (default) uses wf-single-cell v3.3.0-style sample
+      transcriptome assembly and joint gene/transcript assignment. Requires
+      stringtie, gffread and gffcompare. legacy uses the original GTF overlap.
+      --gene-assign-mapq gates genes; --transcript-assign-mapq is legacy-only.
+      ONT defaults to no per-cell/gene read cap (0); legacy defaults to 20000.
+      ONT 3.3.0 was withdrawn upstream. This comparison backend pins historical
+      source d46f92121c79c28a02105cf2444029e91dc4b609 and StringTie 2.2.2.
 EOF
 }
 
@@ -194,6 +203,15 @@ write_parameters_tsv() {
     printf "gene_assign_mapq\t%s\n" "${GENE_ASSIGN_MAPQ}"
     printf "gene_assign_chunk_size\t%s\n" "${GENE_ASSIGN_CHUNK_SIZE}"
     printf "gene_tagging_backend\t%s\n" "${GENE_TAGGING_BACKEND}"
+    printf "feature_backend\t%s\n" "${FEATURE_BACKEND}"
+    if [[ "${FEATURE_BACKEND}" == "ont" ]]; then
+      printf "feature_reference\twf-single-cell v3.3.0\n"
+      printf "feature_reference_commit\td46f92121c79c28a02105cf2444029e91dc4b609\n"
+      printf "feature_reference_withdrawn\ttrue\n"
+    else
+      printf "feature_reference\tFlora GTF-overlap\n"
+    fi
+    printf "stringtie_opts\t%s\n" "${STRINGTIE_OPTS}"
     printf "transcript_assign_mapq\t%s\n" "${TRANSCRIPT_ASSIGN_MAPQ}"
     printf "transcript_assign_chunk_size\t%s\n" "${TRANSCRIPT_ASSIGN_CHUNK_SIZE}"
     printf "ref_interval\t%s\n" "${REF_INTERVAL}"
@@ -267,7 +285,7 @@ remove_intermediate() {
 
 run_alignment_pipeline() {
   local input_fastq="$1"
-  minimap2 -ax splice -uf --MD -t "${THREADS}" -K 10M \
+  minimap2 -ax splice -uf --MD -I 16G -t "${THREADS}" -K 10M \
     --junc-bed "${JUNCTION_BED}" \
     --cap-kalloc 100m \
     "${GENE_FASTA}" "${input_fastq}" \
@@ -395,10 +413,13 @@ REQUIRE_PASS_BOTH_ENDS=0
 GENE_ASSIGN_MAPQ=30
 GENE_ASSIGN_CHUNK_SIZE=200000
 GENE_TAGGING_BACKEND="rust"
+FEATURE_BACKEND="ont"
+STRINGTIE_OPTS="-c 2"
 TRANSCRIPT_ASSIGN_MAPQ=30
 TRANSCRIPT_ASSIGN_CHUNK_SIZE=200000
 REF_INTERVAL=1000
 CELL_GENE_MAX_READS=20000
+CELL_GENE_MAX_READS_EXPLICIT=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -461,10 +482,13 @@ while [[ $# -gt 0 ]]; do
     --gene-assign-mapq) GENE_ASSIGN_MAPQ="$2"; shift 2 ;;
     --gene-assign-chunk-size) GENE_ASSIGN_CHUNK_SIZE="$2"; shift 2 ;;
     --gene-tagging-backend) GENE_TAGGING_BACKEND="$2"; shift 2 ;;
+    --feature-backend) FEATURE_BACKEND="$2"; shift 2 ;;
+    --stringtie-opts) STRINGTIE_OPTS="$2"; shift 2 ;;
+    --stringtie-opts=*) STRINGTIE_OPTS="${1#*=}"; shift ;;
     --transcript-assign-mapq) TRANSCRIPT_ASSIGN_MAPQ="$2"; shift 2 ;;
     --transcript-assign-chunk-size) TRANSCRIPT_ASSIGN_CHUNK_SIZE="$2"; shift 2 ;;
     --ref-interval) REF_INTERVAL="$2"; shift 2 ;;
-    --cell-gene-max-reads) CELL_GENE_MAX_READS="$2"; shift 2 ;;
+    --cell-gene-max-reads) CELL_GENE_MAX_READS="$2"; CELL_GENE_MAX_READS_EXPLICIT=1; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *)
       echo "[ERROR] Unknown argument: $1" >&2
@@ -473,6 +497,14 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ "${FEATURE_BACKEND}" != "ont" && "${FEATURE_BACKEND}" != "legacy" ]]; then
+  echo "[ERROR] --feature-backend must be ont or legacy." >&2
+  exit 1
+fi
+if [[ "${FEATURE_BACKEND}" == "ont" && "${CELL_GENE_MAX_READS_EXPLICIT}" -eq 0 ]]; then
+  CELL_GENE_MAX_READS=0
+fi
 
 if [[ "${GENE_TAGGING_BACKEND}" != "rust" && "${GENE_TAGGING_BACKEND}" != "legacy" && "${GENE_TAGGING_BACKEND}" != "validate" ]]; then
   echo "[ERROR] --gene-tagging-backend must be rust, legacy, or validate." >&2
@@ -562,8 +594,19 @@ fi
 require_cmd python3
 require_cmd samtools
 require_cmd minimap2
-if [[ "${GENE_TAGGING_BACKEND}" != "rust" || "${SKIP_ISOFORM}" -eq 0 ]]; then
+if [[ "${FEATURE_BACKEND}" == "legacy" && ( "${GENE_TAGGING_BACKEND}" != "rust" || "${SKIP_ISOFORM}" -eq 0 ) ]]; then
   require_cmd bedtools
+fi
+if [[ "${FEATURE_BACKEND}" == "ont" && "${UPSTREAM_ONLY}" -eq 0 ]]; then
+  require_cmd stringtie
+  require_cmd gffread
+  require_cmd gffcompare
+  if [[ "$(stringtie --version)" != "2.2.2" ]]; then
+    echo "[ERROR] ONT 3.3.0 comparison requires StringTie 2.2.2; update environment.yml." >&2
+    exit 1
+  fi
+  python_asset "${DOWNSTREAM_DIR}/ont_features.py" >/dev/null
+  python_asset "${DOWNSTREAM_DIR}/ont_matrices.py" >/dev/null
 fi
 require_file "${WHITELIST_3P}" "3p whitelist"
 require_file "${WHITELIST_5P}" "5p whitelist"
@@ -825,13 +868,14 @@ run_stage prepare_read_tags "${DOWNSTREAM_DIR}/prepare_read_tags.py" \
   --input "${READ_ASSIGNED_CELL}" \
   --output "${SAMPLE_ID}.read_tags.tsv" 2>&1 | tee "${TAG_LOG}"
 
-if [[ "${GENE_TAGGING_BACKEND}" != "rust" ]]; then
+if [[ "${FEATURE_BACKEND}" == "ont" || "${GENE_TAGGING_BACKEND}" != "rust" ]]; then
   run_stage add_cb_ur_tags "${DOWNSTREAM_DIR}/add_cb_ur_tags.py" \
     --bam "${SAMPLE_ID}.aligned.sorted.bam" \
     --tags "${SAMPLE_ID}.read_tags.tsv" \
     --output "${SAMPLE_ID}.filtered.cb_ur.sorted.bam" \
     --threads "${CLUSTER_THREADS}" 2>&1 | tee -a "${TAG_LOG}"
 
+  if [[ "${FEATURE_BACKEND}" == "legacy" ]]; then
   BAMTOBED_TS=$(date +%s)
   if bedtools bamtobed -i "${SAMPLE_ID}.filtered.cb_ur.sorted.bam" > "${SAMPLE_ID}.filtered.cb_ur.bed"; then
     BAMTOBED_STATUS=0
@@ -840,6 +884,7 @@ if [[ "${GENE_TAGGING_BACKEND}" != "rust" ]]; then
   fi
   log "Stage bamtobed (external) elapsed: $(($(date +%s) - BAMTOBED_TS))s" | tee -a "${TAG_LOG}"
   if (( BAMTOBED_STATUS != 0 )); then exit "${BAMTOBED_STATUS}"; fi
+  fi
 else
   log "Fused Rust gene tagging selected; intermediate CB/UR BAM and BED are skipped" | tee -a "${TAG_LOG}"
 fi
@@ -848,9 +893,25 @@ popd >/dev/null
 step_end "Step 3/6"
 
 step_start
-log "Step 4/6: Sockeye-style gene tagging, directional UMI clustering, and matrix generation"
+log "Step 4/6: ${FEATURE_BACKEND} feature assignment, directional UMI clustering, and matrix generation"
 pushd "${MATRIX_DIR}" >/dev/null
 
+if [[ "${FEATURE_BACKEND}" == "ont" ]]; then
+  ONT_ARGS=()
+  if [[ "${SAVE_INTERMEDIATE}" -eq 1 || "${LIGHT_OUTPUT}" -eq 0 ]]; then
+    ONT_ARGS+=(--save-intermediate)
+  fi
+  python3 "$(python_asset "${DOWNSTREAM_DIR}/ont_features.py")" \
+    --bam "${ALIGN_DIR}/${SAMPLE_ID}.aligned.sorted.bam" \
+    --tagged-bam "${ALIGN_DIR}/${SAMPLE_ID}.filtered.cb_ur.sorted.bam" \
+    --genome "${GENE_FASTA}" --gtf "${ISOFORM_GTF}" \
+    --output-dir "${OUT_DIR}/transcriptome" --sample "${SAMPLE_ID}" \
+    --output-bam "${SAMPLE_ID}.filtered.cb_ur.gn.sorted.bam" \
+    --gene-assigns "${SAMPLE_ID}.filtered.read_gene_assigns.tsv" \
+    --transcript-assigns "${SAMPLE_ID}.read_transcript_assigns.tsv" \
+    --mapq "${GENE_ASSIGN_MAPQ}" --threads "${CLUSTER_THREADS}" \
+    --stringtie-opts="${STRINGTIE_OPTS}" "${ONT_ARGS[@]}" 2>&1 | tee "${GENE_LOG}"
+else
 if [[ "${GENE_TAGGING_BACKEND}" != "rust" ]]; then
   run_stage assign_genes "${DOWNSTREAM_DIR}/assign_genes.py" \
     --output "${SAMPLE_ID}.filtered.read_gene_assigns.tsv" \
@@ -904,6 +965,7 @@ if [[ "${GENE_TAGGING_BACKEND}" == "validate" ]]; then
   rmdir "${VALIDATE_DIR}"
   log "Gene-tag validation passed: assignments and SAM records are identical" | tee -a "${GENE_LOG}"
 fi
+fi
 
 run_stage cluster_umis_allbam "${DOWNSTREAM_DIR}/cluster_umis_allbam.py" \
   --output "${SAMPLE_ID}.filtered.tagged.sorted.bam" \
@@ -939,12 +1001,16 @@ else
   log "Step 5/6: transcript assignment and isoform matrix generation"
   pushd "${MATRIX_DIR}" >/dev/null
 
-  run_stage assign_transcripts "${DOWNSTREAM_DIR}/assign_transcripts.py" \
+  if [[ "${FEATURE_BACKEND}" == "legacy" ]]; then
+    run_stage assign_transcripts "${DOWNSTREAM_DIR}/assign_transcripts.py" \
     --output "${SAMPLE_ID}.read_transcript_assigns.tsv" \
     --mapq "${TRANSCRIPT_ASSIGN_MAPQ}" \
     --chunk_size "${TRANSCRIPT_ASSIGN_CHUNK_SIZE}" \
     "${SAMPLE_ID}.filtered.tagged.sorted.bam" \
     "${ISOFORM_GTF}" 2>&1 | tee "${ISOFORM_LOG}"
+  else
+    log "Reusing ONT joint transcript assignments from Step 4/6" | tee "${ISOFORM_LOG}"
+  fi
 
   run_stage isoform_expression "${DOWNSTREAM_DIR}/isoform_expression.py" \
     --output "${SAMPLE_ID}.isoform_expression.tsv" \
@@ -954,6 +1020,17 @@ else
   popd >/dev/null
 fi
 step_end "Step 5/6"
+
+if [[ "${FEATURE_BACKEND}" == "ont" ]]; then
+  ONT_MATRIX_ARGS=()
+  if [[ "${SKIP_ISOFORM}" -eq 0 ]]; then
+    ONT_MATRIX_ARGS+=(--transcript-tsv "${MATRIX_DIR}/${SAMPLE_ID}.isoform_expression.tsv")
+  fi
+  python3 "$(python_asset "${DOWNSTREAM_DIR}/ont_matrices.py")" \
+    --gene-tsv "${MATRIX_DIR}/${SAMPLE_ID}.gene_expression.tsv" \
+    --output-dir "${MATRIX_DIR}" --sample "${SAMPLE_ID}" \
+    "${ONT_MATRIX_ARGS[@]}" 2>&1 | tee -a "${ISOFORM_LOG}"
+fi
 
 step_start
 log "Step 6/6: RNA QC and saturation analysis"

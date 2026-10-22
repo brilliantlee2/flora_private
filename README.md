@@ -55,7 +55,7 @@ conda env create -f environment.yml
 conda activate flora
 ```
 
-The private environment includes Python 3.11, Rust/Cargo, GCC/G++, Clang/libclang, CMake, samtools, minimap2, bedtools, and all Python dependencies.
+The private environment includes Python 3.11, Rust/Cargo, GCC/G++, Clang/libclang, CMake, samtools, minimap2, bedtools, StringTie2, gffread, gffcompare, and all Python dependencies.
 
 Before the first Rust build, locate Conda's libclang and export its directory.
 This is required by `bindgen` while compiling `rust-htslib`; it is a build-time
@@ -125,6 +125,60 @@ Before producing a single-binary public release, `flora run --help` and
 stops when either command is unavailable.
 
 ## Workflow output policy
+
+This branch defaults to `--feature-backend ont`, using the feature assignment
+rules from a historical [wf-single-cell 3.3.0 source snapshot](https://github.com/epi2me-labs/wf-single-cell/tree/d46f92121c79c28a02105cf2444029e91dc4b609).
+ONT withdrew that release for critical issues and its tag is unavailable.
+This comparison branch fixes the source commit above and StringTie 2.2.2;
+it does not claim to recover the deleted release tag. The existing 3.3.4
+comparison branch is separate. Core mapping/feature-selection rules are the
+same between the inspected 3.3.0 snapshot and 3.3.4, so changing the version
+alone does not imply higher gene/transcript assignment rates.
+Use a separate environment when comparing with the 3.3.4 branch:
+
+```bash
+conda env create -n flora-ont330 -f environment.yml
+conda activate flora-ont330
+stringtie --version
+gffread --version
+gffcompare --version
+PYTHON_BIN="$CONDA_PREFIX/bin/python" bash packaging/build_binary_release.sh
+```
+
+If it already exists, use `conda env update -n flora-ont330 -f environment.yml`.
+
+The backend builds a guided sample transcriptome per chromosome, remaps reads
+to that transcriptome, then selects gene/transcript labels by alignment score
+and coverage. Genomic MAPQ >=30 gates genes; transcript labels use separate
+transcriptome evidence. Novel assembled transcripts are exported but only
+reference-linked transcripts are counted, following the ONT assignment model.
+Glycine, dual-end barcode/UMI extraction and Flora cell assignment are retained.
+This is an independent implementation, not an execution of ONT Nextflow; exact
+ONT numerical equivalence is not promised. See [implementation details](docs/ont-v3.3.0-alignment.md).
+In particular, Flora does not apply the old ONT 10x-specific fixed UMI-length
+filter or recreate Visium HD/reporting bugs. Its UMI representation, QC,
+saturation, and report retain Flora's definitions.
+
+Use the usual Flora command for the new backend. Add `--feature-backend legacy`
+to compare with the previous GTF-overlap backend, using a different output
+directory. `--transcript-assign-mapq` and `--gene-tagging-backend` select behavior
+only in legacy mode. `--skip-isoform` skips transcript matrices, while assembly
+still runs for ONT gene assignment. `--stringtie-opts '-c 2'` changes assembly
+options. ONT mode defaults to no per-cell/gene read truncation;
+`--cell-gene-max-reads 0` means unlimited.
+
+New outputs include `transcriptome/<sample>.transcriptome.fa.gz` and
+`.transcriptome.gtf.gz`, actual `tool_versions.json`, and
+`assignment_summary.json`. Original TSV matrices remain available. Gene and
+transcript raw/processed MEX directories are also written under `matrix/`.
+Raw MEX values are integer UMI counts; processed values are
+`log10(1 + normalized_count)`, with target 10,000 counts/cell, minimum 200
+features/cell and 3 cells/feature, and maximum 20% mitochondrial counts.
+Both `MT-` and `mt-` identifiers are recognized for human/mouse compatibility.
+The HTML report continues to describe Flora's original cell calls, not the
+additional processed-MEX cell filtering. Processing details are recorded in
+`<sample>.matrix_processing.json`. Large temporary transcriptome alignment BAMs
+are retained only with `--save-intermediate` or `--full-output`.
 
 The default light-output mode retains the final tagged BAM and index, gene and
 isoform expression matrices, cell/barcode mapping, RNA clustering results, QC
