@@ -53,7 +53,7 @@ conda env create -f environment.yml
 conda activate flora
 ```
 
-私有环境包含 Python 3.11、Rust/Cargo、GCC/G++、Clang/libclang、CMake、samtools、minimap2、bedtools 和全部 Python 依赖。
+私有环境包含 Python 3.11、Rust/Cargo、GCC/G++、Clang/libclang、CMake、samtools、minimap2、bedtools、StringTie2、gffread、gffcompare 和全部 Python 依赖。
 
 第一次编译 Rust 代码前，先查找 Conda 环境中的 libclang 并导出其目录。
 `rust-htslib` 编译期间运行的 `bindgen` 需要该变量；它只属于构建依赖，运行已经
@@ -122,6 +122,43 @@ bash run_all.sh -h
 `flora run-mixed --help` 也必须成功。如果任意命令不可用，打包脚本会主动停止。
 
 ## 流程输出策略
+
+本分支默认使用 `--feature-backend ont`，参考
+[wf-single-cell v3.3.4](https://github.com/epi2me-labs/wf-single-cell/releases/tag/v3.3.4)
+的特征分配逻辑。旧环境需要更新后重新构建：
+
+```bash
+conda env update -n flora -f environment.yml
+conda activate flora
+stringtie --version
+gffread --version
+gffcompare --version
+PYTHON_BIN="$CONDA_PREFIX/bin/python" bash packaging/build_binary_release.sh
+```
+
+新后端按染色体构建参考引导的样本转录组，把 reads 重新比对到转录组，随后根据
+比对分数和覆盖度联合确定 gene/transcript。Gene 仍要求基因组 MAPQ ≥30；
+transcript 使用独立的转录组比对证据。新发现的转录本保留在重构文件中，但与 ONT
+的分配模型一致，表达矩阵只统计能关联到参考注释的特征。
+Glycine、双端 barcode/UMI 提取和 Flora 细胞分配继续沿用。这里是 Flora 的独立
+实现，不是直接执行 ONT Nextflow，不能承诺与 ONT 的数值完全相同。
+
+常用命令不需要添加新参数。比较旧版时添加 `--feature-backend legacy`，并指定另一个
+输出目录。`--transcript-assign-mapq` 和 `--gene-tagging-backend` 只影响 legacy；
+`--skip-isoform` 跳过转录本矩阵，但 ONT 的 gene 判定仍需要转录组重构。
+`--stringtie-opts '-c 2'` 可调整重构参数。ONT 模式默认不按每个 cell+gene 的
+read 数量截断，`--cell-gene-max-reads 0` 表示不设上限。
+
+新增输出包括 `transcriptome/<sample>.transcriptome.fa.gz`、
+`.transcriptome.gtf.gz`、记录实际工具版本的 `tool_versions.json` 和分配原因汇总
+`assignment_summary.json`。原有 TSV 矩阵继续输出；`matrix/` 还增加 gene/transcript
+两个层级的 raw/processed MEX 矩阵。Raw 是整数 UMI 计数；processed 经过每细胞至少
+200 个特征、每特征至少 3 个细胞、线粒体比例不超过 20% 的过滤，再按每细胞
+10,000 计数归一化并执行 `log10(1+x)`。同时识别 `MT-` 和 `mt-`，兼容人和小鼠。
+HTML 报告仍描述 Flora 原始细胞判定，processed MEX 的额外过滤不会反向改变报告
+细胞数。处理详情写入 `<sample>.matrix_processing.json`。
+大体积的转录组临时比对 BAM 仅在 `--save-intermediate` 或 `--full-output` 时保留。
+完整设计与差异见 [实现说明](docs/ont-v3.3.4-alignment.md)。
 
 默认轻量输出模式会保留最终带标签的 BAM 及其索引、基因和转录本表达矩阵、
 cell/barcode 对应关系、RNA 聚类结果、QC 表格、`qc/metrics_summary.xlsx`、
