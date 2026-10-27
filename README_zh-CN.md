@@ -3,189 +3,62 @@
 
 # Flora 私有开发仓库
 
-本仓库保存 Flora 的私有源码、测试、打包工具和发行文档。不要将本仓库镜像或推送到公开的 `brilliantlee2/Flora` 仓库。
-
-公开仓库只保留用户文档，编译后的压缩包通过 GitHub Releases 发布。
+本仓库保存 Flora 私有源码、测试和打包工具，必须保持 private。
+公开仓库 `brilliantlee2/Flora` 保存用户文档，二进制压缩包通过 GitHub Releases 发布。
 
 ## 克隆私有仓库
-
-你必须具有私有仓库 `brilliantlee2/flora_private` 的访问权限。使用 HTTPS 克隆：
 
 ```bash
 git clone https://github.com/brilliantlee2/flora_private.git
 cd flora_private
 ```
 
-或者在 GitHub 账户中添加 SSH key 后使用 SSH：
-
-```bash
-git clone git@github.com:brilliantlee2/flora_private.git
-cd flora_private
-```
-
-由于这是私有仓库，GitHub 可能要求浏览器授权、personal access token 或已授权的
-SSH key。修改过的 crate 已保存在 `vendor/` 中，不需要再执行 Git submodule 命令。
-
-## 源码目录
-
-```text
-Cargo.toml / Cargo.lock       Rust 包和锁定依赖
-src/                          Flora 与内置 Glycine Rust 源码
-vendor/                       修改过的 rust-htslib 和 edlib_rs
-scripts/                      Python 分析、QC、作图和报告源码
-run_all.sh                    私有单物种回归基准
-run_all_mixed_species.sh      私有 mixed-species 回归基准
-environment.yml               私有构建与测试环境
-environment.runtime.yml       公开二进制运行环境
-packaging/                    发行打包工具
-tests/                        Rust/Python/发行测试
-docs/repository-templates/    公开/私有 GitHub 文档
-```
+需要私有仓库访问权限，使用 GitHub Token 或已授权的 SSH key。
+SSH 地址为 `git@github.com:brilliantlee2/flora_private.git`。
+修改过的依赖已包含在 `vendor/` 中，不需要配置 submodule。
 
 ## 构建环境
 
+在 Linux x86_64 的仓库根目录执行：
+
 ```bash
+conda env create -f environment.yml
+conda activate flora
+
 export LANG=C.UTF-8
 export LC_ALL=C.UTF-8
 export PYTHONUTF8=1
-
-conda env create -f environment.yml
-conda activate flora
 ```
 
-私有环境包含 Python 3.11、Rust/Cargo、GCC/G++、Clang/libclang、CMake、samtools、minimap2、bedtools 和全部 Python 依赖。
+已有环境时，用 `conda env update -n flora -f environment.yml` 代替创建命令，
+然后重新激活。必须使用 Python 3.11.x。
+`environment.yml` 包含构建工具和运行依赖；`environment.runtime.yml` 用于
+已打包的可执行文件；`requirements.txt` 只列出 Python 包。
 
-第一次编译 Rust 代码前，先查找 Conda 环境中的 libclang 并导出其目录。
-`rust-htslib` 编译期间运行的 `bindgen` 需要该变量；它只属于构建依赖，运行已经
-打包好的 Flora 可执行文件不需要 libclang。
+编译前为 `rust-htslib`/`bindgen` 设置 libclang 路径。
+这仅是构建依赖，运行已打包的 Flora 不需要单独设置。
 
 ```bash
-LIBCLANG_SO="$(find "$CONDA_PREFIX/lib" -maxdepth 1 -type f \
+LIBCLANG_SO="$(find -L "$CONDA_PREFIX/lib" -maxdepth 1 -type f \
   \( -name 'libclang.so' -o -name 'libclang.so.*' \) -print -quit)"
-test -n "$LIBCLANG_SO" || {
-  echo "未找到 libclang，请根据 environment.yml 更新 Conda 环境" >&2
-  exit 1
-}
-export LIBCLANG_PATH="$(dirname "$LIBCLANG_SO")"
-echo "LIBCLANG_PATH=$LIBCLANG_PATH"
+if [[ -n "$LIBCLANG_SO" ]]; then
+  export LIBCLANG_PATH="$(dirname "$LIBCLANG_SO")"
+  echo "LIBCLANG_PATH=$LIBCLANG_PATH"
+else
+  unset LIBCLANG_PATH
+  echo "未找到 libclang，请更新 Conda 环境后再编译。" >&2
+fi
 ```
 
-每次重新打开终端并激活环境后都可以执行上述 export；也可以将它保存为该 Conda
-环境的变量，然后重新激活环境：
-
-```bash
-conda env config vars set LIBCLANG_PATH="$LIBCLANG_PATH"
-conda deactivate
-conda activate flora
-```
-
-首次构建前统一验证工具链：
-
-```bash
-python --version
-rustc --version
-cargo --version
-cmake --version
-gcc --version
-clang --version
-test -n "$LIBCLANG_PATH"
-ls "$LIBCLANG_PATH"/libclang.so* >/dev/null
-```
-
-Python 必须显示为 `3.11.x`。如果环境已经存在，先执行
-`conda env update -n flora -f environment.yml --prune`，重新激活环境，然后再次完成
-上面的 libclang 设置。
+找不到时，执行 `conda install -c conda-forge libclang`，然后重新查找；成功后再编译。
+上述示例不会退出当前 SSH 会话。新开终端后需重新设置，也可在查找成功后执行
+`conda env config vars set LIBCLANG_PATH="$LIBCLANG_PATH"`，再重新激活 `flora`。
 
 ## 开发构建与测试
 
-```bash
-cargo build --release --locked
-cargo test --locked
-bash -n run_all.sh run_all_mixed_species.sh packaging/build_binary_release.sh
-python -m unittest discover -s tests -v
-```
-
-验证 CLI：
+每个准备发版的源码版本执行一次以下检查即可：
 
 ```bash
-./target/release/flora --version
-./target/release/flora glycine --help
-./target/release/flora analyze --help
-bash run_all.sh -h
-```
-
-全流程支持在一个 `--fastq` 后传入多个路径，也支持非递归的
-`--fastq-dir`。并行 Glycine 默认为10个并发任务共享64个总线程；修改后应通过
-`flora --help` 检查这些选项。
-
-生成单二进制公开发行包前，`flora run --help` 和
-`flora run-mixed --help` 也必须成功。如果任意命令不可用，打包脚本会主动停止。
-
-## 流程输出策略
-
-默认轻量输出模式会保留最终带标签的 BAM 及其索引、基因和转录本表达矩阵、
-cell/barcode 对应关系、RNA 聚类结果、QC 表格、`qc/metrics_summary.xlsx`、
-日志和自包含 HTML 报告。报告成功生成后，Flora 会删除可重新生成的 read-level
-表格、加标签前的 aligned BAM、assignment TSV 和其他大型中间文件；如果清理后
-`alignment/` 为空，该目录也会被移除。
-
-调试或需要 read-level assignment、加标签前文件时请添加
-`--save-intermediate`；需要保留全部上游 FASTQ 和中间文件时请使用
-`--full-output`。这两个选项只控制文件保留，不改变分析阈值和最终矩阵结果。
-
-添加 `--remove-final-bam` 后，Flora 会在矩阵、QC 和报告全部成功生成后，删除
-`alignment/` 与 `matrix/` 下的全部 BAM 和 BAM 索引，其中也包括最终 tagged
-BAM；表达矩阵、QC、`metrics_summary.xlsx` 和 HTML 报告仍会保留。该参数可与
-`--save-intermediate` 或 `--full-output` 组合，非 BAM 中间文件仍遵循后两者的
-设置。
-
-## 版本更新清单
-
-1. 修改 `Cargo.toml` 中的版本号。
-2. 执行 `cargo check` 或 `cargo build --release` 更新 `Cargo.lock`。
-3. 更新公开 README 模板中的版本号和下载链接。
-4. 添加 `docs/repository-templates/public/RELEASE_NOTES_vX.Y.Z.md`。
-5. 打包前运行全部测试。
-
-Flora 使用语义化版本，例如 `0.1.0`、`0.1.1` 和 `0.2.0`。
-
-## 构建 Linux x86_64 发行包
-
-请在 Linux x86_64 上构建，最好使用目标 HPC。不要在 macOS 上构建 Linux
-压缩包。下面是从新克隆仓库开始的完整流程。
-
-### 1. 进入仓库并检查主机
-
-```bash
-cd /path/to/flora_private
-
-uname -s
-uname -m
-ldd --version | head -n 1
-```
-
-预期：
-
-```text
-Linux
-x86_64
-```
-
-### 2. 准备构建环境
-
-按照[构建环境](#构建环境)创建或更新 Conda 环境，并完成 `LIBCLANG_PATH` 配置。
-随后检查流程调用的运行工具：
-
-```bash
-samtools --version | head -n 2
-minimap2 --version
-bedtools --version
-```
-
-### 3. 检查源码与测试
-
-```bash
-cargo metadata --locked --no-deps --format-version 1 >/dev/null
 cargo test --locked
 bash -n run_all.sh
 bash -n run_all_mixed_species.sh
@@ -194,213 +67,105 @@ bash -n packaging/refresh_binary_release_metadata.sh
 python -m unittest discover -s tests -v
 ```
 
-如果只需要开发构建：
+每条命令均成功后再继续。`bash -n` 需要逐个检查脚本，不能在后面列出多个路径
+来检查所有文件。这些测试不能代替代表性数据的全流程验证。
+
+只生成开发用可执行文件、不打包时：
 
 ```bash
 cargo build --release --locked
 ./target/release/flora --version
+./target/release/flora --help
+./target/release/flora mixed --help
 ./target/release/flora glycine --help
 ./target/release/flora analyze --help
 ```
 
-### 4. 构建并打包公开二进制发行包
+`flora` 运行单物种全流程，`flora mixed` 运行混合物种全流程；
+`flora glycine` 只做全长识别，`flora analyze` 只做 barcode/UMI 提取与细胞分配。
+全流程支持 `--fastq` 后输入多个文件，或用 `--fastq-dir` 非递归读取目录。
+Glycine 默认 10 个并发任务，共享 64 个总线程。
 
-打包脚本会自行执行锁定版本的 release 构建，因此这里不需要先单独执行
-`cargo build`：
+## 构建 Linux x86_64 发行包
+
+完成环境准备和上述测试后执行：
 
 ```bash
 PYTHON_BIN="$CONDA_PREFIX/bin/python" \
   bash packaging/build_binary_release.sh
 ```
 
-如果需要强制指定最高 glibc 需求：
+打包脚本会自行执行锁定依赖的 release 编译，无需先单独执行 `cargo build`。
+它会检查 Linux x86_64 可执行文件和 CLI，复制运行环境与公开文档，
+并自动生成、验证 SHA256。Python 资源嵌入在 `flora` 内，不以独立源码或字节码文件分发。
 
-```bash
-FLORA_MAX_GLIBC=2.34 \
-PYTHON_BIN="$CONDA_PREFIX/bin/python" \
-  bash packaging/build_binary_release.sh
-```
-
-不要将 glibc 上限设置得低于构建主机和链接库所需的版本。检测到的需求会记录在
-`BUILD_INFO.txt` 中。
-
-### 5. 查看输出文件
+输出如下，版本号自动读取 `Cargo.toml`：
 
 ```text
+dist/Flora-<version>-linux-x86_64/
 dist/Flora-<version>-linux-x86_64.tar.gz
 dist/Flora-<version>-linux-x86_64.tar.gz.sha256
 ```
 
-脚本只构建 `flora`，将其放在压缩包根目录，将白名单中的 Python 脚本编译为确定性
-CPython 3.11 字节码，复制运行环境和公开文档，清理扩展属性，并自动生成与验证 SHA256。
+发行包内的 `BUILD_INFO.txt` 记录所需 glibc 版本。请在兼容的 Linux 主机上构建，
+此脚本不能在 macOS 上生成 Linux 发行包。可选前缀 `FLORA_MAX_GLIBC=2.34`
+会拒绝依赖更高版本符号的构建，但不会降低二进制的 glibc 要求。
+较旧系统需使用兼容的构建环境或 [Singularity](docs/singularity-build_zh-CN.md)。
 
-只有 `flora run --help` 和 `flora run-mixed --help` 都成功时才允许打包。在迁移尚未完成的
-阶段，这个失败是预期行为，用于防止发布不完整的二进制包。
-
-## 构建 Singularity 镜像
-
-当目标 HPC 的宿主机 glibc 低于 Flora 二进制所需版本时，可以把发行包及其
-Python/生信依赖封装到 Singularity SIF 中。已经验证的基础系统为 Ubuntu 22.04
-（glibc 2.35）。构建机需要 Linux x86_64、Singularity 和可用的 `--fakeroot`；
-只有准备基础镜像时需要 Docker。构建 SIF 不需要激活 Flora Conda 环境。
-
-先创建独立构建目录并复制输入文件：
+发布前，将压缩包解压到新目录，激活运行环境，独立检查：
 
 ```bash
-mkdir -p singularity_build
-cp dist/Flora-0.1.2-linux-x86_64.tar.gz singularity_build/
-cp packaging/singularity/Flora.def singularity_build/
-cd singularity_build
-```
-
-验证并导出 Ubuntu 22.04 基础镜像：
-
-```bash
-docker run --rm quay.io/nf-core/ubuntu:22.04 \
-  bash -c 'cat /etc/os-release; getconf GNU_LIBC_VERSION'
-
-docker save quay.io/nf-core/ubuntu:22.04 \
-  -o flora-base-ubuntu22.04.tar
-
-singularity build --fakeroot \
-  flora-base-ubuntu22.04.sif \
-  docker-archive://flora-base-ubuntu22.04.tar
-```
-
-如果 Singularity 无权访问 `/var/run/docker.sock`，不要修改 socket 为全局可写；
-使用 `docker save` 加 `docker-archive://` 的方式，或请管理员配置 Docker 用户组。
-
-从国内镜像下载一次 Miniforge 安装器：
-
-```bash
-curl -L --fail --retry 5 --retry-delay 5 \
-  -o Miniforge3-Linux-x86_64.sh \
-  https://mirror.nju.edu.cn/github-release/conda-forge/miniforge/LatestRelease/Miniforge3-Linux-x86_64.sh
-```
-
-四个构建输入应当位于同一目录：
-
-```text
-Flora.def
-Flora-0.1.2-linux-x86_64.tar.gz
-Miniforge3-Linux-x86_64.sh
-flora-base-ubuntu22.04.sif
-```
-
-构建并验证 SIF：
-
-```bash
-env -u LD_LIBRARY_PATH \
-singularity build --fakeroot \
-  Flora-0.1.2-linux-x86_64.sif \
-  Flora.def
-
-singularity run --cleanenv \
-  Flora-0.1.2-linux-x86_64.sif \
-  --version
-
-singularity run --cleanenv \
-  Flora-0.1.2-linux-x86_64.sif \
-  --help
-
-sha256sum Flora-0.1.2-linux-x86_64.sif \
-  > Flora-0.1.2-linux-x86_64.sif.sha256
-```
-
-实测镜像包含 Flora、Python 3.11、samtools、minimap2、bedtools 和完整 Python
-依赖，大小约为 820 MiB。`Flora.def` 使用每个用户独立的 `/tmp` 缓存目录，避免
-只读 SIF 中的 Fontconfig、Matplotlib 和 Numba 缓存警告。
-
-## 检查发行包
-
-```bash
-ARCHIVE="dist/Flora-0.1.2-linux-x86_64.tar.gz"
-
-tar -tzf "$ARCHIVE" | head -50
-tar -tzf "$ARCHIVE" | \
-  grep -E '(^|/)(src|vendor|tests)/|Cargo\.(toml|lock)$|run_all|\.(rs|py|sh)$' && {
-    echo "ERROR: source file found in public archive" >&2
-    exit 1
-  } || true
-```
-
-独立解压测试：
-
-```bash
-rm -rf /tmp/flora-release-test
-mkdir -p /tmp/flora-release-test
-tar -xzf "$ARCHIVE" -C /tmp/flora-release-test
-cd /tmp/flora-release-test/Flora-0.1.2-linux-x86_64
-
-file flora
-ldd flora
 ./flora --version
+./flora --help
+./flora mixed --help
 ./flora glycine --help
-./flora run --help
-./flora run-mixed --help
-cat PYTHON_ABI.txt
+./flora analyze --help
 cat BUILD_INFO.txt
 ```
 
-`file flora` 应显示 ELF x86-64 可执行文件且包含 `stripped`。如果显示
-`not stripped`，不要发布该压缩包。
+发版前还应运行代表性数据；帮助命令只能验证 CLI，不能证明分析结果正确。
+压缩包应当只有 `flora` 一个可执行文件，不包含私有源码。
 
-可执行文件数量必须正好为1：
+## 流程输出策略
 
-```bash
-find . -type f -perm /111 -print
-```
+默认轻量输出保留最终 tagged BAM/索引、表达矩阵、cell/barcode 对应关系、
+RNA 聚类、QC、`qc/metrics_summary.xlsx`、日志和 HTML 报告。
+成功结束后删除可重建的 read-level 表、加标签前的 aligned BAM、assignment TSV；
+如果 `alignment/` 变空，也会移除该目录。
 
-唯一结果应当是 `./flora`。
+| 选项 | 作用 |
+| --- | --- |
+| `--save-intermediate` | 保留 read-level assignment 等调试中间文件。 |
+| `--full-output` | 保留上游 FASTQ 输出和流程中间文件。 |
+| `--remove-final-bam` | 成功分析后删除 `alignment/` 与 `matrix/` 下全部 BAM/索引，包括最终 tagged BAM。 |
 
-## 生成 SHA256
+这些参数控制文件保留，不改变分析阈值。BAM 删除选项与保留选项同时使用时，
+仍会删除 BAM。全流程不会开启 Glycine 其他分类 FASTQ 的输出；需要这些文件时，
+单独运行 `flora glycine` 并添加 `--keep-all-outputs`。
 
-Linux：
+## 发布新版本
 
-```bash
-cd /path/to/Flora
-sha256sum dist/Flora-0.1.2-linux-x86_64.tar.gz \
-  > dist/Flora-0.1.2-linux-x86_64.tar.gz.sha256
-```
+1. 修改 `Cargo.toml`，然后执行不带 `--locked` 的 `cargo check`，
+   更新 `Cargo.lock` 中 Flora 自身的版本号。
+2. 同步更新公开文档中的版本、release notes 和 `packaging/singularity/Flora.def`。
+3. 按上述步骤测试、打包，并验证发行包。
+4. 将 `docs/repository-templates/public/` 中审核后的文件同步到公开仓库。
+   `.tar.gz` 和 `.sha256` 作为 Release 附件上传；SIF 和校验文件为可选附件。
 
-验证：
+Tag 与标题使用同一版本，例如 `v0.1.2` 和 `Flora v0.1.2`。
+不要将压缩包、SIF、Docker tar、Miniforge 安装器或 `dist/` 提交到 Git。
+不要向公开仓库复制私有的 `src/`、`scripts/`、`vendor/`、Cargo 文件、测试和打包代码。
+编译后的可执行文件并非加密，仍可能被逆向。
 
-```bash
-cd dist
-sha256sum -c Flora-0.1.2-linux-x86_64.tar.gz.sha256
-```
+## 源码目录
 
-## 发布到公开 GitHub 仓库
+| 路径 | 用途 |
+| --- | --- |
+| `src/`、`vendor/`、`Cargo.toml`、`Cargo.lock` | Rust 源码与锁定依赖。 |
+| `scripts/` | Python 分析、QC 与报告资源。 |
+| `run_all.sh`、`run_all_mixed_species.sh` | 单物种与混合物种流程脚本。 |
+| `tests/` | 回归与发行检查。 |
+| `packaging/` | 二进制与容器打包工具。 |
+| `docs/repository-templates/` | 公开/私有仓库文档模板。 |
 
-从私有仓库更新公开 README：
-
-```bash
-cp docs/repository-templates/public/README.md /path/to/Flora-public/README.md
-cp docs/repository-templates/public/README_zh-CN.md /path/to/Flora-public/README_zh-CN.md
-```
-
-只提交公开文档。`.tar.gz` 和 `.sha256` 通过 GitHub Release 附件上传，不要提交进 Git 历史。
-
-使用 GitHub CLI：
-
-```bash
-gh release create v0.1.2 \
-  dist/Flora-0.1.2-linux-x86_64.tar.gz \
-  dist/Flora-0.1.2-linux-x86_64.tar.gz.sha256 \
-  --repo brilliantlee2/Flora \
-  --title "Flora v0.1.2" \
-  --generate-notes
-```
-
-Git 历史中只提交 README、`Flora.def`、许可和 release notes。二进制压缩包及
-`.sha256` 应作为 GitHub Release 附件上传。SIF 及其校验文件可以作为可选 Release
-附件；如果仅让用户自行构建，则不必上传 SIF。不要提交基础 SIF、Docker tar、
-Miniforge 安装器、`dist/` 或任何私有源码到公开仓库。
-
-## 保密规则
-
-- 私有开发仓库必须保持 private。
-- 不要向公开仓库推送 `src/`、`scripts/`、`vendor/`、Cargo manifest、测试或打包代码。
-- 每次上传前都要检查压缩包。
-- Python 字节码是混淆，不是加密，仍可能被逆向。
-- 二进制与平台相关，不同操作系统和架构需要分别发布。
+容器详细步骤：[构建 Singularity 镜像](docs/singularity-build_zh-CN.md)。
