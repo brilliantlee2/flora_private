@@ -78,7 +78,19 @@ class ExternalSmokeTests(unittest.TestCase):
             (args.output_dir / "reference.fa").symlink_to(root / "missing-old-genome.fa")
             args.save_intermediate = True
             mod.run(args)
+            serial_genes = args.gene_assigns.read_bytes()
+            serial_txs = args.transcript_assigns.read_bytes()
+            with pysam.AlignmentFile(args.output_bam) as handle:
+                serial_records = [r.to_string() for r in handle]
+            args.jobs = 2
+            args.threads = 16
+            args.temp_dir = root / "local_scratch"
             mod.run(args)
+            self.assertEqual(args.gene_assigns.read_bytes(), serial_genes)
+            self.assertEqual(args.transcript_assigns.read_bytes(), serial_txs)
+            with pysam.AlignmentFile(args.output_bam) as handle:
+                self.assertEqual([r.to_string() for r in handle], serial_records)
+            self.assertFalse(list(args.temp_dir.iterdir()))
             saved = list((args.output_dir / "intermediates").glob("ont-work-*/chrom_00000/reference.gtf"))
             self.assertEqual(len(saved), 2)
             stage_dir = os.environ.get("FLORA_TEST_BIN_DIR")

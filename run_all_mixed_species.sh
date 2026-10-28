@@ -51,6 +51,8 @@ Usage:
     [--gene-assign-chunk-size 200000] \
     [--gene-tagging-backend rust|legacy|validate] \
     [--feature-backend ont|legacy] \
+    [--ont-jobs 1] \
+    [--ont-temp-dir /path/to/local_scratch] \
     [--stringtie-opts '-c 2'] \
     [--transcript-assign-mapq 30] \
     [--transcript-assign-chunk-size 200000] \
@@ -212,6 +214,8 @@ write_parameters_tsv() {
       printf "feature_reference\tFlora GTF-overlap\n"
     fi
     printf "stringtie_opts\t%s\n" "${STRINGTIE_OPTS}"
+    printf "ont_jobs\t%s\n" "${ONT_JOBS}"
+    printf "ont_temp_dir\t%s\n" "${ONT_TEMP_DIR:-system temp/TMPDIR}"
     printf "transcript_assign_mapq\t%s\n" "${TRANSCRIPT_ASSIGN_MAPQ}"
     printf "transcript_assign_chunk_size\t%s\n" "${TRANSCRIPT_ASSIGN_CHUNK_SIZE}"
     printf "ref_interval\t%s\n" "${REF_INTERVAL}"
@@ -414,6 +418,8 @@ GENE_ASSIGN_MAPQ=30
 GENE_ASSIGN_CHUNK_SIZE=200000
 GENE_TAGGING_BACKEND="rust"
 FEATURE_BACKEND="ont"
+ONT_JOBS=1
+ONT_TEMP_DIR=""
 STRINGTIE_OPTS="-c 2"
 TRANSCRIPT_ASSIGN_MAPQ=30
 TRANSCRIPT_ASSIGN_CHUNK_SIZE=200000
@@ -483,6 +489,8 @@ while [[ $# -gt 0 ]]; do
     --gene-assign-chunk-size) GENE_ASSIGN_CHUNK_SIZE="$2"; shift 2 ;;
     --gene-tagging-backend) GENE_TAGGING_BACKEND="$2"; shift 2 ;;
     --feature-backend) FEATURE_BACKEND="$2"; shift 2 ;;
+    --ont-jobs) ONT_JOBS="$2"; shift 2 ;;
+    --ont-temp-dir) ONT_TEMP_DIR="$2"; shift 2 ;;
     --stringtie-opts) STRINGTIE_OPTS="$2"; shift 2 ;;
     --stringtie-opts=*) STRINGTIE_OPTS="${1#*=}"; shift ;;
     --transcript-assign-mapq) TRANSCRIPT_ASSIGN_MAPQ="$2"; shift 2 ;;
@@ -498,6 +506,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ ! "${ONT_JOBS}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "[ERROR] --ont-jobs must be a positive integer." >&2
+  exit 1
+fi
 if [[ "${FEATURE_BACKEND}" != "ont" && "${FEATURE_BACKEND}" != "legacy" ]]; then
   echo "[ERROR] --feature-backend must be ont or legacy." >&2
   exit 1
@@ -549,6 +561,9 @@ if [[ -z "${ISOFORM_GTF}" ]]; then
 fi
 
 OUT_DIR="$(abspath_for_output "${OUT_DIR}")"
+if [[ -n "${ONT_TEMP_DIR}" ]]; then
+  ONT_TEMP_DIR="$(abspath_for_output "${ONT_TEMP_DIR}")"
+fi
 BARCODE_DIR="${OUT_DIR}/barcodes"
 require_cmd python3
 if [[ -z "${BARCODE_LIST_10BP}" ]]; then
@@ -774,7 +789,7 @@ fi
 if [[ "${REQUIRE_PASS_BOTH_ENDS}" -eq 1 ]]; then
   MAIN_ARGS+=(--require_pass_both_ends)
 fi
-run_stage flora "${SCRIPT_DIR}/main.py" "${MAIN_ARGS[@]}" 2>&1 | tee "${UPSTREAM_LOG}"
+FLORA_TRIM_CACHE_DIR="${ONT_TEMP_DIR}" run_stage flora "${SCRIPT_DIR}/main.py" "${MAIN_ARGS[@]}" 2>&1 | tee "${UPSTREAM_LOG}"
 if [[ "${ALIGNMENT_STREAM_ACTIVE}" -eq 1 ]]; then
   exec 9>&-
 fi
@@ -898,6 +913,9 @@ pushd "${MATRIX_DIR}" >/dev/null
 
 if [[ "${FEATURE_BACKEND}" == "ont" ]]; then
   ONT_ARGS=()
+  if [[ -n "${ONT_TEMP_DIR}" ]]; then
+    ONT_ARGS+=(--temp-dir "${ONT_TEMP_DIR}")
+  fi
   if [[ "${SAVE_INTERMEDIATE}" -eq 1 || "${LIGHT_OUTPUT}" -eq 0 ]]; then
     ONT_ARGS+=(--save-intermediate)
   fi
@@ -909,7 +927,7 @@ if [[ "${FEATURE_BACKEND}" == "ont" ]]; then
     --output-bam "${SAMPLE_ID}.filtered.cb_ur.gn.sorted.bam" \
     --gene-assigns "${SAMPLE_ID}.filtered.read_gene_assigns.tsv" \
     --transcript-assigns "${SAMPLE_ID}.read_transcript_assigns.tsv" \
-    --mapq "${GENE_ASSIGN_MAPQ}" --threads "${CLUSTER_THREADS}" \
+    --mapq "${GENE_ASSIGN_MAPQ}" --threads "${CLUSTER_THREADS}" --jobs "${ONT_JOBS}" \
     --stringtie-opts="${STRINGTIE_OPTS}" "${ONT_ARGS[@]}" 2>&1 | tee "${GENE_LOG}"
 else
 if [[ "${GENE_TAGGING_BACKEND}" != "rust" ]]; then

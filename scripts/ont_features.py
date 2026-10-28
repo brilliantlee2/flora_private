@@ -7,6 +7,8 @@ chromosome at a time; transcriptome secondary alignments are needed for ranking.
 from __future__ import annotations
 
 import argparse
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 import csv
 from dataclasses import dataclass
 import gzip
@@ -28,6 +30,7 @@ REFERENCE_COMMIT = "d46f92121c79c28a02105cf2444029e91dc4b609"
 REFERENCE_CONTAINER = "ontresearch/wf-single-cell:shab5b0dea0efc4685f74c8b4f91c979c587e23a020"
 REFERENCE_WITHDRAWN = True
 EXCLUDED_CLASSES = {"i", "y", "p", "s"}
+BATCH_SIZE = 10000
 
 
 @dataclass(frozen=True)
@@ -58,6 +61,150 @@ def select_features(hits, genome_mapq, min_mapq=30, min_read_cov=0.4, min_tr_cov
 
 def log(message):
     print(f"[ont_features] {message}", file=sys.stderr, flush=True)
+
+
+def open_scratch_database(path, genome_path=None):
+    db = sqlite3.connect(path)
+    # Disposable scratch only: a failed run is rebuilt, never resumed from this DB.
+    db.execute("PRAGMA journal_mode=MEMORY")
+    db.execute("PRAGMA synchronous=OFF")
+    db.execute("PRAGMA cache_size=-32768")
+    db.execute("PRAGMA temp_store=MEMORY")
+    db.execute("CREATE TABLE features(chrom TEXT,read_id TEXT,gene TEXT,transcript TEXT,reason TEXT,PRIMARY KEY(chrom,read_id)) WITHOUT ROWID")
+    if genome_path is None:
+        db.execute("CREATE TABLE genome(read_id TEXT PRIMARY KEY,mapq INTEGER) WITHOUT ROWID")
+    else:
+        # MAPQ lookup data can be discarded without retaining/freeing its pages in features.
+        db.execute("ATTACH DATABASE ? AS maps", (str(genome_path),))
+        db.execute("PRAGMA maps.journal_mode=MEMORY")
+        db.execute("PRAGMA maps.synchronous=OFF")
+        db.execute("PRAGMA main.cache_size=-16384")
+        db.execute("PRAGMA maps.cache_size=-16384")
+        db.execute("CREATE TABLE maps.genome(read_id TEXT PRIMARY KEY,mapq INTEGER) WITHOUT ROWID")
+    return db
+
+
+class ChromosomeFeatureLookup:
+    """Keep at most one read-only chromosome index open during coordinate-order output."""
+
+    def __init__(self, paths):
+        self.paths = paths
+        self.chrom = None
+        self.db = None
+
+    def lookup(self, chrom, names):
+        path = self.paths.get(chrom)
+        if path is None:
+            return {}
+        if chrom != self.chrom:
+            self.close()
+            self.db = sqlite3.connect(Path(path).resolve().as_uri() + "?mode=ro", uri=True)
+            self.db.execute("PRAGMA cache_size=-32768")
+            self.db.execute("PRAGMA temp_store=MEMORY")
+            self.chrom = chrom
+        return lookup_batch(self.db, "features", names, chrom)
+
+    def close(self):
+        if self.db is not None:
+            self.db.close()
+        self.chrom = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
+
+def lookup_batch(db, table, names, chrom=None):
+    if table not in {"features", "genome"}:
+        raise ValueError(f"Invalid lookup table: {table}")
+    db.execute("CREATE TEMP TABLE IF NOT EXISTS lookup_reads(read_id TEXT PRIMARY KEY) WITHOUT ROWID")
+    db.execute("DELETE FROM lookup_reads")
+    db.executemany("INSERT INTO lookup_reads VALUES (?)", ((n,) for n in sorted(set(names))))
+    # Read requests in key order for locality; one join per batch, not one SELECT/read.
+    if table == "genome":
+        rows = db.execute("SELECT r.read_id,g.mapq FROM lookup_reads r CROSS JOIN genome g ON g.read_id=r.read_id")
+    else:
+        rows = db.execute("SELECT r.read_id,f.gene,f.transcript,f.reason FROM lookup_reads r CROSS JOIN features f ON f.read_id=r.read_id AND f.chrom=?", (chrom,))
+    return {row[0]: row[1:] for row in rows}
+
+
+def validate_read_ids(db, names):
+    db.execute("SAVEPOINT validate_ids")
+    try:
+        db.executemany("INSERT INTO counted_reads VALUES (?)", ((n,) for n in sorted(names)))
+    except sqlite3.IntegrityError:
+        db.execute("ROLLBACK TO validate_ids")
+        # Error path only: replay to report the same offending input name.
+        for name in names:
+            try:
+                db.execute("INSERT INTO counted_reads VALUES (?)", (name,))
+            except sqlite3.IntegrityError as error:
+                raise ValueError(f"Duplicate primary read name: {name}; input FASTQ read IDs must be unique") from error
+        raise
+    finally:
+        db.execute("RELEASE validate_ids")
+
+
+def ordered_parallel_map(function, items, jobs):
+    if jobs == 1:
+        yield from map(function, items)
+        return
+    items = iter(items)
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        pending = deque(pool.submit(function, item) for item in itertools.islice(items, jobs))
+        try:
+            while pending:
+                result = pending.popleft().result()
+                item = next(items, None)
+                if item is not None:
+                    pending.append(pool.submit(function, item))
+                yield result
+        finally:
+            for future in pending:
+                future.cancel()
+
+
+def fastq_bytes(record):
+    import pysam
+
+    name = record.query_name
+    sequence = record.get_forward_sequence()
+    if sequence is None:
+        raise ValueError(f"Missing sequence for {name}")
+    qualities = record.get_forward_qualities() if record.query_qualities is not None else None
+    quality = pysam.array_to_qualitystring(qualities) if qualities is not None else "B" * len(sequence)
+    return f"@{name}\n{sequence}\n+\n{quality}\n".encode()
+
+
+def execution_layout(threads, jobs):
+    if threads < 1 or jobs < 1:
+        raise ValueError("threads and jobs must be positive")
+    effective = min(jobs, max(1, threads // 8))
+    return effective, threads // effective
+
+
+def process_chromosome(item, args, root, genome, threads):
+    number, chrom, gtf = item
+    started = time.monotonic()
+    directory = root / f"chrom_{number:05d}"
+    directory.mkdir()
+    genome_db = directory / "genome.sqlite"
+    db = open_scratch_database(directory / "features.sqlite", genome_path=genome_db)
+    try:
+        assemble(args.bam, chrom, gtf, genome, directory, threads, args.stringtie_opts, f"flora_chr{number}")
+        fasta = directory / "transcriptome.fa"
+        if fasta.exists() and fasta.stat().st_size:
+            remap_chromosome(db, args.bam, chrom, fasta, directory / "transcript.bam", threads)
+            candidates = load_candidates(directory / "gffcompare.stringtie.gff.tmap", gtf)
+            assign_chromosome(db, chrom, directory / "transcript.bam", candidates, args.mapq)
+        db.commit()
+    finally:
+        db.close()
+    genome_db.unlink()
+    log(f"Stage chromosome ({chrom}) elapsed: {time.monotonic() - started:.2f}s (includes its internal stages)")
+    return directory, chrom, gtf
 
 
 def timed_run(command):
@@ -148,27 +295,41 @@ def make_hit(record, candidates, lengths):
 def assign_chromosome(db, chrom, transcript_bam, candidates, min_mapq):
     import pysam
 
+    started = time.monotonic()
+    processed = 0
+    last_progress = started
     with pysam.AlignmentFile(transcript_bam, "rb", check_sq=False) as bam:
         lengths = dict(zip(bam.references, bam.lengths))
-        pending = []
+        batch = []
+        def flush():
+            mapqs = lookup_batch(db, "genome", [name for name, _ in batch])
+            pending = []
+            for name, hits in batch:
+                if name not in mapqs:
+                    continue
+                gene, tx = select_features(hits, mapqs[name][0], min_mapq)
+                reason = "candidate" if hits else "no_reference_candidate"
+                if hits and gene == "-" and tx == "-":
+                    reason = "ambiguous_or_zero_transcript_mapq"
+                pending.append((chrom, name, gene, tx, reason))
+            db.executemany("INSERT OR REPLACE INTO features VALUES (?,?,?,?,?)", pending)
+            db.commit()
+            batch.clear()
         for name, records in itertools.groupby(bam, key=lambda a: a.query_name):
             hits = [make_hit(a, candidates, lengths) for a in records
                     if not a.is_unmapped and not a.is_supplementary]
             hits = [h for h in hits if h is not None]
-            row = db.execute("SELECT mapq FROM genome WHERE read_id=?", (name,)).fetchone()
-            if row is None:
-                continue
-            gene, tx = select_features(hits, row[0], min_mapq)
-            reason = "candidate" if hits else "no_reference_candidate"
-            if hits and gene == "-" and tx == "-":
-                reason = "ambiguous_or_zero_transcript_mapq"
-            pending.append((chrom, name, gene, tx, reason))
-            if len(pending) >= 10000:
-                db.executemany("INSERT OR REPLACE INTO features VALUES (?,?,?,?,?)", pending)
-                db.commit()
-                pending.clear()
-        db.executemany("INSERT OR REPLACE INTO features VALUES (?,?,?,?,?)", pending)
-        db.commit()
+            batch.append((name, hits))
+            processed += 1
+            if len(batch) >= BATCH_SIZE:
+                flush()
+                now = time.monotonic()
+                if processed % 1000000 == 0 or now - last_progress >= 30:
+                    log(f"feature_assignment ({chrom}): {processed} reads, {processed / max(now - started, 0.001):.0f} reads/s")
+                    last_progress = now
+        if batch:
+            flush()
+    log(f"Stage feature_assignment ({chrom}) elapsed: {time.monotonic() - started:.2f}s; reads={processed}")
 
 
 def assemble(bam, chrom, gtf, genome, directory, threads, options, label):
@@ -202,40 +363,45 @@ def remap_chromosome(db, bam_path, chrom, fasta, output, threads):
     import pysam
 
     started = time.monotonic()
+    sort_threads = min(3, max(1, threads // 4))
+    view_threads = int(threads >= 8)
     mm = ["minimap2", "-ax", "map-ont", "--cap-kalloc", "100m", "--cap-sw-mem", "50m",
-          "--end-bonus", "10", "-p", "0.9", "-N", "3", "-t", str(max(threads - 4, 4)), str(fasta), "-"]
+          "--end-bonus", "10", "-p", "0.9", "-N", "3", "-t", str(max(threads - sort_threads - view_threads, 1)), str(fasta), "-"]
     log(shlex.join(mm))
     processes = []
     try:
         aligner = subprocess.Popen(mm, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
         processes.append(aligner)
-        viewer = subprocess.Popen(["samtools", "view", "-h", "-@", "1", "-b", "-F", "2052", "-"],
+        viewer = subprocess.Popen(["samtools", "view", "-h", "-@", str(view_threads), "-u", "-F", "2052", "-"],
                                   stdin=aligner.stdout, stdout=subprocess.PIPE)
         processes.append(viewer)
         aligner.stdout.close()
-        sorter = subprocess.Popen(["samtools", "sort", "-n", "-@", "3", "--no-PG", "-o", str(output), "-"],
+        sorter = subprocess.Popen(["samtools", "sort", "-n", "-@", str(sort_threads), "--no-PG", "-o", str(output), "-"],
                                   stdin=viewer.stdout)
         processes.append(sorter)
         viewer.stdout.close()
         pending = []
-        with pysam.AlignmentFile(bam_path, "rb") as bam:
+        buffer = bytearray()
+        n_reads = 0
+        with pysam.AlignmentFile(bam_path, "rb", threads=1) as bam:
             for record in bam.fetch(chrom):
                 if record.is_unmapped or record.is_secondary or record.is_supplementary:
                     continue
-                name = record.query_name
-                sequence = record.get_forward_sequence()
-                quals = record.get_forward_qualities()
-                if sequence is None:
-                    raise ValueError(f"Missing sequence for {name}")
-                quality = "".join(chr(q + 33) for q in quals) if quals is not None else "B" * len(sequence)
-                aligner.stdin.write(f"@{name}\n{sequence}\n+\n{quality}\n".encode())
-                pending.append((name, record.mapping_quality))
-                if len(pending) >= 10000:
+                buffer.extend(fastq_bytes(record))
+                if len(buffer) >= 1024 * 1024:
+                    aligner.stdin.write(buffer)
+                    buffer.clear()
+                pending.append((record.query_name, record.mapping_quality))
+                n_reads += 1
+                if len(pending) >= BATCH_SIZE:
                     db.executemany("INSERT OR REPLACE INTO genome VALUES (?,?)", pending)
                     pending.clear()
+        if buffer:
+            aligner.stdin.write(buffer)
         db.executemany("INSERT OR REPLACE INTO genome VALUES (?,?)", pending)
         db.commit()
         aligner.stdin.close()
+        log(f"Stage transcript_input ({chrom}) elapsed: {time.monotonic() - started:.2f}s; reads={n_reads} (includes pipe backpressure)")
         codes = [p.wait() for p in processes]
         for p, code in zip(processes, codes):
             if code:
@@ -250,43 +416,64 @@ def remap_chromosome(db, bam_path, chrom, fasta, output, threads):
     log(f"Stage transcript_remapping ({chrom}) elapsed: {time.monotonic() - started:.2f}s")
 
 
-def write_tagged_assignments(db, tagged_bam, output_bam, gene_tsv, transcript_tsv, min_mapq, threads):
+def write_tagged_assignments(db, tagged_bam, output_bam, gene_tsv, transcript_tsv, min_mapq, threads,
+                             feature_lookup=None):
     import pysam
     from collections import Counter
 
     stats = Counter()
+    started = time.monotonic()
+    processed = 0
+    lookup_seconds = 0.0
+    last_progress = started
+    log("Starting tagged_assignment_output: bounded batches, primary records only")
     db.execute("CREATE TABLE IF NOT EXISTS counted_reads(read_id TEXT PRIMARY KEY) WITHOUT ROWID")
-    with pysam.AlignmentFile(tagged_bam, "rb") as source, \
+    with pysam.AlignmentFile(tagged_bam, "rb", threads=max(1, min(threads // 4, 2))) as source, \
             pysam.AlignmentFile(output_bam, "wb", template=source, threads=max(1, min(threads, 8))) as dest, \
             open(gene_tsv, "w") as genes, open(transcript_tsv, "w") as transcripts:
-        for record in source:
-            # One primary genomic record per read avoids cross-chromosome SA duplication.
-            if record.is_secondary or record.is_supplementary or record.is_unmapped:
-                continue
-            try:
-                db.execute("INSERT INTO counted_reads VALUES (?)", (record.query_name,))
-            except sqlite3.IntegrityError as error:
-                raise ValueError(f"Duplicate primary read name: {record.query_name}; input FASTQ read IDs must be unique") from error
-            row = db.execute("SELECT gene,transcript,reason FROM features WHERE chrom=? AND read_id=?",
-                             (record.reference_name, record.query_name)).fetchone()
-            gene, tx, reason = row if row else ("-", "-", "no_reference_candidate")
-            status = "Assigned" if gene != "-" else (
-                "Unassigned_mapq" if record.mapping_quality < min_mapq else "Unassigned_no_features")
-            if gene == "-" and reason == "ambiguous_or_zero_transcript_mapq" and record.mapping_quality >= min_mapq:
-                status = "Unassigned_ambiguous"
-            tx_status = "Assigned" if tx != "-" else (
-                "Unassigned_ambiguous" if reason != "no_reference_candidate" else "Unassigned_no_features")
-            rid = record.query_name
-            gene_out, tx_out = (gene if gene != "-" else "NA"), (tx if tx != "-" else "NA")
-            genes.write(f"{rid}\t{status}\t{record.mapping_quality}\t{gene_out}\n")
-            transcripts.write(f"{rid}\t{tx_status}\t{record.mapping_quality}\t{gene_out}\t{tx_out}\n")
-            record.set_tag("GN", gene_out, value_type="Z")
-            record.set_tag("TX", tx_out, value_type="Z")
-            dest.write(record)
-            stats[f"gene:{status}"] += 1
-            stats[f"transcript:{tx_status}"] += 1
-            stats[f"reason:{reason}"] += 1
+        primary = (r for r in source if not (r.is_secondary or r.is_supplementary or r.is_unmapped))
+        while batch := list(itertools.islice(primary, BATCH_SIZE)):
+            phase = time.monotonic()
+            validate_read_ids(db, [r.query_name for r in batch])
+            by_chrom = {}
+            for record in batch:
+                by_chrom.setdefault(record.reference_name, []).append(record.query_name)
+            features = {chrom: (feature_lookup.lookup(chrom, names) if feature_lookup is not None
+                                else lookup_batch(db, "features", names, chrom))
+                        for chrom, names in by_chrom.items()}
+            lookup_seconds += time.monotonic() - phase
+            gene_lines, tx_lines = [], []
+            for record in batch:
+                rid = record.query_name
+                gene, tx, reason = features[record.reference_name].get(rid, ("-", "-", "no_reference_candidate"))
+                status = "Assigned" if gene != "-" else (
+                    "Unassigned_mapq" if record.mapping_quality < min_mapq else "Unassigned_no_features")
+                if gene == "-" and reason == "ambiguous_or_zero_transcript_mapq" and record.mapping_quality >= min_mapq:
+                    status = "Unassigned_ambiguous"
+                tx_status = "Assigned" if tx != "-" else (
+                    "Unassigned_ambiguous" if reason != "no_reference_candidate" else "Unassigned_no_features")
+                gene_out, tx_out = (gene if gene != "-" else "NA"), (tx if tx != "-" else "NA")
+                gene_lines.append(f"{rid}\t{status}\t{record.mapping_quality}\t{gene_out}\n")
+                tx_lines.append(f"{rid}\t{tx_status}\t{record.mapping_quality}\t{gene_out}\t{tx_out}\n")
+                record.set_tag("GN", gene_out, value_type="Z")
+                record.set_tag("TX", tx_out, value_type="Z")
+                dest.write(record)
+                stats[f"gene:{status}"] += 1
+                stats[f"transcript:{tx_status}"] += 1
+                stats[f"reason:{reason}"] += 1
+            genes.writelines(gene_lines)
+            transcripts.writelines(tx_lines)
+            db.commit()
+            processed += len(batch)
+            now = time.monotonic()
+            if processed % 1000000 == 0 or now - last_progress >= 30:
+                log(f"tagged_assignment_output: {processed} reads, {processed / max(now - started, 0.001):.0f} reads/s")
+                last_progress = now
+    log(f"Stage batched_feature_lookup elapsed: {lookup_seconds:.2f}s (included in tagged_assignment_output)")
+    log(f"Stage tagged_assignment_output elapsed: {time.monotonic() - started:.2f}s; reads={processed}")
+    started = time.monotonic()
     pysam.index("-@", str(max(1, min(threads, 8))), str(output_bam))
+    log(f"Stage feature_bam_index elapsed: {time.monotonic() - started:.2f}s")
     return dict(stats)
 
 
@@ -309,8 +496,17 @@ def run(args):
         raise RuntimeError("The ONT 3.3.0 comparison backend requires StringTie 2.2.2; update the pinned Flora conda environment")
     log("ONT 3.3.0 was withdrawn upstream; using the recorded historical source commit for comparison")
     log(f"Behavior reference: {REFERENCE_VERSION}; {json.dumps(versions)}")
-    with tempfile.TemporaryDirectory(prefix="ont-work-", dir=out) as temp:
+    jobs, worker_threads = execution_layout(args.threads, getattr(args, "jobs", 1))
+    scratch_parent = getattr(args, "temp_dir", None)
+    if scratch_parent is not None:
+        scratch_parent = Path(scratch_parent).resolve()
+        scratch_parent.mkdir(parents=True, exist_ok=True)
+    log(f"Scheduling: requested_jobs={getattr(args, 'jobs', 1)} effective_jobs={jobs} total_threads={args.threads} threads_per_job={worker_threads}; auxiliary tool threads may be additional")
+    with tempfile.TemporaryDirectory(prefix="ont-work-", dir=scratch_parent) as temp:
         root = Path(temp)
+        log(f"Scratch directory: {root}; disposable databases are not resumable")
+        free_gib = shutil.disk_usage(root).free / (1024 ** 3)
+        log(f"Scratch free space: {free_gib:.1f} GiB; check capacity for large datasets")
         genome = args.genome.resolve()
         if not Path(str(genome) + ".fai").exists():
             # Each invocation gets its own link/index, including reruns with a new reference.
@@ -321,11 +517,11 @@ def run(args):
         saved_run = out / "intermediates" / root.name
         if args.save_intermediate:
             saved_run.mkdir(parents=True)
-        db = sqlite3.connect(root / "assignments.sqlite")
-        db.execute("PRAGMA cache_size=-32768")
-        db.execute("CREATE TABLE features(chrom TEXT,read_id TEXT,gene TEXT,transcript TEXT,reason TEXT,PRIMARY KEY(chrom,read_id)) WITHOUT ROWID")
-        db.execute("CREATE TABLE genome(read_id TEXT PRIMARY KEY,mapq INTEGER) WITHOUT ROWID")
+        db = open_scratch_database(root / "assignments.sqlite")
         try:
+            feature_root = root / "feature_index"
+            feature_root.mkdir()
+            feature_paths = {}
             annotations = split_annotation(args.gtf, root)
             if not reference_transcripts(args.gtf):
                 raise ValueError("ONT feature assignment requires reference transcript/mRNA records with transcript_id and gene_name in the GTF")
@@ -333,13 +529,11 @@ def run(args):
                 mapped = {s.contig for s in bam.get_index_statistics() if s.mapped}
             transcriptome_fa = out / f"{args.sample}.transcriptome.fa.gz"
             transcriptome_gtf = out / f"{args.sample}.transcriptome.gtf.gz"
+            work = [(n, chrom, gtf) for n, (chrom, gtf) in enumerate(annotations.items()) if chrom in mapped]
+            def worker(item):
+                return process_chromosome(item, args, root, genome, worker_threads)
             with gzip.open(transcriptome_fa, "wt") as fa_out, gzip.open(transcriptome_gtf, "wt") as gtf_out:
-                for number, (chrom, gtf) in enumerate(annotations.items()):
-                    if chrom not in mapped:
-                        continue
-                    directory = root / f"chrom_{number:05d}"
-                    directory.mkdir()
-                    assemble(args.bam, chrom, gtf, genome, directory, args.threads, args.stringtie_opts, f"flora_chr{number}")
+                for directory, chrom, gtf in ordered_parallel_map(worker, work, jobs):
                     fasta = directory / "transcriptome.fa"
                     annotated = directory / "gffcompare.annotated.gtf"
                     if fasta.exists():
@@ -348,19 +542,19 @@ def run(args):
                     if annotated.exists():
                         with annotated.open() as handle:
                             shutil.copyfileobj(handle, gtf_out)
-                    if fasta.exists() and fasta.stat().st_size:
-                        db.execute("DELETE FROM genome")
-                        remap_chromosome(db, args.bam, chrom, fasta, directory / "transcript.bam", args.threads)
-                        tmap = directory / "gffcompare.stringtie.gff.tmap"
-                        candidates = load_candidates(tmap, gtf)
-                        assign_chromosome(db, chrom, directory / "transcript.bam", candidates, args.mapq)
+                    phase = time.monotonic()
+                    feature_paths[chrom] = feature_root / f"{directory.name}.sqlite"
+                    (directory / "features.sqlite").rename(feature_paths[chrom])
+                    log(f"Stage register_feature_index ({chrom}) elapsed: {time.monotonic() - phase:.2f}s; no database copy")
                     if args.save_intermediate:
                         shutil.copyfile(gtf, directory / "reference.gtf")
                         shutil.move(str(directory), str(saved_run / directory.name))
                     else:
                         shutil.rmtree(directory)
-            stats = write_tagged_assignments(db, args.tagged_bam, args.output_bam, args.gene_assigns,
-                                             args.transcript_assigns, args.mapq, args.threads)
+            with ChromosomeFeatureLookup(feature_paths) as feature_lookup:
+                stats = write_tagged_assignments(db, args.tagged_bam, args.output_bam, args.gene_assigns,
+                                                 args.transcript_assigns, args.mapq, args.threads,
+                                                 feature_lookup=feature_lookup)
             (out / "assignment_summary.json").write_text(json.dumps(stats, indent=2) + "\n")
         finally:
             db.close()
@@ -375,9 +569,11 @@ def main():
     p.add_argument("--mapq", type=int, default=30)
     p.add_argument("--stringtie-opts", default="-c 2")
     p.add_argument("--save-intermediate", action="store_true")
+    p.add_argument("--temp-dir", type=Path, help="Scratch parent; defaults to the system temp directory/TMPDIR")
+    p.add_argument("--jobs", type=int, default=1, help="Concurrent chromosome jobs sharing --threads; default: 1")
     args = p.parse_args()
-    if args.threads < 1 or not 0 <= args.mapq <= 255:
-        p.error("threads must be positive and MAPQ must be between 0 and 255")
+    if args.threads < 1 or args.jobs < 1 or not 0 <= args.mapq <= 255:
+        p.error("threads/jobs must be positive and MAPQ must be between 0 and 255")
     run(args)
 
 

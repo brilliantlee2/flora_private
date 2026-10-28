@@ -265,6 +265,7 @@ fn normalize_path_options(args: &mut [OsString]) -> Result<()> {
         "--out-dir",
         "--outdir",
         "--glycine-outdir",
+        "--ont-temp-dir",
     ];
     let cwd = std::env::current_dir().context("failed to resolve current directory")?;
     let mut index = 0;

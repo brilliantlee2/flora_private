@@ -18,8 +18,9 @@ use crate::barcode::{
     reverse_complement, strip_fixed_3p, strip_fixed_5p, umi_a_ratio, BarcodeIndex, CorrectedRead,
     PutativeRow,
 };
-use crate::fastq::{for_each_fastq_batch, write_fastq_record, FastqRecord};
+use crate::fastq::{for_each_fastq_batch, write_fastq_record};
 use crate::read_qc::ReadQcAccumulator;
+use crate::trim_cache::{CachedTrimBounds, TrimCache};
 
 #[derive(Clone, Debug)]
 pub struct PipelineConfig {
@@ -193,6 +194,14 @@ pub fn run_pipeline(config: &PipelineConfig) -> Result<PipelineSummary> {
 
     println!("[Flora] Step 1/7: streaming FASTQ and extracting putative 3p/5p barcode tables");
     let step_t0 = Instant::now();
+    let cache_dir = std::env::var_os("FLORA_TRIM_CACHE_DIR")
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from);
+    let mut trim_cache = config
+        .alignment_fastq
+        .as_ref()
+        .map(|_| TrimCache::new(cache_dir.as_deref()))
+        .transpose()?;
     let (putative, read_qc) = extract_putative_rows(
         &config.fastq_fns,
         config.batch_size,
@@ -200,6 +209,7 @@ pub fn run_pipeline(config: &PipelineConfig) -> Result<PipelineSummary> {
         &umi_fixed_3p,
         &bc_fixed_5p,
         &umi_fixed_5p,
+        trim_cache.as_mut(),
     )?;
     read_qc.write_outputs(
         &config.out_dir.join("read_qc_summary.json"),
@@ -397,8 +407,10 @@ pub fn run_pipeline(config: &PipelineConfig) -> Result<PipelineSummary> {
             &umi_fixed_3p,
             &bc_fixed_5p,
             &umi_fixed_5p,
+            trim_cache.as_mut(),
         )?;
     }
+    drop(trim_cache);
     let assigned_ids = assignment.assigned_ids.as_ref();
     if !config.skip_matched_fastq {
         write_filtered_fastq_gz(
@@ -465,18 +477,42 @@ fn extract_putative_rows(
     umi_fixed_3p: &str,
     bc_fixed_5p: &str,
     umi_fixed_5p: &str,
+    mut trim_cache: Option<&mut TrimCache>,
 ) -> Result<(Vec<PutativeRow>, ReadQcAccumulator)> {
     let mut putative = Vec::new();
     let mut read_qc = ReadQcAccumulator::new();
     for_each_fastq_batch(paths, batch_size, |batch| {
-        for rec in &batch {
-            read_qc.observe(rec.seq.as_bytes(), rec.qual.as_bytes());
-        }
-        let mut rows: Vec<PutativeRow> = batch
-            .par_iter()
-            .map(|rec| extract_putative(rec, bc_fixed_3p, umi_fixed_3p, bc_fixed_5p, umi_fixed_5p))
+        // Retain the original whole-batch growth policy, not 512-row growth steps.
+        putative.reserve(batch.len());
+        let cache_enabled = trim_cache.is_some();
+        let chunks: Vec<_> = batch
+            .par_chunks(512)
+            .map(|records| {
+                let mut qc = ReadQcAccumulator::new();
+                let mut rows = Vec::with_capacity(records.len());
+                let mut bounds = Vec::with_capacity(if cache_enabled { records.len() } else { 0 });
+                for rec in records {
+                    qc.observe(rec.seq.as_bytes(), rec.qual.as_bytes());
+                    let row =
+                        extract_putative(rec, bc_fixed_3p, umi_fixed_3p, bc_fixed_5p, umi_fixed_5p);
+                    if cache_enabled {
+                        bounds.push(CachedTrimBounds::from_putative(&row, rec.seq.len()));
+                    }
+                    rows.push(row);
+                }
+                (rows, qc, bounds)
+            })
             .collect();
-        putative.append(&mut rows);
+        // Indexed parallel chunks are merged in FASTQ order, including QC floats.
+        for (mut rows, qc, bounds) in chunks {
+            read_qc.merge(qc);
+            putative.append(&mut rows);
+            if let Some(cache) = trim_cache.as_deref_mut() {
+                for entry in bounds {
+                    cache.write_entry(entry)?;
+                }
+            }
+        }
         Ok(())
     })?;
     Ok((putative, read_qc))
@@ -523,11 +559,14 @@ fn write_alignment_fastq(
     umi_fixed_3p: &str,
     bc_fixed_5p: &str,
     umi_fixed_5p: &str,
+    trim_cache: Option<&mut TrimCache>,
 ) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
     let file = File::create(path).with_context(|| format!("write {}", path.display()))?;
+    let mut cache_reader = trim_cache.map(TrimCache::reader).transpose()?;
+    let cache_source = cache_reader.as_mut().map(|reader| reader as &mut dyn Read);
     if path.extension().and_then(|value| value.to_str()) == Some("gz") {
         let mut encoder = GzEncoder::new(file, Compression::default());
         write_alignment_fastq_records(
@@ -540,6 +579,7 @@ fn write_alignment_fastq(
             bc_fixed_5p,
             umi_fixed_5p,
             &mut encoder,
+            cache_source,
         )?;
         encoder.finish()?;
     } else {
@@ -554,6 +594,7 @@ fn write_alignment_fastq(
             bc_fixed_5p,
             umi_fixed_5p,
             &mut writer,
+            cache_source,
         )?;
         writer.flush()?;
     }
@@ -571,32 +612,56 @@ fn write_alignment_fastq_records<W: Write>(
     bc_fixed_5p: &str,
     umi_fixed_5p: &str,
     writer: &mut W,
+    mut trim_cache: Option<&mut dyn Read>,
 ) -> Result<()> {
     let mut target_index = 0usize;
     let mut trim_fallbacks = 0usize;
+    let started = Instant::now();
+    let mut output_elapsed = std::time::Duration::ZERO;
+    let cached = trim_cache.is_some();
 
     for_each_fastq_batch(paths, batch_size, |batch| {
+        let output_started = Instant::now();
         for rec in &batch {
             let Some(target) = clean_reads.get(target_index) else {
                 break;
             };
+            let cached_bounds = trim_cache
+                .as_deref_mut()
+                .map(CachedTrimBounds::read_from)
+                .transpose()?;
             if rec.id != target.read_id {
                 continue;
             }
 
-            let putative =
-                extract_putative(rec, bc_fixed_3p, umi_fixed_3p, bc_fixed_5p, umi_fixed_5p);
-            let bounds = cdna_trim_bounds(
-                &putative,
-                rec.seq.len(),
-                !target.bc3n.is_empty(),
-                !target.bc5n.is_empty(),
-            );
+            let bounds = if let Some(bounds) = cached_bounds {
+                bounds.bounds(
+                    rec.seq.len(),
+                    !target.bc3n.is_empty(),
+                    !target.bc5n.is_empty(),
+                )
+            } else {
+                let putative =
+                    extract_putative(rec, bc_fixed_3p, umi_fixed_3p, bc_fixed_5p, umi_fixed_5p);
+                cdna_trim_bounds(
+                    &putative,
+                    rec.seq.len(),
+                    !target.bc3n.is_empty(),
+                    !target.bc5n.is_empty(),
+                )
+            };
             let (start, end) = match bounds {
                 Some(bounds) => bounds,
                 None => {
                     trim_fallbacks += 1;
                     if trim_fallbacks <= 5 {
+                        let putative = extract_putative(
+                            rec,
+                            bc_fixed_3p,
+                            umi_fixed_3p,
+                            bc_fixed_5p,
+                            umi_fixed_5p,
+                        );
                         eprintln!(
                             "[Flora] Warning: conflicting cDNA trim coordinates for read {} \
                              (length={}, 5p_bc={}, 5p_umi={:?}, 3p_bc={}, 3p_umi={:?}, \
@@ -613,16 +678,20 @@ fn write_alignment_fastq_records<W: Write>(
                     (0, rec.seq.len())
                 }
             };
-            let trimmed = FastqRecord {
-                id: rec.id.clone(),
-                seq: rec.seq[start..end].to_string(),
-                qual: rec.qual[start..end].to_string(),
-            };
-            write_fastq_record(&mut *writer, &trimmed)?;
+            writeln!(
+                writer,
+                "@{}\n{}\n+\n{}",
+                rec.id,
+                &rec.seq[start..end],
+                &rec.qual[start..end]
+            )?;
             target_index += 1;
         }
+        output_elapsed += output_started.elapsed();
         Ok(())
     })?;
+    println!("[timing] cdna_fastq.input_decode: {:.2}s; trim_write_backpressure: {:.2}s; cached_bounds: {cached}",
+        started.elapsed().saturating_sub(output_elapsed).as_secs_f64(), output_elapsed.as_secs_f64());
     if target_index != clean_reads.len() {
         anyhow::bail!(
             "only matched {target_index} of {} clean reads while writing {}",
@@ -1845,6 +1914,7 @@ fn summarize_trimmed_barcode_uniques(reads: &[CleanRead]) -> TrimmedBarcodeUniqu
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fastq::FastqRecord;
 
     #[test]
     fn pair_min_uses_floor_for_empty_or_low_counts() {
@@ -2030,6 +2100,99 @@ r2,UMI3,UMI5,BC_A,,cell_000001\n"
     }
 
     #[test]
+    fn cached_terminal_bounds_match_reference_for_all_validity_combinations() {
+        for len in [0, 1, 39, 100, 796, 2000] {
+            for index in [-2001, -796, -100, -41, -1, 0, 10, 100, 2001] {
+                let row = PutativeRow {
+                    bc_fixed_locs: index,
+                    bc_fixed_locs_50: index,
+                    umi_fixed_locs: Some(index),
+                    umi_fixed_locs_5p: Some(index),
+                    poly_a_starts: Some(index),
+                    ..PutativeRow::default()
+                };
+                let cached = CachedTrimBounds::from_putative(&row, len);
+                for valid3 in [false, true] {
+                    for valid5 in [false, true] {
+                        assert_eq!(
+                            cached.bounds(len, valid3, valid5),
+                            cdna_trim_bounds(&row, len, valid3, valid5)
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn trim_cache_roundtrip_and_truncation_check() {
+        let mut cache = TrimCache::new(None).unwrap();
+        let entries = [
+            CachedTrimBounds {
+                start_5p: 41,
+                end_3p: 150,
+            },
+            CachedTrimBounds {
+                start_5p: 20,
+                end_3p: 0,
+            },
+        ];
+        for entry in entries {
+            cache.write_entry(entry).unwrap();
+        }
+        let mut reader = cache.reader().unwrap();
+        assert_eq!(
+            CachedTrimBounds::read_from(&mut reader)
+                .unwrap()
+                .bounds(200, true, true),
+            Some((41, 150))
+        );
+        assert_eq!(
+            CachedTrimBounds::read_from(&mut reader)
+                .unwrap()
+                .bounds(39, true, true),
+            None
+        );
+        assert!(CachedTrimBounds::read_from(&mut reader).is_err());
+    }
+
+    #[test]
+    fn extraction_parallel_qc_matches_sequential_qc_and_preserves_read_order() {
+        let root = tempfile::tempdir().unwrap();
+        let input = root.path().join("reads.fastq");
+        let records = (0..1300)
+            .map(|i| FastqRecord {
+                id: format!("r{i}"),
+                seq: "ACGT".repeat(20 + i % 50),
+                qual: (0..(80 + 4 * (i % 50)))
+                    .map(|j| (33 + (i + j) % 60) as u8 as char)
+                    .collect(),
+            })
+            .collect::<Vec<_>>();
+        crate::fastq::write_fastq(File::create(&input).unwrap(), &records).unwrap();
+        let mut expected = ReadQcAccumulator::new();
+        for r in &records {
+            expected.observe(r.seq.as_bytes(), r.qual.as_bytes());
+        }
+        let (rows, actual) =
+            extract_putative_rows(&[input], 1000, "GCTACC", "AGATC", "CCTTCC", "CAGCA", None)
+                .unwrap();
+        let mut legacy_growth = Vec::<usize>::new();
+        for batch in records.chunks(1000) {
+            legacy_growth.extend(0..batch.len());
+        }
+        assert_eq!(rows.capacity(), legacy_growth.capacity());
+        assert_eq!(
+            rows.iter().map(|r| &r.read_id).collect::<Vec<_>>(),
+            records.iter().map(|r| &r.id).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            serde_json::to_value(actual.into_payload(300)).unwrap(),
+            serde_json::to_value(expected.into_payload(300)).unwrap()
+        );
+    }
+
+    #[test]
     fn alignment_fastq_preserves_id_and_trims_sequence_and_quality_together() {
         let root = tempfile::tempdir().unwrap();
         let input = root.path().join("reads.fastq");
@@ -2056,6 +2219,7 @@ r2,UMI3,UMI5,BC_A,,cell_000001\n"
             "AGATC",
             "CCTTCC",
             "CAGCA",
+            None,
         )
         .unwrap();
 
@@ -2092,6 +2256,7 @@ r2,UMI3,UMI5,BC_A,,cell_000001\n"
             "AGATC",
             "CCTTCC",
             "CAGCA",
+            None,
         )
         .unwrap();
 
@@ -2127,6 +2292,7 @@ r2,UMI3,UMI5,BC_A,,cell_000001\n"
             "AGATC",
             "CCTTCC",
             "CAGCA",
+            None,
         )
         .unwrap();
 
@@ -2134,6 +2300,78 @@ r2,UMI3,UMI5,BC_A,,cell_000001\n"
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].seq, sequence);
         assert_eq!(records[0].qual.len(), sequence.len());
+    }
+
+    #[test]
+    fn cached_alignment_fastq_matches_reference_with_skipped_and_duplicate_input_ids() {
+        let root = tempfile::tempdir().unwrap();
+        let input1 = root.path().join("reads1.fastq.gz");
+        let input2 = root.path().join("reads2.fastq");
+        let sequence = format!(
+            "AAAAAAAAAACCTTCCGGGGGGGGGGCAGCATTTTTTTTTT{}CCCCCCCCCCAGATCTTTTTTTTTTGCTACCAAAAAAAAAA",
+            "CGTC".repeat(40)
+        );
+        let records = (0..12)
+            .map(|i| {
+                let seq = if i == 9 {
+                    "ACGT".repeat(10)
+                } else {
+                    sequence.clone()
+                };
+                let qual = (0..seq.len())
+                    .map(|j| (33 + (i + j) % 60) as u8 as char)
+                    .collect();
+                FastqRecord {
+                    id: if i == 3 { "r2".into() } else { format!("r{i}") },
+                    seq,
+                    qual,
+                }
+            })
+            .collect::<Vec<_>>();
+        let mut gzip = GzEncoder::new(File::create(&input1).unwrap(), Compression::default());
+        crate::fastq::write_fastq(&mut gzip, &records[..6]).unwrap();
+        gzip.finish().unwrap();
+        crate::fastq::write_fastq(File::create(&input2).unwrap(), &records[6..]).unwrap();
+        let paths = [input1, input2];
+        let mut cache = TrimCache::new(Some(&root.path().join("scratch"))).unwrap();
+        let (rows, _) = extract_putative_rows(
+            &paths,
+            5,
+            "GCTACC",
+            "AGATC",
+            "CCTTCC",
+            "CAGCA",
+            Some(&mut cache),
+        )
+        .unwrap();
+        assert_eq!(rows.len(), records.len());
+        let clean = vec![
+            clean_read("r1", "V5", "V3"),
+            clean_read("r2", "V5", ""),
+            clean_read("r5", "", "V3"),
+            clean_read("r6", "", ""),
+            clean_read("r9", "V5", "V3"),
+            clean_read("r10", "V5", "V3"),
+        ];
+        let reference = root.path().join("reference.fastq");
+        let actual = root.path().join("cached.fastq");
+        write_alignment_fastq(
+            &paths, 4, &reference, &clean, "GCTACC", "AGATC", "CCTTCC", "CAGCA", None,
+        )
+        .unwrap();
+        write_alignment_fastq(
+            &paths,
+            4,
+            &actual,
+            &clean,
+            "GCTACC",
+            "AGATC",
+            "CCTTCC",
+            "CAGCA",
+            Some(&mut cache),
+        )
+        .unwrap();
+        assert_eq!(fs::read(actual).unwrap(), fs::read(reference).unwrap());
     }
 
     fn clean_read(read_id: &str, bc5n: &str, bc3n: &str) -> CleanRead {

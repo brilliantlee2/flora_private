@@ -126,6 +126,44 @@ stops when either command is unavailable.
 
 ## Workflow output policy
 
+### Performance comparison branch
+
+This branch retains the v3.3.0 feature-selection and UMI rules, but uses bounded
+batch joins, native pysam quality conversion and buffered FASTQ writes. No new
+runtime packages are required. New optional workflow arguments:
+
+```bash
+--ont-temp-dir /local_scratch/flora_tmp \
+--ont-jobs 2 \
+--cluster-threads 32
+```
+
+Use an existing writable local SSD with sufficient free space. Without
+`--ont-temp-dir`, scratch uses the system temp directory (`TMPDIR` when set),
+not the results directory; on some HPC hosts `/tmp` is small or memory-backed.
+Only temporary data is placed there, and it is removed after the stage.
+Saved intermediates still go under the result's `transcriptome/intermediates/`.
+Do not change temporary files while a job is running.
+
+`--ont-jobs` defaults to 1 to avoid raising peak memory. Effective concurrency is
+capped at `max(1, cluster-threads / 8)` and each job receives a share of that
+thread budget. Tool main/I/O helper threads may be additional. Each job has its
+own assembly, alignment and database memory; increase concurrency only after
+checking available RAM and scratch space. Results merge in annotation order,
+not task-completion order. Logs now distinguish feature assignment, index registration,
+final BAM/TSV output and indexing; nested timings must not be added twice.
+
+The second round also reuses terminal coordinates from initial barcode extraction
+via an anonymous disk cache (16 bytes/input read, about 1.49 GiB per 100 million
+reads). It follows `--ont-temp-dir`/`TMPDIR`, is removed automatically, and does
+not add a sample-sized RAM array or new CSV columns. Read QC runs in ordered
+parallel chunks. cDNA output still rereads/decompresses the input, but no longer
+repeats terminal searches or copies trimmed sequence strings. Feature databases
+are queried directly per chromosome without copying all rows into a second
+global index; chromosome MAPQ scratch is deleted after assignment. Intermediate
+BAM fusion remains deferred. Details and measured validation:
+[performance record](docs/ont-v330-performance.md).
+
 This branch defaults to `--feature-backend ont`, using the feature assignment
 rules from a historical [wf-single-cell 3.3.0 source snapshot](https://github.com/epi2me-labs/wf-single-cell/tree/d46f92121c79c28a02105cf2444029e91dc4b609).
 ONT withdrew that release for critical issues and its tag is unavailable.
