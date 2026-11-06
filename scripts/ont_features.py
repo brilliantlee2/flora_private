@@ -7,8 +7,7 @@ chromosome at a time; transcriptome secondary alignments are needed for ranking.
 from __future__ import annotations
 
 import argparse
-from collections import deque
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 import csv
 from dataclasses import dataclass
 import gzip
@@ -148,19 +147,32 @@ def validate_read_ids(db, names):
 
 
 def ordered_parallel_map(function, items, jobs):
+    """Replenish on completion; retain at most 2 * jobs unexported tasks."""
     if jobs == 1:
         yield from map(function, items)
         return
-    items = iter(items)
+    items = enumerate(items)
     with ThreadPoolExecutor(max_workers=jobs) as pool:
-        pending = deque(pool.submit(function, item) for item in itertools.islice(items, jobs))
+        pending, ready = {}, {}
+        next_result = 0
         try:
-            while pending:
-                result = pending.popleft().result()
-                item = next(items, None)
-                if item is not None:
-                    pending.append(pool.submit(function, item))
-                yield result
+            while True:
+                # Completed results share the window with running/queued tasks.
+                while len(pending) < jobs and len(pending) + len(ready) < 2 * jobs:
+                    try:
+                        number, item = next(items)
+                    except StopIteration:
+                        break
+                    pending[pool.submit(function, item)] = number
+                if next_result in ready:
+                    yield ready.pop(next_result)
+                    next_result += 1
+                elif pending:
+                    for future in wait(pending, return_when=FIRST_COMPLETED)[0]:
+                        ready[pending.pop(future)] = future.result()
+                    del future
+                else:
+                    break
         finally:
             for future in pending:
                 future.cancel()
@@ -355,6 +367,7 @@ def assemble(bam, chrom, gtf, genome, directory, threads, options, label):
     view = subprocess.Popen(["samtools", "view", "-h", str(bam), chrom], stdout=subprocess.PIPE)
     command = ["stringtie", "-L", *shlex.split(options), "-p", str(threads),
                "-G", str(gtf), "-l", label, "-o", str(directory / "stringtie.gff"), "-"]
+    log(f"Stage stringtie ({chrom}) starting: options={options!r}; work_dir={directory}")
     log(shlex.join(command))
     try:
         result = subprocess.run(command, stdin=view.stdout)

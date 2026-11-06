@@ -2,16 +2,18 @@
 
 import contextlib
 import argparse
+import gzip
 import importlib.util
 import io
 from pathlib import Path
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import threading
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location("ont_performance", ROOT / "scripts/ont_features.py")
@@ -142,6 +144,277 @@ class BatchTests(unittest.TestCase):
             list(MOD.ordered_parallel_map(fail, range(8), 2))
 
 
+class SchedulerTests(unittest.TestCase):
+    def consume_in_thread(self, iterator):
+        results, errors = [], []
+        finished = threading.Event()
+
+        def consume():
+            try:
+                for result in iterator:
+                    results.append(result)
+            except BaseException as error:
+                errors.append(error)
+            finally:
+                finished.set()
+
+        thread = threading.Thread(target=consume, daemon=True)
+        thread.start()
+        return thread, results, errors, finished
+
+    def test_replenishes_while_first_task_is_blocked_and_keeps_order(self):
+        for jobs in (2, 3):
+            with self.subTest(jobs=jobs):
+                release_first = threading.Event()
+                later_started = threading.Event()
+                initial_workers = threading.Barrier(jobs)
+                lock = threading.Lock()
+                active = peak = 0
+
+                def work(n):
+                    nonlocal active, peak
+                    with lock:
+                        active += 1
+                        peak = max(peak, active)
+                    try:
+                        if n < jobs:
+                            initial_workers.wait(2)
+                        if n == 0:
+                            release_first.wait()
+                        if n == jobs:
+                            later_started.set()
+                        return n * 2
+                    finally:
+                        with lock:
+                            active -= 1
+
+                thread, results, errors, _ = self.consume_in_thread(
+                    MOD.ordered_parallel_map(work, range(12), jobs))
+                try:
+                    self.assertTrue(later_started.wait(2), "idle worker must start a replacement before task 0 finishes")
+                    self.assertEqual(results, [], "exports must still wait for task 0")
+                finally:
+                    release_first.set()
+                    thread.join(5)
+                self.assertFalse(thread.is_alive())
+                self.assertEqual(errors, [])
+                self.assertEqual(results, list(range(0, 24, 2)))
+                self.assertEqual(peak, jobs)
+                self.assertEqual(active, 0)
+
+    def test_bounds_outstanding_plus_buffered_results_and_input_consumption(self):
+        for jobs in (2, 3):
+            with self.subTest(jobs=jobs):
+                release_first = threading.Event()
+                window_started = threading.Event()
+                consumed = []
+                results = []
+                limit = 2 * jobs
+
+                def items():
+                    for n in range(30):
+                        self.assertLess(len(consumed) - len(results), limit,
+                                        "running, queued and buffered tasks must share one bound")
+                        consumed.append(n)
+                        yield n
+
+                def work(n):
+                    if n == 0:
+                        release_first.wait()
+                    if n == limit - 1:
+                        window_started.set()
+                    return n
+
+                iterator = MOD.ordered_parallel_map(work, items(), jobs)
+                self.assertEqual(consumed, [], "constructing the iterator must be lazy")
+                thread, results, errors, _ = self.consume_in_thread(iterator)
+                try:
+                    self.assertTrue(window_started.wait(2), "completion-driven work should fill the bounded window")
+                    self.assertEqual(consumed, list(range(limit)))
+                    self.assertEqual(results, [])
+                finally:
+                    release_first.set()
+                    thread.join(5)
+                self.assertFalse(thread.is_alive())
+                self.assertEqual(errors, [])
+                self.assertEqual(results, list(range(30)))
+
+    def test_lazy_serial_and_parallel_maps_accept_none_and_empty_input(self):
+        for jobs in (1, 2):
+            with self.subTest(jobs=jobs):
+                consumed, called = [], []
+                values = [0, 1, None, 3, None, 5]
+
+                def items():
+                    for item in values:
+                        consumed.append(item)
+                        yield item
+
+                def work(item):
+                    called.append(item)
+                    return item
+
+                iterator = MOD.ordered_parallel_map(work, items(), jobs)
+                self.assertEqual(consumed, [])
+                self.assertEqual(called, [])
+                self.assertEqual(next(iterator), 0)
+                self.assertLessEqual(len(consumed), 1 if jobs == 1 else 2 * jobs)
+                self.assertEqual(list(iterator), values[1:])
+                self.assertCountEqual(called, values)
+                self.assertEqual(list(MOD.ordered_parallel_map(work, [], jobs)), [])
+                self.assertEqual(len(called), len(values))
+
+    def test_worker_error_propagates_after_running_workers_are_joined(self):
+        release_first = threading.Event()
+        first_started = threading.Event()
+        failed = threading.Event()
+        active = set()
+        lock = threading.Lock()
+        error = ValueError("worker failed")
+
+        def work(n):
+            with lock:
+                active.add(n)
+            try:
+                if n == 0:
+                    first_started.set()
+                    release_first.wait()
+                elif n == 1:
+                    self.assertTrue(first_started.wait(2))
+                    failed.set()
+                    raise error
+                return n
+            finally:
+                with lock:
+                    active.remove(n)
+
+        thread, _, errors, finished = self.consume_in_thread(
+            MOD.ordered_parallel_map(work, range(20), 2))
+        try:
+            self.assertTrue(failed.wait(2))
+            self.assertFalse(finished.is_set(), "a failed map must join the still-running worker")
+        finally:
+            release_first.set()
+            thread.join(5)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(errors, [error])
+        self.assertEqual(active, set())
+
+    def test_source_error_propagates_and_joins_initial_workers(self):
+        started = threading.Event()
+        release = threading.Event()
+        source_failed = threading.Event()
+        worker_finished = threading.Event()
+        error = RuntimeError("input failed")
+
+        def items():
+            yield 0
+            self.assertTrue(started.wait(2))
+            source_failed.set()
+            raise error
+
+        def work(n):
+            started.set()
+            try:
+                release.wait()
+                return n
+            finally:
+                worker_finished.set()
+
+        thread, _, errors, finished = self.consume_in_thread(
+            MOD.ordered_parallel_map(work, items(), 2))
+        try:
+            self.assertTrue(source_failed.wait(2))
+            self.assertFalse(finished.is_set())
+        finally:
+            release.set()
+            thread.join(5)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(errors, [error])
+        self.assertTrue(worker_finished.is_set())
+
+    def test_closing_map_joins_running_workers_without_consuming_more_input(self):
+        started = threading.Event()
+        release = threading.Event()
+        worker_finished = threading.Event()
+        consumed = []
+
+        def items():
+            for n in range(20):
+                consumed.append(n)
+                yield n
+
+        def work(n):
+            if n == 1:
+                started.set()
+                try:
+                    release.wait()
+                finally:
+                    worker_finished.set()
+            return n
+
+        iterator = MOD.ordered_parallel_map(work, items(), 2)
+        thread = None
+        errors = []
+
+        def close():
+            try:
+                iterator.close()
+            except BaseException as error:
+                errors.append(error)
+
+        try:
+            self.assertEqual(next(iterator), 0)
+            self.assertTrue(started.wait(2))
+            before_close = list(consumed)
+            thread = threading.Thread(target=close, daemon=True)
+            thread.start()
+        finally:
+            release.set()
+            if thread is not None:
+                thread.join(5)
+            else:
+                iterator.close()
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(errors, [])
+        self.assertTrue(worker_finished.is_set())
+        self.assertEqual(consumed, before_close)
+
+
+class AssemblyLoggingTests(unittest.TestCase):
+    def test_stringtie_start_logs_context_before_execution_without_changing_command(self):
+        for options in ("-c 2", "-c 2 -A 'coverage values.tsv'"):
+            with self.subTest(options=options), tempfile.TemporaryDirectory() as temp:
+                directory = Path(temp)
+                (directory / "stringtie.gff").write_text("")
+                log = io.StringIO()
+                view = Mock(stdout=io.BytesIO(), args=["samtools", "view", "-h", "reads.bam", "chr7"])
+                view.wait.return_value = 0
+
+                def run(command, **kwargs):
+                    message = log.getvalue()
+                    self.assertIn("Stage stringtie (chr7) starting:", message)
+                    self.assertIn(f"options={options!r}", message)
+                    self.assertIn(f"work_dir={directory}", message)
+                    self.assertNotIn("Stage stringtie (chr7) elapsed:", message)
+                    self.assertIs(kwargs["stdin"], view.stdout)
+                    return subprocess.CompletedProcess(command, 0)
+
+                with patch.object(MOD.subprocess, "Popen", return_value=view) as popen, \
+                        patch.object(MOD.subprocess, "run", side_effect=run) as execute, \
+                        contextlib.redirect_stderr(log):
+                    MOD.assemble(Path("reads.bam"), "chr7", Path("genes.gtf"), Path("genome.fa"),
+                                 directory, 8, options, "flora_chr7")
+                extra = [] if options == "-c 2" else ["-A", "coverage values.tsv"]
+                execute.assert_called_once_with(
+                    ["stringtie", "-L", "-c", "2", *extra, "-p", "8", "-G", "genes.gtf",
+                     "-l", "flora_chr7", "-o", str(directory / "stringtie.gff"), "-"], stdin=view.stdout)
+                popen.assert_called_once_with(view.args, stdout=subprocess.PIPE)
+                self.assertTrue(view.stdout.closed)
+                view.wait.assert_called_once_with()
+                self.assertIn("Stage stringtie (chr7) elapsed:", log.getvalue())
+
+
 class BamParityTests(unittest.TestCase):
     def test_run_isolates_worker_databases_and_uses_requested_scratch(self):
         import pysam
@@ -195,6 +468,10 @@ class BamParityTests(unittest.TestCase):
             self.assertEqual(len(worker_paths), 2)
             self.assertFalse(list(scratch.iterdir()), "scratch must be removed after success")
             self.assertEqual((root / "g.tsv").read_text(), "r0\tAssigned\t60\tG\nr1\tAssigned\t60\tG\n")
+            with gzip.open(args.output_dir / "sample.transcriptome.fa.gz", "rt") as handle:
+                self.assertEqual(handle.read(), "".join(f">flora_chr{i}\n" + "A" * 100 + "\n" for i in range(2)))
+            with gzip.open(args.output_dir / "sample.transcriptome.gtf.gz", "rt") as handle:
+                self.assertEqual(handle.read(), gtf.read_text())
             self.assertEqual(len(list((args.output_dir / "intermediates").glob("ont-work-*/chrom_*/reference.gtf"))), 2)
 
     def test_native_fastq_matches_original_for_reverse_missing_and_hard_clips(self):

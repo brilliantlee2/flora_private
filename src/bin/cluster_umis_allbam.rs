@@ -1,3 +1,5 @@
+use std::cmp::Reverse;
+use std::collections::BinaryHeap;
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -165,9 +167,32 @@ fn collect_and_cluster(
         "[timing] cluster_umis.collect_groups[{chrom}]: {:.2}s",
         collect_phase.elapsed().as_secs_f64()
     );
+    let largest = largest_group_indices(&groups, 8);
+    let labels = group_ids
+        .iter()
+        .filter_map(|((cell, _), &index)| {
+            (groups[index].umi_counts.len() >= 5_000 || largest.contains(&index))
+                .then_some((index, cell.as_str()))
+        })
+        .collect::<HashMap<_, _>>();
+    for (rank, index) in largest.into_iter().enumerate() {
+        let group = &groups[index];
+        let (minimum, maximum) = group
+            .umi_counts
+            .keys()
+            .map(String::len)
+            .fold((usize::MAX, 0), |(minimum, maximum), length| {
+                (minimum.min(length), maximum.max(length))
+            });
+        eprintln!(
+            "[umi_cluster] hotspot[{chrom}] rank={} cell={} gene={} reads={} distinct_umis={} length_min={} length_max={}",
+            rank + 1, labels[&index], group.gene, group.seen_reads, group.umi_counts.len(),
+            minimum, maximum
+        );
+    }
 
     let cluster_phase = Instant::now();
-    let corrected_by_group = cluster_groups_in_pool(&groups, cluster_pool);
+    let corrected_by_group = cluster_groups_in_pool(&groups, cluster_pool, chrom, &labels);
     eprintln!(
         "[timing] cluster_umis.cluster_groups[{chrom}]: {:.2}s",
         cluster_phase.elapsed().as_secs_f64()
@@ -202,17 +227,69 @@ fn cluster_groups(groups: &[GroupState], threads: usize) -> Result<Vec<HashMap<S
         .num_threads(bounded_hts_threads(threads))
         .build()
         .context("create UMI clustering thread pool")?;
-    Ok(cluster_groups_in_pool(groups, &pool))
+    Ok(cluster_groups_in_pool(
+        groups,
+        &pool,
+        "test",
+        &HashMap::default(),
+    ))
+}
+
+fn largest_group_indices(groups: &[GroupState], limit: usize) -> Vec<usize> {
+    let mut largest = BinaryHeap::new();
+    for (index, group) in groups.iter().enumerate() {
+        largest.push(Reverse((
+            group.umi_counts.len(),
+            group.seen_reads,
+            Reverse(index),
+        )));
+        if largest.len() > limit {
+            largest.pop();
+        }
+    }
+    let mut keys = largest
+        .into_iter()
+        .map(|Reverse(key)| key)
+        .collect::<Vec<_>>();
+    keys.sort_unstable_by(|a, b| b.cmp(a));
+    keys.into_iter()
+        .map(|(_, _, Reverse(index))| index)
+        .collect()
 }
 
 fn cluster_groups_in_pool(
     groups: &[GroupState],
     pool: &rayon::ThreadPool,
+    chrom: &str,
+    labels: &HashMap<usize, &str>,
 ) -> Vec<HashMap<String, String>> {
     pool.install(|| {
         groups
             .par_iter()
-            .map(|group| cluster_directional(&group.umi_counts, 3))
+            .enumerate()
+            .map(|(index, group)| {
+                let large = group.umi_counts.len() >= 5_000;
+                let started = large.then(Instant::now);
+                if large {
+                    eprintln!(
+                        "[umi_cluster] start[{chrom}] cell={} gene={} reads={} distinct_umis={}",
+                        labels.get(&index).unwrap_or(&"unknown"),
+                        group.gene,
+                        group.seen_reads,
+                        group.umi_counts.len()
+                    );
+                }
+                let corrected = cluster_directional(&group.umi_counts, 3);
+                if let Some(started) = started {
+                    eprintln!(
+                        "[umi_cluster] done[{chrom}] cell={} gene={} elapsed={:.2}s",
+                        labels.get(&index).unwrap_or(&"unknown"),
+                        group.gene,
+                        started.elapsed().as_secs_f64()
+                    );
+                }
+                corrected
+            })
             .collect()
     })
 }
@@ -252,6 +329,23 @@ fn get_string_tag(rec: &bam::Record, tag: &[u8; 2]) -> Option<String> {
 mod tests {
     use super::{cluster_groups, region_name_from_positions, GroupState};
     use rustc_hash::FxHashMap as HashMap;
+
+    #[test]
+    fn largest_groups_are_ranked_without_reordering_input() {
+        let groups = vec![
+            group("FIRST", &[("AAAA", 3)]),
+            group("SECOND", &[("AAAA", 1), ("AAAT", 2)]),
+            group("THIRD", &[("AAAA", 10), ("AAAT", 20)]),
+            group("FOURTH", &[("AAAA", 10), ("AAAT", 20)]),
+        ];
+        assert_eq!(super::largest_group_indices(&groups, 2), vec![2, 3]);
+        assert_eq!(
+            super::largest_group_indices(&groups, 0),
+            Vec::<usize>::new()
+        );
+        assert_eq!(groups[0].gene, "FIRST");
+        assert_eq!(super::largest_group_indices(&[], 5), Vec::<usize>::new());
+    }
 
     #[test]
     fn zero_read_cap_means_unlimited() {

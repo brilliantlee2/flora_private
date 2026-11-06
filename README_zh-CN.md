@@ -171,7 +171,8 @@ Raw MEX 为整数 UMI 计数。Processed MEX 要求每细胞至少 200 个特征
 转录组临时比对 BAM 仅在 `--save-intermediate` 或 `--full-output` 时保留。
 
 详细设计和实测：[ONT 后端](docs/ont-v3.3.0-alignment.md)、
-[性能优化记录](docs/ont-v330-performance.md)。
+[性能优化记录](docs/ont-v330-performance.md)、
+[人样本耗时修复与 StringTie 排查](docs/ont-hotspot-fix-20261106.md)。
 
 ## 流程输出策略
 

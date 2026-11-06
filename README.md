@@ -188,7 +188,8 @@ BAMs are retained only with `--save-intermediate` or `--full-output`.
 
 Implementation and performance details:
 [ONT backend](docs/ont-v3.3.0-alignment.md),
-[performance record](docs/ont-v330-performance.md).
+[performance record](docs/ont-v330-performance.md),
+[human-sample hotspot fixes and StringTie diagnostics](docs/ont-hotspot-fix-20261106.md).
 
 ## Workflow output policy
 
