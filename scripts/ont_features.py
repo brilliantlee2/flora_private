@@ -1,4 +1,4 @@
-"""Flora feature assignment using wf-single-cell v3.3.0 historical rules.
+"""Flora historical feature-selection rules with StringTie 2.2.3 assembly.
 
 Independent implementation. Keep read-sized indexes on disk and process one
 chromosome at a time; transcriptome secondary alignments are needed for ranking.
@@ -29,6 +29,7 @@ REFERENCE_VERSION = "wf-single-cell v3.3.0"
 REFERENCE_COMMIT = "d46f92121c79c28a02105cf2444029e91dc4b609"
 REFERENCE_CONTAINER = "ontresearch/wf-single-cell:shab5b0dea0efc4685f74c8b4f91c979c587e23a020"
 REFERENCE_WITHDRAWN = True
+REQUIRED_STRINGTIE_VERSION = "2.2.3"
 EXCLUDED_CLASSES = {"i", "y", "p", "s"}
 BATCH_SIZE = 10000
 
@@ -504,16 +505,19 @@ def run(args):
     out = args.output_dir.resolve()
     out.mkdir(parents=True, exist_ok=True)
     versions = {"behavior_reference": REFERENCE_VERSION, "reference_commit": REFERENCE_COMMIT,
-                "reference_container": REFERENCE_CONTAINER, "reference_withdrawn": REFERENCE_WITHDRAWN}
+                "reference_container": REFERENCE_CONTAINER, "reference_withdrawn": REFERENCE_WITHDRAWN,
+                "required_stringtie_version": REQUIRED_STRINGTIE_VERSION}
     for name, flag in [("minimap2", "--version"), ("samtools", "--version"),
                        ("stringtie", "--version"), ("gffread", "--version"), ("gffcompare", "--version")]:
         p = subprocess.run([name, flag], capture_output=True, text=True, errors="replace")
         versions[name] = ((p.stdout + p.stderr).strip().splitlines() or ["unknown"])[0]
     (out / "tool_versions.json").write_text(json.dumps(versions, indent=2) + "\n")
-    if versions["stringtie"] != "2.2.2":
-        raise RuntimeError("The ONT 3.3.0 comparison backend requires StringTie 2.2.2; update the pinned Flora conda environment")
+    if versions["stringtie"] != REQUIRED_STRINGTIE_VERSION:
+        raise RuntimeError(f"This Flora comparison requires StringTie {REQUIRED_STRINGTIE_VERSION}; "
+                           f"found {versions['stringtie']}. Use this branch's environment.yml.")
     log("ONT 3.3.0 was withdrawn upstream; using the recorded historical source commit for comparison")
     log(f"Behavior reference: {REFERENCE_VERSION}; {json.dumps(versions)}")
+    log(f"Assembly variant: StringTie {REQUIRED_STRINGTIE_VERSION}; historical feature-selection rules retained")
     jobs, worker_threads = execution_layout(args.threads, getattr(args, "jobs", 1))
     scratch_parent = getattr(args, "temp_dir", None)
     if scratch_parent is not None:

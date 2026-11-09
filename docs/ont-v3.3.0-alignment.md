@@ -4,6 +4,13 @@ Date: 2026-10-22 (Asia/Shanghai).
 Branch: `codex/1022-ont-v330-feature-alignment`.
 Base: `codex/1013-ont-prealignment-trimming`, commit `b931d16`.
 
+Current comparison override (2026-11-09): `codex/1109-stringtie-2.2.3` is based
+on local `main` at `291de65`. It requires StringTie 2.2.3 while retaining the
+historical feature-selection rules below. The historical container manifest
+remains provenance only, not the active assembly toolchain. See the
+[side-by-side guide](stringtie-2.2.3-comparison.md). Older implementation and
+validation records below describe the original 2.2.2 implementation.
+
 ## Reference identity
 
 ONT withdrew wf-single-cell v3.3.0 because it contained critical issues.
@@ -31,7 +38,7 @@ branch in the GitHub checkout without changing the separate 3.3.4 branch.
 2. Genome mapping: splice, forward-strand profile, MD tags, junction hints,
    10M batches and allocation cap; remove secondary records after alignment.
 3. Assemble all mapped cDNA alignments per annotated chromosome, using
-   StringTie 2.2.2 with `-L -c 2`, reference guidance and unique chromosome labels.
+   StringTie 2.2.3 with `-L -c 2`, reference guidance and unique chromosome labels.
 4. Extract transcript sequences using gffread; annotate with gffcompare.
 5. Remap primary cDNA sequences to that chromosome's sample transcriptome with
    `map-ont --cap-kalloc 100m --cap-sw-mem 50m --end-bonus 10 -p 0.9 -N 3`.
@@ -66,12 +73,13 @@ Differences in the reference sources include:
 
 - 3.3.0 intermediate tables are plain TSV; 3.3.4 compresses several as zstd.
 - 3.3.1 changed UMI-length filtering and sequencing saturation calculations.
-- 3.3.1 updated StringTie to 2.2.3 to address assembly stalls; this historical
-  comparison pins 2.2.2 and verifies its version before workflow execution.
+- 3.3.1 updated StringTie to 2.2.3 to address assembly stalls. This comparison
+  branch adopts that assembly version and verifies it before execution; it does
+  not adopt the other post-3.3.0 workflow changes.
 - Later releases repaired several Visium HD and report edge cases.
 
-Only the known StringTie version is pinned to the historical value. Other tools
-use the existing Flora environment ranges, and actual versions are recorded.
+StringTie is pinned to the comparison value 2.2.3. Other tools use the existing
+Flora environment ranges, and actual versions are recorded.
 The old ONT container is not executed, and no exact container/toolchain identity
 or final numerical equivalence is claimed.
 

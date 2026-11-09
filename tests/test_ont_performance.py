@@ -4,6 +4,7 @@ import contextlib
 import argparse
 import importlib.util
 import io
+import json
 from pathlib import Path
 import sqlite3
 import sys
@@ -186,16 +187,37 @@ class BamParityTests(unittest.TestCase):
                 transcript_assigns=root / "t.tsv", sample="sample", threads=16, mapq=30,
                 stringtie_opts="-c 2", save_intermediate=True, temp_dir=scratch, jobs=2)
             def version(command, **kwargs):
-                return subprocess.CompletedProcess(command, 0, "2.2.2" if command[0] == "stringtie" else "test", "")
+                return subprocess.CompletedProcess(command, 0, "2.2.3" if command[0] == "stringtie" else "test", "")
             self.assertTrue(hasattr(MOD, "execution_layout"), "need isolated chromosome workers")
             with patch.object(MOD.shutil, "which", return_value="tool"), patch.object(MOD.subprocess, "run", side_effect=version), \
                     patch.object(MOD, "assemble", side_effect=assemble), patch.object(MOD, "remap_chromosome", side_effect=remap), \
                     patch.object(MOD, "load_candidates", return_value={"T": ("G", "T")}), contextlib.redirect_stderr(io.StringIO()):
                 MOD.run(args)
+            versions = json.loads((args.output_dir / "tool_versions.json").read_text())
+            self.assertEqual(versions["stringtie"], "2.2.3")
+            self.assertEqual(versions.get("required_stringtie_version"), "2.2.3")
+            self.assertEqual(versions["reference_commit"], MOD.REFERENCE_COMMIT)
             self.assertEqual(len(worker_paths), 2)
             self.assertFalse(list(scratch.iterdir()), "scratch must be removed after success")
             self.assertEqual((root / "g.tsv").read_text(), "r0\tAssigned\t60\tG\nr1\tAssigned\t60\tG\n")
             self.assertEqual(len(list((args.output_dir / "intermediates").glob("ont-work-*/chrom_*/reference.gtf"))), 2)
+
+    def test_run_rejects_old_stringtie_before_assembly_and_records_actual_version(self):
+        import subprocess
+
+        with tempfile.TemporaryDirectory() as temp:
+            args = argparse.Namespace(output_dir=Path(temp))
+            def version(command, **kwargs):
+                return subprocess.CompletedProcess(command, 0, "2.2.2" if command[0] == "stringtie" else "test", "")
+            with patch.object(MOD.shutil, "which", return_value="tool"), \
+                    patch.object(MOD.subprocess, "run", side_effect=version), \
+                    patch.object(MOD, "assemble") as assembly:
+                with self.assertRaisesRegex(RuntimeError, "requires StringTie 2.2.3"):
+                    MOD.run(args)
+                assembly.assert_not_called()
+            versions = json.loads((args.output_dir / "tool_versions.json").read_text())
+            self.assertEqual(versions["stringtie"], "2.2.2")
+            self.assertEqual(versions.get("required_stringtie_version"), "2.2.3")
 
     def test_native_fastq_matches_original_for_reverse_missing_and_hard_clips(self):
         import pysam

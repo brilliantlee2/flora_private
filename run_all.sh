@@ -104,7 +104,9 @@ Notes:
       only to legacy. ONT transcript assignment uses alignment score/coverage.
       ONT defaults to no per-cell/gene read cap (0); legacy defaults to 20000.
       ONT 3.3.0 was withdrawn upstream. This comparison backend pins historical
-      source d46f92121c79c28a02105cf2444029e91dc4b609 and StringTie 2.2.2.
+      feature-selection source d46f92121c79c28a02105cf2444029e91dc4b609.
+      This comparison branch requires StringTie 2.2.3 for assembly instead of
+      the historical container's 2.2.2; other analysis defaults are unchanged.
 EOF
 }
 
@@ -210,6 +212,7 @@ write_parameters_tsv() {
       printf "feature_reference\twf-single-cell v3.3.0\n"
       printf "feature_reference_commit\td46f92121c79c28a02105cf2444029e91dc4b609\n"
       printf "feature_reference_withdrawn\ttrue\n"
+      printf "required_stringtie_version\t2.2.3\n"
     else
       printf "feature_reference\tFlora GTF-overlap\n"
     fi
@@ -614,8 +617,8 @@ if [[ "${FEATURE_BACKEND}" == "ont" && "${UPSTREAM_ONLY}" -eq 0 ]]; then
   require_cmd stringtie
   require_cmd gffread
   require_cmd gffcompare
-  if [[ "$(stringtie --version)" != "2.2.2" ]]; then
-    echo "[ERROR] ONT 3.3.0 comparison requires StringTie 2.2.2; update environment.yml." >&2
+  if [[ "$(stringtie --version)" != "2.2.3" ]]; then
+    echo "[ERROR] This comparison branch requires StringTie 2.2.3; use its environment.yml in a separate Conda environment." >&2
     exit 1
   fi
   python_asset "${DOWNSTREAM_DIR}/ont_features.py" >/dev/null

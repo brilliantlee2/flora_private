@@ -7,11 +7,16 @@ Private source, tests, and packaging tools for Flora. Keep this repository
 private. The public `brilliantlee2/Flora` repository contains user documentation;
 binary archives are distributed through GitHub Releases.
 
+This branch compares StringTie 2.2.3 against `main` (2.2.2), with other Flora
+analysis defaults unchanged. See the [side-by-side test guide](docs/stringtie-2.2.3-comparison.md).
+Keep the original environment and use `flora-stringtie223` for this branch.
+
 ## Clone the private repository
 
 ```bash
-git clone https://github.com/brilliantlee2/flora_private.git
-cd flora_private
+git clone --branch codex/1109-stringtie-2.2.3 --single-branch \
+  https://github.com/brilliantlee2/flora_private.git flora_private_stringtie223
+cd flora_private_stringtie223
 ```
 
 Access to the private repository is required. Use a GitHub token or authorized
@@ -23,19 +28,20 @@ Patched dependencies are included in `vendor/`; no submodule setup is needed.
 Run these commands from the repository root on Linux x86_64:
 
 ```bash
-conda env create -f environment.yml
-conda activate flora
+conda env create -n flora-stringtie223 -f environment.yml
+conda activate flora-stringtie223
 
 export LANG=C.UTF-8
 export LC_ALL=C.UTF-8
 export PYTHONUTF8=1
 ```
 
-For an existing environment, use `conda env update -n flora -f environment.yml`
-instead of creating it, then reactivate it. Use Python 3.11.x.
+For an existing comparison environment, use
+`conda env update -n flora-stringtie223 -f environment.yml`, then reactivate it.
+Do not update the environment used by the `main` control. Use Python 3.11.x.
 `environment.yml` includes the build tools and runtime dependencies;
 `environment.runtime.yml` is for packaged executables, and `requirements.txt`
-lists Python packages only. Both environment files include StringTie 2.2.2,
+lists Python packages only. Both environment files include StringTie 2.2.3,
 `gffread`, and `gffcompare`, required for transcript reconstruction and annotation.
 
 Before compiling, locate libclang for `rust-htslib`/`bindgen`. This is only a
@@ -57,7 +63,7 @@ If not found, run `conda install -c conda-forge libclang`, then repeat the
 lookup. Do not continue building until it succeeds. This example does not exit
 your interactive SSH shell. Repeat the setup after opening a new shell, or
 persist a successful value with
-`conda env config vars set LIBCLANG_PATH="$LIBCLANG_PATH"` and reactivate `flora`.
+`conda env config vars set LIBCLANG_PATH="$LIBCLANG_PATH"` and reactivate `flora-stringtie223`.
 
 ## Development build and tests
 

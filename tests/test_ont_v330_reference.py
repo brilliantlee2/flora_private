@@ -13,6 +13,7 @@ import logging
 import os
 from pathlib import Path
 import random
+import re
 import subprocess
 import sys
 import tempfile
@@ -39,9 +40,30 @@ class ProvenanceTests(unittest.TestCase):
         self.assertEqual(module.REFERENCE_COMMIT, COMMIT)
         self.assertTrue(module.REFERENCE_WITHDRAWN)
 
-    def test_build_and_runtime_environments_pin_stringtie_222(self):
+    def test_build_and_runtime_environments_pin_stringtie_223(self):
         for name in ("environment.yml", "environment.runtime.yml"):
-            self.assertIn("- stringtie=2.2.2\n", (ROOT / name).read_text())
+            self.assertIn("- stringtie=2.2.3\n", (ROOT / name).read_text())
+
+    def test_python_backend_requires_comparison_assembly_version(self):
+        self.assertEqual(getattr(load_flora(), "REQUIRED_STRINGTIE_VERSION", None), "2.2.3")
+
+    def test_both_shell_version_checks_accept_only_223(self):
+        for name in ("run_all.sh", "run_all_mixed_species.sh"):
+            text = (ROOT / name).read_text()
+            block = re.search(r'  if \[\[ "\$\(stringtie --version\)" != "[^"]+" \]\]; then\n.*?\n  fi',
+                              text, re.DOTALL)
+            self.assertIsNotNone(block, name)
+            for version in ("2.2.3", "2.2.2", "3.0.3"):
+                with self.subTest(entrypoint=name, version=version):
+                    result = subprocess.run(["bash", "-c",
+                        'stringtie() { printf "%s\\n" "$FAKE_VERSION"; }\n' + block[0]],
+                        capture_output=True, text=True,
+                        env={"PATH": "/usr/bin:/bin", "FAKE_VERSION": version})
+                    if version == "2.2.3":
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                    else:
+                        self.assertNotEqual(result.returncode, 0)
+                        self.assertIn("StringTie 2.2.3", result.stderr)
 
     def test_both_entrypoints_identify_330(self):
         for name in ("run_all.sh", "run_all_mixed_species.sh"):
@@ -63,10 +85,12 @@ class ProvenanceTests(unittest.TestCase):
                         rows = dict(list(csv.reader(handle, delimiter="\t"))[1:])
                     if backend == "ont":
                         self.assertEqual(rows["feature_reference_commit"], COMMIT)
+                        self.assertEqual(rows.get("required_stringtie_version"), "2.2.3")
                     else:
                         self.assertEqual(rows["feature_reference"], "Flora GTF-overlap")
                         self.assertNotIn("feature_reference_commit", rows)
                         self.assertNotIn("feature_reference_withdrawn", rows)
+                        self.assertNotIn("required_stringtie_version", rows)
 
 
 @unittest.skipUnless(os.environ.get("ONT_V330_REFERENCE_DIR"), "requires original ONT 3.3.0 source and oracle dependencies")

@@ -6,11 +6,16 @@
 本仓库保存 Flora 私有源码、测试和打包工具，必须保持 private。
 公开仓库 `brilliantlee2/Flora` 保存用户文档，二进制压缩包通过 GitHub Releases 发布。
 
+本分支仅将 StringTie 从 `main` 的 2.2.2 改为 2.2.3，其他 Flora 分析默认值不变。
+参见[并行对照测试说明](docs/stringtie-2.2.3-comparison.md)。请保留原环境，
+本分支使用独立的 `flora-stringtie223` 环境。
+
 ## 克隆私有仓库
 
 ```bash
-git clone https://github.com/brilliantlee2/flora_private.git
-cd flora_private
+git clone --branch codex/1109-stringtie-2.2.3 --single-branch \
+  https://github.com/brilliantlee2/flora_private.git flora_private_stringtie223
+cd flora_private_stringtie223
 ```
 
 需要私有仓库访问权限，使用 GitHub Token 或已授权的 SSH key。
@@ -22,19 +27,19 @@ SSH 地址为 `git@github.com:brilliantlee2/flora_private.git`。
 在 Linux x86_64 的仓库根目录执行：
 
 ```bash
-conda env create -f environment.yml
-conda activate flora
+conda env create -n flora-stringtie223 -f environment.yml
+conda activate flora-stringtie223
 
 export LANG=C.UTF-8
 export LC_ALL=C.UTF-8
 export PYTHONUTF8=1
 ```
 
-已有环境时，用 `conda env update -n flora -f environment.yml` 代替创建命令，
-然后重新激活。必须使用 Python 3.11.x。
+已有本分支测试环境时，用 `conda env update -n flora-stringtie223 -f environment.yml`
+代替创建命令，然后重新激活；不要更新 `main` 对照使用的原环境。必须使用 Python 3.11.x。
 `environment.yml` 包含构建工具和运行依赖；`environment.runtime.yml` 用于
 已打包的可执行文件；`requirements.txt` 只列出 Python 包。两个环境文件均已包含
-转录本重构与注释所需的 StringTie 2.2.2、`gffread` 和 `gffcompare`。
+转录本重构与注释所需的 StringTie 2.2.3、`gffread` 和 `gffcompare`。
 
 编译前为 `rust-htslib`/`bindgen` 设置 libclang 路径。
 这仅是构建依赖，运行已打包的 Flora 不需要单独设置。
@@ -53,7 +58,7 @@ fi
 
 找不到时，执行 `conda install -c conda-forge libclang`，然后重新查找；成功后再编译。
 上述示例不会退出当前 SSH 会话。新开终端后需重新设置，也可在查找成功后执行
-`conda env config vars set LIBCLANG_PATH="$LIBCLANG_PATH"`，再重新激活 `flora`。
+`conda env config vars set LIBCLANG_PATH="$LIBCLANG_PATH"`，再重新激活 `flora-stringtie223`。
 
 ## 开发构建与测试
 
