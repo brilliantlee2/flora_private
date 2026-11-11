@@ -266,6 +266,7 @@ fn normalize_path_options(args: &mut [OsString]) -> Result<()> {
         "--outdir",
         "--glycine-outdir",
         "--ont-temp-dir",
+        "--stringtie-bin",
     ];
     let cwd = std::env::current_dir().context("failed to resolve current directory")?;
     let mut index = 0;
@@ -333,6 +334,23 @@ mod tests {
         let mut directory = vec![OsString::from("--fastq-dir"), OsString::from("chunks")];
         normalize_path_options(&mut directory).unwrap();
         assert_eq!(PathBuf::from(&directory[1]), cwd.join("chunks"));
+    }
+
+    #[test]
+    fn normalizes_isolated_stringtie_executable_before_runtime_chdir() {
+        let cwd = std::env::current_dir().unwrap();
+        let mut args = vec![
+            OsString::from("--stringtie-bin"),
+            OsString::from("tools/stringtie"),
+        ];
+        normalize_path_options(&mut args).unwrap();
+        assert_eq!(PathBuf::from(&args[1]), cwd.join("tools/stringtie"));
+        let mut equal = vec![OsString::from("--stringtie-bin=tools/stringtie")];
+        normalize_path_options(&mut equal).unwrap();
+        assert_eq!(
+            equal[0].to_string_lossy(),
+            format!("--stringtie-bin={}", cwd.join("tools/stringtie").display())
+        );
     }
 
     #[test]

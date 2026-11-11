@@ -18,6 +18,9 @@ Usage:
     [--isoform-gtf /path/to/transcripts.gtf] \
     [--sample-id sample] \
     [--threads 32] \
+    [--minimap2-batch 500M] \
+    [--minimap2-io-threads 2] \
+    [--alignment-gzip-input stream|direct] \
     [--fastq-dir /path/to/fastq_chunks] \
     [--glycine-jobs 10] \
     [--glycine-threads 64] \
@@ -54,6 +57,7 @@ Usage:
     [--ont-jobs 1] \
     [--ont-temp-dir /path/to/local_scratch] \
     [--stringtie-opts '-c 2'] \
+    [--stringtie-bin /path/to/stringtie] \
     [--transcript-assign-mapq 30] \
     [--transcript-assign-chunk-size 200000] \
     [--ref-interval 1000] \
@@ -112,6 +116,20 @@ require_cmd() {
   if ! command -v "$cmd" >/dev/null 2>&1; then
     echo "[ERROR] Command not found: $cmd" >&2
     exit 1
+  fi
+}
+
+require_stringtie() {
+  local selected="${STRINGTIE_BIN:-stringtie}"
+  local actual
+  require_cmd "${selected}"
+  if ! actual="$("${selected}" --version)"; then
+    echo "[ERROR] Failed to query StringTie version: ${selected}" >&2
+    return 1
+  fi
+  if [[ "${actual}" != "2.2.2" ]]; then
+    echo "[ERROR] Selected StringTie must be 2.2.2: ${selected} (got ${actual})." >&2
+    return 1
   fi
 }
 
@@ -182,6 +200,9 @@ write_parameters_tsv() {
     printf "isoform_gtf\t%s\n" "${ISOFORM_GTF}"
     printf "out_dir\t%s\n" "${OUT_DIR}"
     printf "threads\t%s\n" "${THREADS}"
+    printf "minimap2_batch\t%s\n" "${MINIMAP2_BATCH}"
+    printf "minimap2_io_threads\t%s\n" "${MINIMAP2_IO_THREADS}"
+    printf "alignment_gzip_input\t%s\n" "${ALIGNMENT_GZIP_INPUT}"
     printf "cluster_threads\t%s\n" "${CLUSTER_THREADS}"
     printf "glycine_jobs\t%s\n" "${GLYCINE_JOBS}"
     printf "glycine_threads\t%s\n" "${GLYCINE_THREADS}"
@@ -214,6 +235,7 @@ write_parameters_tsv() {
       printf "feature_reference\tFlora GTF-overlap\n"
     fi
     printf "stringtie_opts\t%s\n" "${STRINGTIE_OPTS}"
+    printf "stringtie_bin\t%s\n" "${STRINGTIE_BIN:-stringtie (PATH)}"
     printf "ont_jobs\t%s\n" "${ONT_JOBS}"
     printf "ont_temp_dir\t%s\n" "${ONT_TEMP_DIR:-system temp/TMPDIR}"
     printf "transcript_assign_mapq\t%s\n" "${TRANSCRIPT_ASSIGN_MAPQ}"
@@ -287,15 +309,30 @@ remove_intermediate() {
   fi
 }
 
+alignment_fastq_stream() {
+  local input_fastq="$1"
+  case "${input_fastq}" in
+    *.gz) gzip -dc -- "${input_fastq}" ;;
+    *) cat -- "${input_fastq}" ;;
+  esac
+}
+
 run_alignment_pipeline() {
   local input_fastq="$1"
-  minimap2 -ax splice -uf --MD -I 16G -t "${THREADS}" -K 10M \
-    --junc-bed "${JUNCTION_BED}" \
-    --cap-kalloc 100m \
-    "${GENE_FASTA}" "${input_fastq}" \
-  | samtools view -uh --no-PG - \
-  | samtools view -uh -F 256 - \
-  | samtools sort --no-PG -@ "${THREADS}" -o "${ALIGNED_BAM}" -
+  local mm=(minimap2 -ax splice -uf --MD -I 16G -t "${THREADS}" -K "${MINIMAP2_BATCH}")
+  if [[ "${MINIMAP2_IO_THREADS}" -eq 2 ]]; then mm+=(-2); fi
+  mm+=(--junc-bed "${JUNCTION_BED}" --cap-kalloc 100m "${GENE_FASTA}")
+  log "Alignment: batch=${MINIMAP2_BATCH} io_threads=${MINIMAP2_IO_THREADS} gzip_input=${ALIGNMENT_GZIP_INPUT}; splice index k15/w5 unchanged"
+  if [[ "${ALIGNMENT_GZIP_INPUT}" == direct ]]; then
+    "${mm[@]}" "${input_fastq}" \
+      | samtools view -uh --no-PG -F 256 - \
+      | samtools sort --no-PG -@ "${THREADS}" -o "${ALIGNED_BAM}" -
+  else
+    alignment_fastq_stream "${input_fastq}" \
+      | "${mm[@]}" - \
+      | samtools view -uh --no-PG -F 256 - \
+      | samtools sort --no-PG -@ "${THREADS}" -o "${ALIGNED_BAM}" -
+  fi
 }
 
 cleanup_alignment_stream() {
@@ -382,6 +419,9 @@ ISOFORM_GTF=""
 OUT_DIR=""
 SAMPLE_ID="sample"
 THREADS=32
+MINIMAP2_BATCH="500M"
+MINIMAP2_IO_THREADS=2
+ALIGNMENT_GZIP_INPUT="stream"
 CLUSTER_THREADS=16
 GLYCINE_JOBS=10
 GLYCINE_THREADS=64
@@ -421,6 +461,7 @@ FEATURE_BACKEND="ont"
 ONT_JOBS=1
 ONT_TEMP_DIR=""
 STRINGTIE_OPTS="-c 2"
+STRINGTIE_BIN=""
 TRANSCRIPT_ASSIGN_MAPQ=30
 TRANSCRIPT_ASSIGN_CHUNK_SIZE=200000
 REF_INTERVAL=1000
@@ -454,6 +495,9 @@ while [[ $# -gt 0 ]]; do
     --out-dir|--outdir) OUT_DIR="$2"; shift 2 ;;
     --sample-id|--sample) SAMPLE_ID="$2"; shift 2 ;;
     --threads|--thread) THREADS="$2"; shift 2 ;;
+    --minimap2-batch) MINIMAP2_BATCH="$2"; shift 2 ;;
+    --minimap2-io-threads) MINIMAP2_IO_THREADS="$2"; shift 2 ;;
+    --alignment-gzip-input) ALIGNMENT_GZIP_INPUT="$2"; shift 2 ;;
     --cluster-threads) CLUSTER_THREADS="$2"; shift 2 ;;
     --glycine-jobs) GLYCINE_JOBS="$2"; shift 2 ;;
     --glycine-threads) GLYCINE_THREADS="$2"; shift 2 ;;
@@ -492,6 +536,8 @@ while [[ $# -gt 0 ]]; do
     --ont-jobs) ONT_JOBS="$2"; shift 2 ;;
     --ont-temp-dir) ONT_TEMP_DIR="$2"; shift 2 ;;
     --stringtie-opts) STRINGTIE_OPTS="$2"; shift 2 ;;
+    --stringtie-bin) STRINGTIE_BIN="$2"; shift 2 ;;
+    --stringtie-bin=*) STRINGTIE_BIN="${1#*=}"; shift ;;
     --stringtie-opts=*) STRINGTIE_OPTS="${1#*=}"; shift ;;
     --transcript-assign-mapq) TRANSCRIPT_ASSIGN_MAPQ="$2"; shift 2 ;;
     --transcript-assign-chunk-size) TRANSCRIPT_ASSIGN_CHUNK_SIZE="$2"; shift 2 ;;
@@ -506,6 +552,26 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ ! "${MINIMAP2_BATCH}" =~ ^[1-9][0-9]*[kKmMgG]?$ ]]; then
+  echo "[ERROR] --minimap2-batch must be a positive integer with optional K/M/G suffix." >&2
+  exit 1
+fi
+if [[ "${MINIMAP2_IO_THREADS}" != 1 && "${MINIMAP2_IO_THREADS}" != 2 ]]; then
+  echo "[ERROR] --minimap2-io-threads must be 1 or 2." >&2
+  exit 1
+fi
+if [[ "${ALIGNMENT_GZIP_INPUT}" != stream && "${ALIGNMENT_GZIP_INPUT}" != direct ]]; then
+  echo "[ERROR] --alignment-gzip-input must be stream or direct." >&2
+  exit 1
+fi
+if [[ -n "${STRINGTIE_BIN}" ]]; then
+  require_file "${STRINGTIE_BIN}" "StringTie executable"
+  if [[ ! -x "${STRINGTIE_BIN}" ]]; then
+    echo "[ERROR] --stringtie-bin is not executable: ${STRINGTIE_BIN}" >&2
+    exit 1
+  fi
+  STRINGTIE_BIN="$(cd "$(dirname "${STRINGTIE_BIN}")" && pwd)/$(basename "${STRINGTIE_BIN}")"
+fi
 if [[ ! "${ONT_JOBS}" =~ ^[1-9][0-9]*$ ]]; then
   echo "[ERROR] --ont-jobs must be a positive integer." >&2
   exit 1
@@ -609,17 +675,14 @@ fi
 require_cmd python3
 require_cmd samtools
 require_cmd minimap2
+require_cmd gzip
 if [[ "${FEATURE_BACKEND}" == "legacy" && ( "${GENE_TAGGING_BACKEND}" != "rust" || "${SKIP_ISOFORM}" -eq 0 ) ]]; then
   require_cmd bedtools
 fi
 if [[ "${FEATURE_BACKEND}" == "ont" && "${UPSTREAM_ONLY}" -eq 0 ]]; then
-  require_cmd stringtie
+  require_stringtie
   require_cmd gffread
   require_cmd gffcompare
-  if [[ "$(stringtie --version)" != "2.2.2" ]]; then
-    echo "[ERROR] ONT 3.3.0 comparison requires StringTie 2.2.2; update environment.yml." >&2
-    exit 1
-  fi
   python_asset "${DOWNSTREAM_DIR}/ont_features.py" >/dev/null
   python_asset "${DOWNSTREAM_DIR}/ont_matrices.py" >/dev/null
 fi
@@ -913,6 +976,9 @@ pushd "${MATRIX_DIR}" >/dev/null
 
 if [[ "${FEATURE_BACKEND}" == "ont" ]]; then
   ONT_ARGS=()
+  if [[ -n "${STRINGTIE_BIN}" ]]; then
+    ONT_ARGS+=(--stringtie-bin "${STRINGTIE_BIN}")
+  fi
   if [[ -n "${ONT_TEMP_DIR}" ]]; then
     ONT_ARGS+=(--temp-dir "${ONT_TEMP_DIR}")
   fi

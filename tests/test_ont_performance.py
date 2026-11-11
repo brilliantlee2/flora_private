@@ -188,7 +188,9 @@ class BamParityTests(unittest.TestCase):
             def version(command, **kwargs):
                 return subprocess.CompletedProcess(command, 0, "2.2.2" if command[0] == "stringtie" else "test", "")
             self.assertTrue(hasattr(MOD, "execution_layout"), "need isolated chromosome workers")
-            with patch.object(MOD.shutil, "which", return_value="tool"), patch.object(MOD.subprocess, "run", side_effect=version), \
+            tool = root / "tool"
+            tool.write_bytes(b"mock executable identity")
+            with patch.object(MOD.shutil, "which", return_value=str(tool)), patch.object(MOD.subprocess, "run", side_effect=version), \
                     patch.object(MOD, "assemble", side_effect=assemble), patch.object(MOD, "remap_chromosome", side_effect=remap), \
                     patch.object(MOD, "load_candidates", return_value={"T": ("G", "T")}), contextlib.redirect_stderr(io.StringIO()):
                 MOD.run(args)

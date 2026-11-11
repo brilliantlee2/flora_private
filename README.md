@@ -93,6 +93,11 @@ barcode/UMI extraction and cell assignment only. Full workflows accept multiple
 files after `--fastq`, or a non-recursive `--fastq-dir`. Glycine defaults to
 10 concurrent jobs sharing 64 total threads.
 
+Performance testing for the human-reference mapper and dense StringTie loci is
+documented in [the validation guide](docs/alignment-assembly-performance.md).
+This test branch exposes reversible minimap2 batch/I/O controls and an optional,
+isolated StringTie executable; it does not change annotation or MAPQ thresholds.
+
 ## Build the Linux x86_64 release
 
 After preparing the environment and passing the tests above, run:

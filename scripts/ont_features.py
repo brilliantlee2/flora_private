@@ -12,8 +12,10 @@ from concurrent.futures import ThreadPoolExecutor
 import csv
 from dataclasses import dataclass
 import gzip
+import hashlib
 import itertools
 import json
+import os
 from pathlib import Path
 import re
 import shlex
@@ -193,7 +195,10 @@ def process_chromosome(item, args, root, genome, threads):
     genome_db = directory / "genome.sqlite"
     db = open_scratch_database(directory / "features.sqlite", genome_path=genome_db)
     try:
-        assemble(args.bam, chrom, gtf, genome, directory, threads, args.stringtie_opts, f"flora_chr{number}")
+        assembly_kwargs = {}
+        if getattr(args, "stringtie_bin", None):
+            assembly_kwargs["stringtie_bin"] = stringtie_executable(args.stringtie_bin)
+        assemble(args.bam, chrom, gtf, genome, directory, threads, args.stringtie_opts, f"flora_chr{number}", **assembly_kwargs)
         fasta = directory / "transcriptome.fa"
         if fasta.exists() and fasta.stat().st_size:
             remap_chromosome(db, args.bam, chrom, fasta, directory / "transcript.bam", threads)
@@ -350,11 +355,20 @@ def assign_chromosome(db, chrom, transcript_bam, candidates, min_mapq):
     log(f"Stage feature_assignment ({chrom}) elapsed: {time.monotonic() - started:.2f}s; reads={processed}")
 
 
-def assemble(bam, chrom, gtf, genome, directory, threads, options, label):
+def stringtie_executable(value):
+    # Preserve explicit ./name paths: Path('./name') otherwise stringifies to name.
+    return str(Path(value).expanduser().resolve()) if value is not None else "stringtie"
+
+
+def assembly_command(binary, gtf, output, threads, options, label):
+    return [str(binary), "-L", *shlex.split(options), "-p", str(threads),
+            "-G", str(gtf), "-l", label, "-o", str(output), "-"]
+
+
+def assemble(bam, chrom, gtf, genome, directory, threads, options, label, stringtie_bin="stringtie"):
     started = time.monotonic()
     view = subprocess.Popen(["samtools", "view", "-h", str(bam), chrom], stdout=subprocess.PIPE)
-    command = ["stringtie", "-L", *shlex.split(options), "-p", str(threads),
-               "-G", str(gtf), "-l", label, "-o", str(directory / "stringtie.gff"), "-"]
+    command = assembly_command(stringtie_bin, gtf, directory / "stringtie.gff", threads, options, label)
     log(shlex.join(command))
     try:
         result = subprocess.run(command, stdin=view.stdout)
@@ -498,7 +512,8 @@ def write_tagged_assignments(db, tagged_bam, output_bam, gene_tsv, transcript_ts
 def run(args):
     import pysam
 
-    for name in ("minimap2", "samtools", "stringtie", "gffread", "gffcompare"):
+    selected_stringtie = stringtie_executable(getattr(args, "stringtie_bin", None))
+    for name in ("minimap2", "samtools", selected_stringtie, "gffread", "gffcompare"):
         if shutil.which(name) is None:
             raise RuntimeError(f"Missing required tool: {name}; update the Flora conda environment")
     out = args.output_dir.resolve()
@@ -507,8 +522,13 @@ def run(args):
                 "reference_container": REFERENCE_CONTAINER, "reference_withdrawn": REFERENCE_WITHDRAWN}
     for name, flag in [("minimap2", "--version"), ("samtools", "--version"),
                        ("stringtie", "--version"), ("gffread", "--version"), ("gffcompare", "--version")]:
-        p = subprocess.run([name, flag], capture_output=True, text=True, errors="replace")
+        command_name = selected_stringtie if name == "stringtie" else name
+        p = subprocess.run([command_name, flag], capture_output=True, text=True, errors="replace")
         versions[name] = ((p.stdout + p.stderr).strip().splitlines() or ["unknown"])[0]
+    stringtie_path = Path(shutil.which(selected_stringtie)).resolve()
+    versions["stringtie_executable"] = str(stringtie_path)
+    versions["stringtie_sha256"] = hashlib.sha256(stringtie_path.read_bytes()).hexdigest()
+    versions["stringtie_input_lookup_requested"] = os.environ.get("STRINGTIE_INPUT_LOOKUP", "default")
     (out / "tool_versions.json").write_text(json.dumps(versions, indent=2) + "\n")
     if versions["stringtie"] != "2.2.2":
         raise RuntimeError("The ONT 3.3.0 comparison backend requires StringTie 2.2.2; update the pinned Flora conda environment")
@@ -586,6 +606,7 @@ def main():
     p.add_argument("--threads", type=int, default=16)
     p.add_argument("--mapq", type=int, default=30)
     p.add_argument("--stringtie-opts", default="-c 2")
+    p.add_argument("--stringtie-bin", type=Path, help="Explicit isolated StringTie 2.2.2 executable; otherwise use PATH")
     p.add_argument("--save-intermediate", action="store_true")
     p.add_argument("--temp-dir", type=Path, help="Scratch parent; defaults to the system temp directory/TMPDIR")
     p.add_argument("--jobs", type=int, default=1, help="Concurrent chromosome jobs sharing --threads; default: 1")

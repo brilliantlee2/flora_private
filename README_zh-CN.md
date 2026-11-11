@@ -87,6 +87,10 @@ cargo build --release --locked
 全流程支持 `--fastq` 后输入多个文件，或用 `--fastq-dir` 非递归读取目录。
 Glycine 默认 10 个并发任务，共享 64 个总线程。
 
+人类参考比对与 StringTie 高覆盖热点的性能测试，见[验证说明](docs/alignment-assembly-performance.md)。
+本测试分支提供可回退的 minimap2 批次/I/O 参数和独立 StringTie 可执行文件选项，
+不修改注释、MAPQ 或组装检出阈值。
+
 ## 构建 Linux x86_64 发行包
 
 完成环境准备和上述测试后执行：
