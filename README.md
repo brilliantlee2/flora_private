@@ -3,6 +3,9 @@
 
 # Flora Private Development Repository
 
+Experimental pre-merge barcode whitelist selection: `--whitelist-method steepest`.
+Default remains `legacy`; see [preview, parameters and limitations](docs/barcode-steepest-threshold.md).
+
 Private source, tests, and packaging tools for Flora. Keep this repository
 private. The public `brilliantlee2/Flora` repository contains user documentation;
 binary archives are distributed through GitHub Releases.

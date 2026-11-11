@@ -3,6 +3,9 @@
 
 # Flora 私有开发仓库
 
+本分支支持用 `--whitelist-method steepest` 测试合并前 3′/5′ barcode 白名单的下降最快点阈值，默认仍为 `legacy`。校正、配对过滤和图合并规则不变。
+离线预览、参数和限制见[阈值实验说明](docs/barcode-steepest-threshold.md)。
+
 本仓库保存 Flora 私有源码、测试和打包工具，必须保持 private。
 公开仓库 `brilliantlee2/Flora` 保存用户文档，二进制压缩包通过 GitHub Releases 发布。
 

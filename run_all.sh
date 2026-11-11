@@ -36,6 +36,10 @@ Usage:
     [--no-revcomp-whitelist] \
     [--cluster-threads 16] \
     [--exp-cells 5000] \
+    [--whitelist-method legacy|steepest] \
+    [--whitelist-slope-window 100] \
+    [--whitelist-slope-min-count 100] \
+    [--whitelist-slope-max-rank-spread 0.10] \
     [--min-q 2] \
     [--max-ed 2] \
     [--barcode-extract-mode fixed_seq|probe] \
@@ -187,6 +191,10 @@ write_parameters_tsv() {
     printf "glycine_jobs\t%s\n" "${GLYCINE_JOBS}"
     printf "glycine_threads\t%s\n" "${GLYCINE_THREADS}"
     printf "exp_cells\t%s\n" "${EXP_CELLS}"
+    printf "whitelist_method\t%s\n" "${WHITELIST_METHOD}"
+    printf "whitelist_slope_window\t%s\n" "${WHITELIST_SLOPE_WINDOW}"
+    printf "whitelist_slope_min_count\t%s\n" "${WHITELIST_SLOPE_MIN_COUNT}"
+    printf "whitelist_slope_max_rank_spread\t%s\n" "${WHITELIST_SLOPE_MAX_RANK_SPREAD}"
     printf "min_q\t%s\n" "${MIN_Q}"
     printf "max_ed\t%s\n" "${MAX_ED}"
     printf "barcode_extract_mode\t%s\n" "${BARCODE_EXTRACT_MODE}"
@@ -386,6 +394,10 @@ CLUSTER_THREADS=16
 GLYCINE_JOBS=10
 GLYCINE_THREADS=64
 EXP_CELLS=5000
+WHITELIST_METHOD="legacy"
+WHITELIST_SLOPE_WINDOW=100
+WHITELIST_SLOPE_MIN_COUNT=100
+WHITELIST_SLOPE_MAX_RANK_SPREAD=0.10
 MIN_Q=2
 MAX_ED=2
 BARCODE_EXTRACT_MODE="fixed_seq"
@@ -457,6 +469,11 @@ while [[ $# -gt 0 ]]; do
     --glycine-jobs) GLYCINE_JOBS="$2"; shift 2 ;;
     --glycine-threads) GLYCINE_THREADS="$2"; shift 2 ;;
     --exp-cells) EXP_CELLS="$2"; shift 2 ;;
+    --whitelist-method) WHITELIST_METHOD="$2"; shift 2 ;;
+    --whitelist-method=*) WHITELIST_METHOD="${1#*=}"; shift ;;
+    --whitelist-slope-window) WHITELIST_SLOPE_WINDOW="$2"; shift 2 ;;
+    --whitelist-slope-min-count) WHITELIST_SLOPE_MIN_COUNT="$2"; shift 2 ;;
+    --whitelist-slope-max-rank-spread) WHITELIST_SLOPE_MAX_RANK_SPREAD="$2"; shift 2 ;;
     --min-q) MIN_Q="$2"; shift 2 ;;
     --max-ed) MAX_ED="$2"; shift 2 ;;
     --barcode-extract-mode|--barcode_extract_mode) BARCODE_EXTRACT_MODE="$2"; shift 2 ;;
@@ -503,6 +520,16 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ "${WHITELIST_METHOD}" != "legacy" && "${WHITELIST_METHOD}" != "steepest" ]]; then
+  echo "[ERROR] --whitelist-method must be legacy or steepest." >&2
+  exit 1
+fi
+if [[ ! "${WHITELIST_SLOPE_WINDOW}" =~ ^[1-9][0-9]*$ || ! "${WHITELIST_SLOPE_MIN_COUNT}" =~ ^[0-9]+$ ]]; then
+  echo "[ERROR] whitelist slope window must be positive; minimum count must be nonnegative." >&2
+  exit 1
+fi
+python3 -c 'import math,sys; x=float(sys.argv[1]); sys.exit(0 if math.isfinite(x) and 0<x<1 else "Invalid --whitelist-slope-max-rank-spread (expected 0<x<1)")' "${WHITELIST_SLOPE_MAX_RANK_SPREAD}"
 
 if [[ ! "${ONT_JOBS}" =~ ^[1-9][0-9]*$ ]]; then
   echo "[ERROR] --ont-jobs must be a positive integer." >&2
@@ -559,6 +586,10 @@ if [[ -z "${ISOFORM_GTF}" ]]; then
 fi
 
 OUT_DIR="$(abspath_for_output "${OUT_DIR}")"
+if [[ "${WHITELIST_METHOD}" == "steepest" ]] && ! mkdir "${OUT_DIR}"; then
+  echo "[ERROR] Steepest whitelist mode requires a NEW output directory; refusing to reuse old results." >&2
+  exit 1
+fi
 if [[ -n "${ONT_TEMP_DIR}" ]]; then
   ONT_TEMP_DIR="$(abspath_for_output "${ONT_TEMP_DIR}")"
 fi
@@ -754,6 +785,10 @@ MAIN_ARGS=(
   --batch_size 100000
   --assign_batchsize 10000
   --exp_cells "${EXP_CELLS}"
+  --whitelist-method "${WHITELIST_METHOD}"
+  --whitelist-slope-window "${WHITELIST_SLOPE_WINDOW}"
+  --whitelist-slope-min-count "${WHITELIST_SLOPE_MIN_COUNT}"
+  --whitelist-slope-max-rank-spread "${WHITELIST_SLOPE_MAX_RANK_SPREAD}"
   --minQ "${MIN_Q}"
   --max_ed "${MAX_ED}"
   --barcode_extract_mode "${BARCODE_EXTRACT_MODE}"
@@ -787,6 +822,8 @@ fi
 if [[ "${REQUIRE_PASS_BOTH_ENDS}" -eq 1 ]]; then
   MAIN_ARGS+=(--require_pass_both_ends)
 fi
+# A Python fallback must not consume a threshold report from an earlier Rust run.
+rm -f "${UPSTREAM_DIR}/barcode_thresholds.json" "${UPSTREAM_DIR}/barcode_thresholds.tsv"
 FLORA_TRIM_CACHE_DIR="${ONT_TEMP_DIR}" run_stage flora "${SCRIPT_DIR}/main.py" "${MAIN_ARGS[@]}" 2>&1 | tee "${UPSTREAM_LOG}"
 if [[ "${ALIGNMENT_STREAM_ACTIVE}" -eq 1 ]]; then
   exec 9>&-
@@ -802,6 +839,12 @@ KNEE_ARGS=(
 )
 if [[ "${REVCOMP_WHITELIST}" -eq 0 ]]; then
   KNEE_ARGS+=(--no-revcomp-whitelist)
+fi
+if [[ -f "${UPSTREAM_DIR}/barcode_thresholds.json" ]]; then
+  KNEE_ARGS+=(--threshold-report "${UPSTREAM_DIR}/barcode_thresholds.json")
+elif [[ "${WHITELIST_METHOD}" == "steepest" ]]; then
+  echo "[ERROR] Missing authoritative steepest threshold report." >&2
+  exit 1
 fi
 python3 "$(python_asset "${DOWNSTREAM_DIR}/generate_knee_plots.py")" "${KNEE_ARGS[@]}" 2>&1 | tee -a "${UPSTREAM_LOG}"
 step_end "Step 1/6"

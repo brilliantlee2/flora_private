@@ -631,6 +631,8 @@ def print_summary(summary, out_dir):
 def main():
     total_t0 = time.perf_counter()
     args = set_parser()
+    if args.whitelist_method != "legacy":
+        raise ValueError("Steepest whitelist thresholds require the Rust Flora binary; build it and run flora/ flora analyze, not the legacy Python main.py")
     Path(args.out_dir).mkdir(parents=True, exist_ok=True)
     summary = run_pipeline(args)
     print_summary(summary, args.out_dir)

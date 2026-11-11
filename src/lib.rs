@@ -10,6 +10,7 @@ pub mod pipeline;
 pub mod read_qc;
 mod trim_cache;
 pub mod umi_cluster;
+pub mod whitelist_threshold;
 pub mod workflow_runtime;
 
 #[path = "bin/add_cb_ur_tags.rs"]

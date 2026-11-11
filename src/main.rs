@@ -5,6 +5,7 @@ use std::time::Instant;
 use anyhow::Result;
 use clap::{ArgAction, Parser};
 use flora::pipeline::{run_pipeline, PipelineConfig};
+use flora::whitelist_threshold::ThresholdOptions;
 use flora::workflow_runtime::{self, WorkflowKind};
 
 #[derive(Debug, Parser)]
@@ -39,6 +40,9 @@ struct Cli {
 
     #[arg(long = "exp_cells", default_value_t = 5000)]
     exp_cells: usize,
+
+    #[command(flatten)]
+    whitelist_threshold: ThresholdOptions,
 
     #[arg(long = "max_ed", default_value_t = 2)]
     max_ed: usize,
@@ -128,6 +132,11 @@ fn main() -> Result<()> {
     }
 
     match args.get(1).and_then(|value| value.to_str()) {
+        Some("barcode-thresholds") => {
+            args.remove(1);
+            args[0] = OsString::from("flora barcode-thresholds");
+            return flora::whitelist_threshold::run_preview(args);
+        }
         Some("glycine") => {
             args.remove(1);
             args[0] = OsString::from("flora glycine");
@@ -174,6 +183,7 @@ fn print_top_level_help() {
     println!("  flora mixed [OPTIONS]    Run the complete mixed-species workflow");
     println!("  flora glycine [OPTIONS]  Run Glycine full-length read identification only");
     println!("  flora analyze [OPTIONS]  Run barcode, UMI, and cell assignment only\n");
+    println!("  flora barcode-thresholds [OPTIONS]  Preview whitelist thresholds without FASTQ\n");
 }
 
 fn dispatch_internal_stage(name: &str) -> Option<Result<()>> {
@@ -203,6 +213,7 @@ where
 {
     let total_t0 = Instant::now();
     let cli = Cli::parse_from(args);
+    cli.whitelist_threshold.validate()?;
     if cli.barcode_extract_mode != "fixed_seq" {
         anyhow::bail!("Flora currently supports --barcode_extract_mode fixed_seq only");
     }
@@ -226,6 +237,7 @@ where
         assign_batchsize: cli.assign_batchsize,
         min_q: cli.min_q,
         exp_cells: cli.exp_cells,
+        whitelist_threshold: cli.whitelist_threshold,
         max_ed: cli.max_ed,
         pair_min: cli.pair_min,
         auto_pair_min_floor: cli.auto_pair_min_floor,

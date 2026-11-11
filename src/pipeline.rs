@@ -1,4 +1,4 @@
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -21,6 +21,9 @@ use crate::barcode::{
 use crate::fastq::{for_each_fastq_batch, write_fastq_record};
 use crate::read_qc::ReadQcAccumulator;
 use crate::trim_cache::{CachedTrimBounds, TrimCache};
+use crate::whitelist_threshold::{
+    evaluate_side, selected_barcodes, ThresholdOptions, ThresholdReport, WhitelistMethod,
+};
 
 #[derive(Clone, Debug)]
 pub struct PipelineConfig {
@@ -33,6 +36,7 @@ pub struct PipelineConfig {
     pub assign_batchsize: usize,
     pub min_q: i32,
     pub exp_cells: usize,
+    pub whitelist_threshold: ThresholdOptions,
     pub max_ed: usize,
     pub pair_min: Option<usize>,
     pub auto_pair_min_floor: usize,
@@ -186,7 +190,31 @@ struct AssignmentWriteSummary {
 }
 
 pub fn run_pipeline(config: &PipelineConfig) -> Result<PipelineSummary> {
+    config.whitelist_threshold.validate()?;
+    if config.whitelist_threshold.whitelist_method == WhitelistMethod::Steepest
+        && config.out_dir.exists()
+        && fs::read_dir(&config.out_dir)?.next().is_some()
+    {
+        anyhow::bail!("steepest whitelist mode requires a new/empty output directory; refusing to mix old results with a new threshold");
+    }
     fs::create_dir_all(&config.out_dir)?;
+    // Claim ownership before extraction, while the output may otherwise be empty.
+    let _threshold_reservation =
+        if config.whitelist_threshold.whitelist_method == WhitelistMethod::Steepest {
+            let mut file = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(config.out_dir.join(".barcode-threshold-reservation"))
+                .context("another steepest analysis already reserved this output directory")?;
+            writeln!(
+                file,
+                "Reserved by Flora process {}; use a new directory for any rerun",
+                std::process::id()
+            )?;
+            Some(file)
+        } else {
+            None
+        };
     let bc_fixed_3p = reverse_complement(&config.bc_fixed_3p);
     let umi_fixed_3p = reverse_complement(&config.umi_fixed_3p);
     let bc_fixed_5p = reverse_complement(&config.bc_fixed_5p);
@@ -229,8 +257,32 @@ pub fn run_pipeline(config: &PipelineConfig) -> Result<PipelineSummary> {
     let raw5 = count_high_quality(&putative, false, config.min_q);
     write_counts(config.out_dir.join("barcode_counts_3p.tsv"), &raw3)?;
     write_counts(config.out_dir.join("barcode_counts_5p.tsv"), &raw5)?;
-    let observed_wl3 = select_observed_whitelist(&raw3, &full_wl3, config.exp_cells);
-    let observed_wl5 = select_observed_whitelist(&raw5, &full_wl5, config.exp_cells);
+    let threshold_report = ThresholdReport::new(
+        config.exp_cells,
+        &config.whitelist_threshold,
+        evaluate_side(
+            &raw3,
+            &full_wl3,
+            config.exp_cells,
+            &config.whitelist_threshold,
+        ),
+        evaluate_side(
+            &raw5,
+            &full_wl5,
+            config.exp_cells,
+            &config.whitelist_threshold,
+        ),
+    );
+    threshold_report.write(&config.out_dir)?;
+    threshold_report.ensure_ready()?;
+    let observed_wl3 = selected_barcodes(&raw3, &full_wl3, &threshold_report.sides["3p"]);
+    let observed_wl5 = selected_barcodes(&raw5, &full_wl5, &threshold_report.sides["5p"]);
+    for (side, report) in &threshold_report.sides {
+        println!(
+            "[Flora] {side} whitelist: method={:?}, threshold={:?}, comparison={}, selected={:?}",
+            threshold_report.method, report.applied_threshold, report.comparison, report.selected
+        );
+    }
     write_lines(config.out_dir.join("whitelist_3p.csv"), &observed_wl3)?;
     write_lines(config.out_dir.join("whitelist_5p.csv"), &observed_wl5)?;
     write_lines(config.out_dir.join("empty_bc_list_3p.csv"), &[])?;
@@ -799,7 +851,7 @@ fn write_correction_map_to_writer<W: Write>(
     Ok(())
 }
 
-fn read_whitelist(path: &Path, revcomp: bool) -> Result<HashSet<String>> {
+pub(crate) fn read_whitelist(path: &Path, revcomp: bool) -> Result<HashSet<String>> {
     let mut values = Vec::new();
     if path.extension().and_then(|x| x.to_str()) == Some("zip") {
         let file = File::open(path)?;
@@ -932,6 +984,7 @@ fn numpy_linear_quantile(values_sorted_asc: &[usize], q: f64) -> f64 {
     values_sorted_asc[lo] as f64 * (1.0 - frac) + values_sorted_asc[hi] as f64 * frac
 }
 
+#[cfg(test)]
 fn select_observed_whitelist(
     counts: &HashMap<String, usize>,
     full: &HashSet<String>,
@@ -1913,6 +1966,31 @@ fn summarize_trimmed_barcode_uniques(reads: &[CleanRead]) -> TrimmedBarcodeUniqu
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn legacy_whitelist_is_exactly_the_original_selector_including_empty_sides() {
+        use super::*;
+        let mut counts = HashMap::default();
+        let mut full = HashSet::default();
+        let mut seed = 42_u64;
+        for i in 0..1000 {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+            let bc = format!("BC{i}");
+            counts.insert(bc.clone(), (seed >> 32) as usize % 10000);
+            if i % 3 != 0 {
+                full.insert(bc);
+            }
+        }
+        for exp in [0, 1, 7, 500, 5000] {
+            for domain in [&full, &HashSet::default()] {
+                let report = evaluate_side(&counts, domain, exp, &ThresholdOptions::default());
+                assert_eq!(
+                    selected_barcodes(&counts, domain, &report),
+                    select_observed_whitelist(&counts, domain, exp)
+                );
+                assert!(report.applied_threshold.is_some());
+            }
+        }
+    }
     use super::*;
     use crate::fastq::FastqRecord;
 
