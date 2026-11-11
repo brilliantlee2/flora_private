@@ -108,6 +108,9 @@ Notes:
       ONT defaults to no per-cell/gene read cap (0); legacy defaults to 20000.
       ONT 3.3.0 was withdrawn upstream. This comparison backend pins historical
       source d46f92121c79c28a02105cf2444029e91dc4b609 and StringTie 2.2.2.
+  18. --whitelist-method steepest uses the main-window minimum log-log slope.
+      Cross-window spread and broad cutoff ties are warnings only.
+      --whitelist-slope-max-rank-spread changes warnings, not the selected cutoff.
 EOF
 }
 

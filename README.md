@@ -5,6 +5,7 @@
 
 Experimental pre-merge barcode whitelist selection: `--whitelist-method steepest`.
 Default remains `legacy`; see [preview, parameters and limitations](docs/barcode-steepest-threshold.md).
+Steepest v2 uses the main-window minimum slope; stability/tie concerns warn only.
 
 Private source, tests, and packaging tools for Flora. Keep this repository
 private. The public `brilliantlee2/Flora` repository contains user documentation;

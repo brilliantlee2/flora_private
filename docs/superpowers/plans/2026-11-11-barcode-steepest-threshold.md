@@ -1,5 +1,10 @@
 # Barcode Whitelist Threshold Implementation Plan
 
+Historical implementation record for strict commit 6782643. The user-approved
+relaxation in `2026-11-11-whitelist-main-window-relaxation.md` supersedes the
+strict selection guards described below; current behavior is documented in
+`docs/barcode-steepest-threshold.md`.
+
 **Goal:** Add an opt-in steepest-descent threshold for pre-merge 3p/5p observed whitelists, preserving default main behavior and all downstream correction/pair/graph rules.
 
 **Baseline:** main 291de65; branch codex/1111-barcode-steepest-threshold. Rust baseline: 88 library tests passed. Python baseline uses the existing Python 3.11 test environment and a pysam-backed samtools dispatcher, not the system Python without dependencies.

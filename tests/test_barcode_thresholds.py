@@ -80,6 +80,87 @@ class PlotThresholdTests(unittest.TestCase):
 
 @unittest.skipUnless(BINARY.is_file(), "set FLORA_TEST_BINARY to a built Flora binary")
 class ThresholdPreviewTests(unittest.TestCase):
+    def assert_accepted(self, counts, *options):
+        result, out = self.invoke(counts, None, "--whitelist-method", "steepest", *options)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report = json.loads((out / "barcode_thresholds.json").read_text())
+        self.assertEqual(report["sides"]["3p"]["status"], "ready")
+        return report["sides"]["3p"], result, out
+
+    def test_low_prominence_and_shallow_drop_are_not_rejection_gates(self):
+        side, _, _ = self.assert_accepted([10000000 // i for i in range(1, 10001)])
+        main = next(item for item in side["steepest"]["windows"] if item["half_window"] == 100)
+        self.assertLess(main["peak_to_median_fold"], 3)
+        self.assertLess(main["window_count_drop"], 1.5)
+        self.assertEqual(side["applied_threshold"], main["count"])
+        self.assertEqual(side["steepest"]["selection_rule"], "main_window_min_log_log_slope_v2")
+
+    def test_high_prominence_but_shallow_drop_is_accepted(self):
+        side, _, _ = self.assert_accepted([10000] * 800 + [9800] * 1200)
+        main = next(item for item in side["steepest"]["windows"] if item["half_window"] == 100)
+        self.assertGreater(main["peak_to_median_fold"], 3)
+        self.assertLess(main["window_count_drop"], 1.5)
+        self.assertEqual(side["applied_threshold"], main["count"])
+
+    def test_instability_and_warning_limit_do_not_change_selected_threshold(self):
+        values = []
+        for i in range(1, 10001):
+            drop = 1 / (1 + math.exp(-(i - 2500) / 25)) + 1 / (1 + math.exp(-(i - 6000) / 100))
+            values.append(int(100000 * math.exp(-.1 * math.log(i) - drop)))
+        low, result, _ = self.assert_accepted(values, "--whitelist-slope-max-rank-spread", ".01")
+        high, _, _ = self.assert_accepted(values, "--whitelist-slope-max-rank-spread", ".99")
+        self.assertEqual(low["applied_threshold"], high["applied_threshold"])
+        self.assertEqual(low["steepest"]["center_rank"], high["steepest"]["center_rank"])
+        self.assertTrue(any("cross_window_peak_spread" in item for item in low["steepest"]["warnings"]))
+        self.assertIn("cross_window_peak_spread", result.stderr)
+
+    def test_broad_tied_plateau_is_retained_with_explicit_warning(self):
+        values = [10000] * 10000 + [200] * 20000
+        side, result, out = self.assert_accepted(values)
+        self.assertEqual(side["applied_threshold"], 200)
+        self.assertEqual(side["selected"], 30000)
+        self.assertTrue(any("broad_tied_plateau" in item for item in side["steepest"]["warnings"]))
+        self.assertIn("broad_tied_plateau", result.stderr)
+        self.assertIn("broad_tied_plateau", (out / "barcode_thresholds.tsv").read_text())
+
+    def test_one_valid_main_window_is_enough_without_auxiliary_windows(self):
+        side, result, _ = self.assert_accepted([200, 150, 120], "--whitelist-slope-window", "1")
+        self.assertEqual(side["applied_threshold"], 150)
+        self.assertTrue(any("insufficient_auxiliary_windows" in item for item in side["steepest"]["warnings"]))
+        self.assertIn("insufficient_auxiliary_windows", result.stderr)
+
+    def test_completely_flat_main_search_range_still_fails(self):
+        result, out = self.invoke([1000] * 1000, None, "--whitelist-method", "steepest")
+        self.assertNotEqual(result.returncode, 0)
+        diagnostic = json.loads((out / "barcode_thresholds.json").read_text())["sides"]["3p"]["steepest"]
+        self.assertIn("no actual decrease", diagnostic["reason"])
+        self.assertFalse((out / "whitelist_3p.csv").exists())
+
+    def test_selected_point_matches_independent_main_window_reference(self):
+        rng = random.Random(20261111)
+        for _ in range(20):
+            count = rng.randint(8, 120)
+            window = rng.randint(1, 15)
+            floor = rng.randint(0, 50)
+            values = sorted((rng.randint(1, 3000) for _ in range(count)), reverse=True)
+            eligible = [value for value in values if value > floor]
+            candidates = []
+            for center in range(window, len(eligible) - window):
+                left, right = center - window, center + window
+                slope = ((math.log(eligible[right]) - math.log(eligible[left])) /
+                         (math.log(right + 1) - math.log(left + 1)))
+                candidates.append((slope, center + 1, eligible[center]))
+            expected = min(candidates) if candidates else None
+            result, out = self.invoke(values, None, "--whitelist-method", "steepest",
+                "--whitelist-slope-window", str(window), "--whitelist-slope-min-count", str(floor))
+            diagnostic = json.loads((out / "barcode_thresholds.json").read_text())["sides"]["3p"]["steepest"]
+            if expected is not None and expected[0] < 0:
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual((diagnostic["center_rank"], diagnostic["threshold"]), expected[1:])
+            else:
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIsNone(diagnostic["threshold"])
+
     def invoke(self, counts3, counts5=None, *options):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -220,15 +301,17 @@ class ProductionThresholdTests(unittest.TestCase):
 
     def test_production_and_preview_generate_identical_whitelists_and_reports(self):
         options = ["--whitelist-method", "steepest", "--whitelist-slope-window", "5",
-                   "--whitelist-slope-min-count", "0", "--whitelist-slope-max-rank-spread", ".3"]
+                   "--whitelist-slope-min-count", "0", "--whitelist-slope-max-rank-spread", ".10"]
         result = self.analyze("actual", *options)
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("cross_window_peak_spread", result.stderr)
         actual = self.root / "actual"
         result = subprocess.run([str(BINARY), "barcode-thresholds", "--counts-3p", str(actual / "barcode_counts_3p.tsv"),
             "--counts-5p", str(actual / "barcode_counts_5p.tsv"), "--full-whitelist-3p", str(self.root / "3p.txt"),
             "--full-whitelist-5p", str(self.root / "5p.txt"), "--no-revcomp-whitelist",
             "--out-dir", str(self.root / "preview"), *options], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("cross_window_peak_spread", result.stderr)
         for name in ("barcode_thresholds.json", "barcode_thresholds.tsv", "whitelist_3p.csv", "whitelist_5p.csv"):
             self.assertEqual((actual / name).read_bytes(), (self.root / "preview" / name).read_bytes(), name)
 

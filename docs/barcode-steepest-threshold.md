@@ -3,6 +3,10 @@
 Base: main 291de65. This branch does not include the separate alignment/assembly
 performance experiment.
 
+Current rule: `main_window_min_log_log_slope_v2`. This supersedes the strict
+NGS-derived guards in commit 6782643. Cross-window instability and broad cutoff
+ties now warn without rejecting or moving the main-window cutoff.
+
 Only the observed 3p/5p whitelist cutoff changes when explicitly requested.
 Extraction, minQ, theoretical whitelist orientation, correction distance/tie
 rules, pair support, UMI pruning, graph merging and downstream analysis remain
@@ -72,26 +76,40 @@ correction/merge and downstream stages; an existing Glycine FASTQ can be reused.
 - Legacy: Q95 among the highest max(exp_cells,1) observed theoretical barcode
   counts, divided by 20; retain strictly `count > threshold`.
 - Steepest: sort the same complete eligible counts independently for 3p/5p.
-  Calculate centered log(count)/log(rank) secants. The main half-window gives
-  the cutoff; half/double/fivefold windows check location stability. All
+  Calculate centered log(count)/log(rank) secants. Choose the most negative
+  finite main-window slope; equal slopes choose the earliest rank.
+  Half/double/fivefold windows provide advisory location diagnostics only. All
   endpoints must strictly exceed the minimum-count guard.
-- Require at least two computed windows including the main window, relative
-  peak-rank spread <= configured limit, peak descent >=3x median descent, and
-  endpoint count drop >=1.5x. Equal slopes choose the earliest rank.
-- Retain all `count >= selected center count` ties. Reject if tie expansion
-  exceeds max(main half-window, ceil(spread limit * main rank)).
-- Both sides must pass in steepest mode. Failure saves diagnostics and stops
-  before publishing either whitelist. No silent fallback. Review the curve
-  before explicitly choosing legacy or adjusting search parameters.
+- The former 3x peak/median descent and 1.5x endpoint-drop requirements are
+  removed. Their raw metrics remain descriptive, not calibrated evidence of
+  cell/background separation. They were local NGS engineering heuristics, not
+  validated biological cutoffs for these pre-merge counts.
+- `--whitelist-slope-max-rank-spread` is now advisory: a spread above the
+  limit generates `cross_window_peak_spread` warnings only. A valid main window
+  is sufficient even if auxiliary windows are unavailable; this generates
+  `insufficient_auxiliary_windows` instead of rejection.
+- Retain all `count >= selected center count` ties. If tie expansion exceeds
+  max(main half-window, ceil(spread limit * main rank)), emit
+  `broad_tied_plateau` but keep the cutoff and ALL tied barcodes unchanged.
+  This may retain a large background plateau and must not be treated as a
+  validated set of cells.
+- The main window must exist and have an actual finite negative slope.
+  Too few eligible points, a completely flat eligible main-window curve or
+  invalid parameters still stop the run. Sorted counts cannot legitimately
+  produce a positive slope. Do not invent a threshold when no decrease exists.
+- Both sides must yield valid main-window thresholds. Otherwise diagnostics
+  are saved and neither whitelist is published. There is no silent legacy
+  fallback; the new mode still does not change correction/pair/graph rules.
 - Legacy keeps its original empty/asymmetric-side behavior. Steepest refuses
   nonempty standalone output directories and existing full-workflow output
   directories to prevent stale successful results masking a failed rerun.
   Directory creation/reservation is atomic; a hidden reservation file remains
   in standalone upstream outputs. Do not share an output directory between jobs.
 
-This ports the guards from the local NGS package's
-`engines/cdna/call_cells.py:steepest`, but the inputs are **pre-merge single-end
-barcode read counts**, not post-merge cDNA read-pair support. It is not
+This retains the main-window secant calculation from the local NGS package's
+`engines/cdna/call_cells.py:steepest`, but not its strict rejection guards.
+Inputs are **pre-merge single-end barcode read counts**, not post-merge cDNA
+read-pair support. It is not
 EmptyDrops, an FDR-controlled classifier, or final cell calling. The floor is
 a search-domain guard, not proof that lower-count barcodes are empty cells.
 Excluding low-support real barcode members or retaining extra noisy barcodes
@@ -101,8 +119,14 @@ can change graph groups. Higher median genes may reflect cell selection alone.
 
 `upstream/barcode_thresholds.json` and `.tsv` (or the preview directory)
 record old/new/applied thresholds, retained barcode counts, comparison rules,
-peak ranks, cross-window stability and failure reasons. Light output retains
-them. Observed whitelist CSVs remain sorted as before.
+the selection-rule version, peak ranks, cross-window stability, tie expansion
+and advisory warnings. Warnings are also printed in pipeline/preview stderr.
+Light output retains the reports. Observed whitelist CSVs remain sorted as before.
+
+After updating and rebuilding, reuse the failed run's existing count tables
+with the offline preview command above; no FASTQ rescan is needed. Use a new
+preview directory. A successful preview changes no prior merge or expression
+results. Rerun upstream only when the preview cutoff has been inspected.
 
 Compare old/new whitelist overlap, barcode-valid and cell-assigned reads,
 group membership, final cell count and expression. Run legacy as the control;

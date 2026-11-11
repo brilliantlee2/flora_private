@@ -274,6 +274,7 @@ pub fn run_pipeline(config: &PipelineConfig) -> Result<PipelineSummary> {
         ),
     );
     threshold_report.write(&config.out_dir)?;
+    threshold_report.emit_warnings();
     threshold_report.ensure_ready()?;
     let observed_wl3 = selected_barcodes(&raw3, &full_wl3, &threshold_report.sides["3p"]);
     let observed_wl5 = selected_barcodes(&raw5, &full_wl5, &threshold_report.sides["5p"]);

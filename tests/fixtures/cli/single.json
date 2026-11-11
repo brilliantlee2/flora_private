@@ -28,7 +28,7 @@
     {"name":"--whitelist-method","aliases":[],"type":"string","required":false,"required_when":[],"default":"legacy","conflicts":[],"choices":["legacy","steepest"],"description":"Pre-merge observed barcode whitelist threshold method."},
     {"name":"--whitelist-slope-window","aliases":[],"type":"int","required":false,"required_when":[],"default":100,"conflicts":[],"description":"Centered log-log slope half-window in barcode ranks; positive."},
     {"name":"--whitelist-slope-min-count","aliases":[],"type":"int","required":false,"required_when":[],"default":100,"conflicts":[],"description":"Both slope endpoints must have counts strictly above this floor."},
-    {"name":"--whitelist-slope-max-rank-spread","aliases":[],"type":"float","required":false,"required_when":[],"default":0.1,"conflicts":[],"description":"Maximum relative cross-window peak-rank spread; strictly between zero and one."},
+    {"name":"--whitelist-slope-max-rank-spread","aliases":[],"type":"float","required":false,"required_when":[],"default":0.1,"conflicts":[],"description":"Advisory cross-window peak-rank spread limit; does not affect selection. Strictly between zero and one."},
     {"name":"--min-q","aliases":[],"type":"int","required":false,"required_when":[],"default":2,"conflicts":[],"description":"Minimum barcode base quality."},
     {"name":"--max-ed","aliases":[],"type":"int","required":false,"required_when":[],"default":2,"conflicts":[],"description":"Maximum barcode edit distance."},
     {"name":"--barcode-extract-mode","aliases":["--barcode_extract_mode"],"type":"string","required":false,"required_when":[],"default":"fixed_seq","conflicts":[],"description":"Barcode extraction mode; fixed_seq is accepted and probe exits clearly."},

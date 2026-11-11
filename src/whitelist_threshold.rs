@@ -24,7 +24,11 @@ pub struct ThresholdOptions {
     pub whitelist_slope_window: usize,
     #[arg(long, default_value_t = 100)]
     pub whitelist_slope_min_count: usize,
-    #[arg(long, default_value_t = 0.10)]
+    #[arg(
+        long,
+        default_value_t = 0.10,
+        help = "Advisory cross-window peak-rank spread limit; does not change the selected threshold"
+    )]
     pub whitelist_slope_max_rank_spread: f64,
 }
 
@@ -76,12 +80,15 @@ pub struct WindowDiagnostic {
 
 #[derive(Debug, Serialize)]
 pub struct SteepestDiagnostic {
+    pub selection_rule: &'static str,
     pub threshold: Option<usize>,
     pub center_rank: Option<usize>,
     pub reason: &'static str,
     pub eligible_barcodes: usize,
     pub relative_rank_spread: Option<f64>,
     pub retained_including_ties: Option<usize>,
+    pub tie_rank_expansion: Option<usize>,
+    pub warnings: Vec<String>,
     pub windows: Vec<WindowDiagnostic>,
 }
 
@@ -147,12 +154,15 @@ pub fn steepest(counts_desc: &[usize], options: &ThresholdOptions) -> SteepestDi
     let window = options.whitelist_slope_window;
     let floor = options.whitelist_slope_min_count;
     let mut out = SteepestDiagnostic {
+        selection_rule: "main_window_min_log_log_slope_v2",
         threshold: None,
         center_rank: None,
         reason: "insufficient points for the requested main slope window",
         eligible_barcodes: counts_desc.iter().filter(|&&count| count > floor).count(),
         relative_rank_spread: None,
         retained_including_ties: None,
+        tie_rank_expansion: None,
+        warnings: Vec::new(),
         windows: Vec::new(),
     };
     let mut halves = vec![(window / 2).max(1), window, window * 2, window * 5];
@@ -191,47 +201,44 @@ pub fn steepest(counts_desc: &[usize], options: &ThresholdOptions) -> SteepestDi
     };
     let peak = main.peak.as_ref().unwrap();
     out.center_rank = Some(peak.center_rank);
+    if !peak.slope.is_finite() {
+        out.reason = "non-finite slope in the main-window search range";
+        return out;
+    }
+    if peak.slope >= 0.0 {
+        out.reason = "no actual decrease in the eligible main-window search range";
+        return out;
+    }
     let ranks: Vec<_> = out
         .windows
         .iter()
         .filter_map(|item| item.peak.as_ref().map(|p| p.center_rank))
         .collect();
-    let reason = if ranks.len() < 2 {
-        Some("fewer than two slope windows can be compared")
+    if ranks.len() < 2 {
+        out.warnings.push("insufficient_auxiliary_windows: the main window is valid, but cross-window stability cannot be assessed".into());
     } else {
         let spread = (*ranks.iter().max().unwrap() - *ranks.iter().min().unwrap()) as f64
             / peak.center_rank as f64;
         out.relative_rank_spread = Some(spread);
         if spread > options.whitelist_slope_max_rank_spread {
-            Some("slope peak location is inconsistent across windows")
-        } else if peak.slope >= 0.0 || main.peak_to_median_fold.unwrap() < 3.0 {
-            Some("local descent is not sufficiently stronger than the curve background")
-        } else if peak.window_count_drop < 1.5 {
-            Some("support changes too little across the main slope window")
-        } else {
-            let retained = counts_desc
-                .iter()
-                .filter(|&&count| count >= peak.count)
-                .count();
-            out.retained_including_ties = Some(retained);
-            let tolerance = window.max(
-                (options.whitelist_slope_max_rank_spread * peak.center_rank as f64).ceil() as usize,
-            );
-            if retained - peak.center_rank > tolerance {
-                Some(
-                    "cutoff falls on a broad tied plateau; automatic barcode boundary is ambiguous",
-                )
-            } else {
-                None
-            }
+            out.warnings.push(format!("cross_window_peak_spread: {spread:.6} exceeds advisory limit {}; threshold still uses main half-window {window}", options.whitelist_slope_max_rank_spread));
         }
-    };
-    if let Some(reason) = reason {
-        out.reason = reason;
-    } else {
-        out.threshold = Some(peak.count);
-        out.reason = "stable local steepest descent found";
     }
+    let retained = counts_desc
+        .iter()
+        .filter(|&&count| count >= peak.count)
+        .count();
+    out.retained_including_ties = Some(retained);
+    let expansion = retained - peak.center_rank;
+    out.tie_rank_expansion = Some(expansion);
+    let tolerance = window
+        .max((options.whitelist_slope_max_rank_spread * peak.center_rank as f64).ceil() as usize);
+    if expansion > tolerance {
+        out.warnings.push(format!("broad_tied_plateau: cutoff {} retains {retained} barcodes versus peak rank {}; retaining all ties expands the rank by {expansion} (advisory limit {tolerance}); this may include background barcodes", peak.count, peak.center_rank));
+    }
+    // Prominence and endpoint drop are descriptive metrics, not calibrated gates.
+    out.threshold = Some(peak.count);
+    out.reason = "main-window steepest descent selected; biological separation is not validated";
     out
 }
 
@@ -351,9 +358,19 @@ impl ThresholdReport {
             .map(|(name, side)| format!("{name}: {}", side.steepest.reason))
             .collect();
         if !failed.is_empty() {
-            bail!("no reliable steepest whitelist threshold ({}); inspect barcode_thresholds.json; rerun explicitly with --whitelist-method legacy or review slope parameters in a NEW output directory", failed.join("; "));
+            bail!("cannot compute a steepest whitelist threshold ({}); inspect barcode_thresholds.json; rerun explicitly with --whitelist-method legacy or review the main window/count floor in a NEW output directory", failed.join("; "));
         }
         Ok(())
+    }
+
+    pub fn emit_warnings(&self) {
+        if self.method == WhitelistMethod::Steepest {
+            for (side, report) in &self.sides {
+                for warning in &report.steepest.warnings {
+                    eprintln!("[Flora] Warning: {side} whitelist {warning}");
+                }
+            }
+        }
     }
 
     pub fn write(&self, directory: &Path) -> Result<()> {
@@ -376,6 +393,8 @@ impl ThresholdReport {
             "comparison",
             "selected",
             "reason",
+            "steepest_selection_rule",
+            "steepest_warnings",
         ])?;
         for (name, side) in &self.sides {
             writer.write_record([
@@ -397,6 +416,8 @@ impl ThresholdReport {
                 side.comparison.into(),
                 side.selected.map(|n| n.to_string()).unwrap_or_default(),
                 side.steepest.reason.into(),
+                side.steepest.selection_rule.into(),
+                side.steepest.warnings.join(" | "),
             ])?;
         }
         writer.flush()?;
@@ -474,6 +495,7 @@ pub fn run_preview(args: impl IntoIterator<Item = OsString>) -> Result<()> {
     }
     fs::create_dir(&cli.out_dir)?;
     report.write(&cli.out_dir)?;
+    report.emit_warnings();
     report.ensure_ready()?;
     for (side, counts, full) in [("3p", &counts3, &full3), ("5p", &counts5, &full5)] {
         let selected = selected_barcodes(counts, full, &report.sides[side]);
@@ -520,14 +542,12 @@ mod tests {
     }
 
     #[test]
-    fn flat_short_zero_powerlaw_and_tied_plateaus_are_rejected() {
+    fn flat_short_and_zero_curves_are_rejected() {
         for values in [
             vec![],
             vec![0; 1000],
             vec![1000; 1000],
             vec![1000, 900, 800],
-            (1..=10000).map(|i| 10000000 / i).collect(),
-            [vec![10000; 10000], vec![200; 20000]].concat(),
         ] {
             let diagnostic = steepest(&values, &ThresholdOptions::default());
             assert_eq!(diagnostic.threshold, None);
@@ -549,7 +569,7 @@ mod tests {
     }
 
     #[test]
-    fn inconsistent_transition_locations_are_rejected() {
+    fn inconsistent_transition_locations_warn_but_use_main_window() {
         let values: Vec<_> = (1..=10000)
             .map(|i| {
                 let drop = 1.0 / (1.0 + (-(i as f64 - 2500.0) / 25.0).exp())
@@ -557,9 +577,46 @@ mod tests {
                 (100000.0 * (-0.1 * (i as f64).ln() - drop).exp()) as usize
             })
             .collect();
+        let result = steepest(&values, &ThresholdOptions::default());
         assert_eq!(
-            steepest(&values, &ThresholdOptions::default()).threshold,
-            None
+            result.threshold,
+            Some(values[result.center_rank.unwrap() - 1])
         );
+        assert!(result
+            .warnings
+            .iter()
+            .any(|warning| warning.starts_with("cross_window_peak_spread")));
+    }
+
+    #[test]
+    fn descriptive_signal_metrics_do_not_reject_powerlaw() {
+        let values: Vec<_> = (1..=10000).map(|i| 10000000 / i).collect();
+        let result = steepest(&values, &ThresholdOptions::default());
+        assert_eq!(
+            result.threshold,
+            Some(values[result.center_rank.unwrap() - 1])
+        );
+        let main = result
+            .windows
+            .iter()
+            .find(|item| item.half_window == 100)
+            .unwrap();
+        assert!(main.peak_to_median_fold.unwrap() < 3.0);
+        assert!(main.peak.as_ref().unwrap().window_count_drop < 1.5);
+    }
+
+    #[test]
+    fn broad_plateau_keeps_all_ties_and_warns() {
+        let result = steepest(
+            &[vec![10000; 10000], vec![200; 20000]].concat(),
+            &ThresholdOptions::default(),
+        );
+        assert_eq!(result.threshold, Some(200));
+        assert_eq!(result.retained_including_ties, Some(30000));
+        assert!(result.tie_rank_expansion.unwrap() > 1000);
+        assert!(result
+            .warnings
+            .iter()
+            .any(|warning| warning.starts_with("broad_tied_plateau")));
     }
 }
