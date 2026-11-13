@@ -19,10 +19,10 @@ Alternatives considered: another short-segment index remains poorly selective on
 - [x] Establish baseline Rust UMI tests in the new worktree; fix Python interpreter selection without code/environment changes.
 - [x] Add regression tests first: original-graph assignment oracle, dense fixed-motif groups, directional branches, ties, indels, mixed lengths and short/long boundaries; observe the materialization assertion failing before implementation.
 - [x] Implement the short exact-distance kernel and streamed directed traversal in src/umi_cluster.rs; retain the legacy graph/index for non-qualifying inputs and as independent DP-based test oracle.
-- [ ] Add a bounded standalone replay harness using the actual module, exporting per-UR assignments and hashes. Validate all available exported groups with safe local bounds; document unrun legacy large-group cases rather than risking unbounded memory.
+- [x] Add a bounded standalone replay harness using the actual modules, exporting per-UR assignments and hashes. All 40 groups / 411,073 group-UR entries match a full independent DP reference; actual old/new subsets (512 per group) also match. Full actual-legacy large-group cases are explicitly skipped rather than risking unbounded memory.
 - [x] Extend the independent mapper benchmark with cap-kalloc and thread modes, reusing the existing 200k FASTQ instead of re-sampling the original cDNA. Sequential reverse-order plans, decoded-record equality and input-change protections tested. Linux performance execution is deliberately left to the user.
 - [x] Run Rust tests (97 library plus 20 stage tests), release build, workflow/Python tests (170, 8 external-tool skips), mapper tests (25, 2 Linux-only skips with actual mapper smoke enabled), shell syntax checks; independent source correctness review approved the scoped dispatch. Python fixture BAM decoding used an explicitly test-only pysam dispatcher, not stock samtools.
-- [ ] Record measured local replay results, limitations and Linux commands. Prepare a returnable diagnostic ZIP and branch changes; no automatic push/merge.
+- [x] Record measured local replay results, limitations and Linux commands. Prepare portable read-only UMI replay and mapper diagnostic ZIPs. Local branch commit created; no automatic push/merge. Full production Linux acceptance remains future work, not an achieved claim.
 
 ## Acceptance
 

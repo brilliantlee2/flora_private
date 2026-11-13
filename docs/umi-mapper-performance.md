@@ -67,6 +67,33 @@ Local tests are not a full Linux FASTQ-to-matrix acceptance run. Use the supplie
 independent UMI replay package before a full rerun; its report distinguishes
 full groups, deterministic subsets, skipped baselines and mismatches.
 
+### Measured local replay (2026-11-13)
+
+All 40 exported groups from sample 260F800579011 were replayed, preserving exact
+raw UR abundance counts. They contain 411,073 group/UR entries (not globally
+unique molecules). Each group's complete new root map matched an independent
+exhaustive-neighbor, baseline-DP reference, including every UR/root pair.
+The actual unmodified old module also matched the new module on a deterministic
+512-UR subset of each of the 40 groups. Subsetting changes the graph; this does
+not constitute full-group comparison against the actual old module.
+
+The optimized kernel's summed time for the 40 complete groups was 26.6304 s on
+this macOS machine; the largest group took 2.0144 s, and maximum per-child RSS
+was about 9.52 MiB. These numbers exclude the production BAM reader/writer,
+other groups, pipeline overhead and serialization. No full actual-legacy large
+group replay was attempted locally because of its multi-GiB candidate storage.
+Do not use these local values as a Linux whole-stage speedup estimate.
+
+Rust verification: 97 library tests and 20 stage tests passed; release build
+passed. Python verification: 170 tests completed with 8 external-tool skips;
+fixture BAM decoding used a test-only pysam dispatcher, not stock samtools.
+The standalone mapper suite passed 23 tests with 2 Linux-only cleanup skips;
+actual minimap2 smoke comparisons covered 8 command combinations. These do not
+replace Linux runtime and final decoded-BAM/UB/matrix parity checks.
+
+Validated source SHA256 (`src/umi_cluster.rs`):
+`875d2d555d368c523ba707b343d7b6fbceabeb97c469a11b9fe281063c002b85`.
+
 ## Mapper experiment
 
 The accompanying standalone mapper diagnostic reuses the previous 200,000-read
