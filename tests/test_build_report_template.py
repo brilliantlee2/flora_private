@@ -745,7 +745,7 @@ class ReportTemplateContractTests(unittest.TestCase):
         payload = {
             "readSummary": {"labels": [], "counts": []},
             "readQc": {},
-            "saturation": {},
+            "saturation": {"raw_input_reads": [1000]},
             "barcodeRank3p": {"ranks": [], "counts": [], "threshold": None},
             "barcodeRank5p": {"ranks": [], "counts": [], "threshold": None},
             "beads": {"labels": [], "counts": []},
@@ -986,6 +986,31 @@ class ReportTemplateContractTests(unittest.TestCase):
             {"Metric": "Full length", "Read count": "600", "Percent": "100.00%"},
         ])
 
+    def test_saturation_payload_rounds_to_whole_input_reads(self):
+        frame = pd.DataFrame({"fraction": [0.01, 0.5, 0.9, 1.0]})
+        payload = self.build_report.saturation_payload(frame, 151)
+        self.assertEqual(payload["raw_input_reads"], [2, 76, 136, 151])
+
+    def test_saturation_payload_requires_valid_input_read_count_and_fractions(self):
+        valid_fractions = pd.DataFrame({"fraction": [0.1, 1.0]})
+        for raw_reads in (None, 0, -1, 100.5, float("nan"), float("inf"), 2**53):
+            with self.subTest(raw_reads=raw_reads):
+                self.assertNotIn(
+                    "raw_input_reads",
+                    self.build_report.saturation_payload(valid_fractions, raw_reads),
+                )
+        for frame in (
+            pd.DataFrame({"reads_per_cell": [10]}),
+            pd.DataFrame({"fraction": [0.1, ""]}),
+            pd.DataFrame({"fraction": [0.1, -0.1]}),
+            pd.DataFrame({"fraction": [0.1, 1.1]}),
+            pd.DataFrame({"fraction": [False, True]}),
+        ):
+            with self.subTest(frame=frame.to_dict()):
+                self.assertNotIn(
+                    "raw_input_reads", self.build_report.saturation_payload(frame, 1000)
+                )
+
     def test_cli_populates_report_from_pipeline_outputs(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -996,6 +1021,7 @@ class ReportTemplateContractTests(unittest.TestCase):
             parameters = tmp_path / "parameters.tsv"
             per_cell = tmp_path / "per_cell.tsv"
             rna_cluster = tmp_path / "rna_cluster.tsv"
+            glycine_stats = tmp_path / "glycine_stats.txt"
             barnyard_summary, barnyard_per_cell = self.write_barnyard_inputs(tmp_path)
             output = tmp_path / "report.html"
 
@@ -1009,8 +1035,8 @@ class ReportTemplateContractTests(unittest.TestCase):
                 ("Summary", "Unique isoforms", 44),
                 ("Summary", "Aligned BAM reads", 800),
                 ("Summary", "Unmapped", 200),
-                ("Read assignment summary", "Full length", 1000),
-                ("Read assignment summary", "Barcode-valid", 900),
+                ("Read assignment summary", "Full length", 750),
+                ("Read assignment summary", "Barcode-valid", 725),
                 ("Read assignment summary", "Cell assigned", 700),
                 ("Read assignment summary", "Gene assigned", 600),
                 ("Read assignment summary", "Transcript assigned", 500),
@@ -1022,8 +1048,13 @@ class ReportTemplateContractTests(unittest.TestCase):
             )
             qc_metrics.write_text("Metric\tValue\n", encoding="utf-8")
             saturation.write_text(
-                "reads_per_cell\tgenes_per_cell\tumis_per_cell\tsaturation\n"
-                "100\t5\t8\t0.1\n200\t7\t10\t0.2\n",
+                "fraction\treads\treads_per_cell\tgenes_per_cell\tumis_per_cell\tsaturation\n"
+                "0.1\t70\t2\t5\t8\t0.1\n1.0\t700\t15\t7\t10\t0.2\n",
+                encoding="utf-8",
+            )
+            glycine_stats.write_text(
+                "Summary\nType\tRead_count\tRead_proportion(%)\n"
+                "Total\t1000\t100.00\nLength-filtered\t100\t10.00\nQC-filtered\t50\t5.00\n",
                 encoding="utf-8",
             )
             read_qc.write_text(json.dumps({}), encoding="utf-8")
@@ -1067,7 +1098,8 @@ class ReportTemplateContractTests(unittest.TestCase):
                 str(barnyard_summary),
                 "--barnyard-per-cell-tsv",
                 str(barnyard_per_cell),
-                "--skip-glycine",
+                "--glycine-stats",
+                str(glycine_stats),
             ]
             subprocess.run(command, check=True, capture_output=True, text=True)
             rendered = output.read_text(encoding="utf-8")
@@ -1075,7 +1107,15 @@ class ReportTemplateContractTests(unittest.TestCase):
             self.assertIn("PIPELINE_SAMPLE", rendered)
             self.assertIn(">123<", rendered)
             self.assertIn(">Raw reads<", rendered)
-            self.assertIn('"reads_per_cell": [100, 200]', rendered)
+            payload, _ = json.JSONDecoder().raw_decode(rendered.split("const payload = ", 1)[1])
+            self.assertEqual(payload["saturation"]["raw_input_reads"], [100, 1000])
+            self.assertEqual(payload["saturation"]["genes_per_cell"], [5, 7])
+            self.assertEqual(payload["saturation"]["umis_per_cell"], [8, 10])
+            self.assertEqual(payload["saturation"]["saturation"], [0.1, 0.2])
+            for chart in ("saturation-genes", "saturation-umis", "saturation-rate"):
+                self.assertIn(f'plotIf("{chart}", [{{x: rawInputReads,', rendered)
+            self.assertIn('text: "Estimated Raw Input Reads"', rendered)
+            self.assertIn("downsampled reads from the processed read table", rendered)
             self.assertIn('"cell": "CELL_A"', rendered)
             self.assertIn('"status": "unassigned"', rendered)
             self.assertIn('id="rna-cluster-assignment"', rendered)
@@ -1089,6 +1129,16 @@ class ReportTemplateContractTests(unittest.TestCase):
             self.assertNotIn("VDJ-B", rendered)
             self.assertNotIn("Sample information", rendered)
             self.assertRegex(rendered, r"<h2>\s*Summary\s*</h2>")
+
+            saturation.write_text(
+                "reads_per_cell\tgenes_per_cell\tumis_per_cell\tsaturation\n"
+                "2\t5\t8\t0.1\n15\t7\t10\t0.2\n",
+                encoding="utf-8",
+            )
+            subprocess.run(command, check=True, capture_output=True, text=True)
+            rendered = output.read_text(encoding="utf-8")
+            self.assertIn("Saturation curves are unavailable", rendered)
+            self.assertNotIn('id="saturation-genes"', rendered)
 
 
 if __name__ == "__main__":
