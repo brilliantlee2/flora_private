@@ -745,7 +745,7 @@ class ReportTemplateContractTests(unittest.TestCase):
         payload = {
             "readSummary": {"labels": [], "counts": []},
             "readQc": {},
-            "saturation": {"raw_input_reads": [1000]},
+            "saturation": {"mean_reads_per_cell": [1000]},
             "barcodeRank3p": {"ranks": [], "counts": [], "threshold": None},
             "barcodeRank5p": {"ranks": [], "counts": [], "threshold": None},
             "beads": {"labels": [], "counts": []},
@@ -986,18 +986,22 @@ class ReportTemplateContractTests(unittest.TestCase):
             {"Metric": "Full length", "Read count": "600", "Percent": "100.00%"},
         ])
 
-    def test_saturation_payload_rounds_to_whole_input_reads(self):
+    def test_saturation_payload_scales_unrounded_summary_mean_and_formats_like_card(self):
         frame = pd.DataFrame({"fraction": [0.01, 0.5, 0.9, 1.0]})
-        payload = self.build_report.saturation_payload(frame, 151)
-        self.assertEqual(payload["raw_input_reads"], [2, 76, 136, 151])
+        payload = self.build_report.saturation_payload(frame, 12448.5)
+        self.assertEqual(payload["mean_reads_per_cell"], [124.485, 6224.25, 11203.65, 12448.5])
+        self.assertEqual(payload["mean_reads_per_cell_labels"], ["124", "6,224", "11,204", "12,448"])
+        self.assertEqual(
+            payload["mean_reads_per_cell_labels"][-1], self.build_report.format_integer(12448.5)
+        )
 
-    def test_saturation_payload_requires_valid_input_read_count_and_fractions(self):
+    def test_saturation_payload_requires_valid_summary_mean_and_fractions(self):
         valid_fractions = pd.DataFrame({"fraction": [0.1, 1.0]})
-        for raw_reads in (None, 0, -1, 100.5, float("nan"), float("inf"), 2**53):
-            with self.subTest(raw_reads=raw_reads):
+        for mean in (None, 0, -1, float("nan"), float("inf"), 2**53):
+            with self.subTest(mean=mean):
                 self.assertNotIn(
-                    "raw_input_reads",
-                    self.build_report.saturation_payload(valid_fractions, raw_reads),
+                    "mean_reads_per_cell",
+                    self.build_report.saturation_payload(valid_fractions, mean),
                 )
         for frame in (
             pd.DataFrame({"reads_per_cell": [10]}),
@@ -1008,7 +1012,7 @@ class ReportTemplateContractTests(unittest.TestCase):
         ):
             with self.subTest(frame=frame.to_dict()):
                 self.assertNotIn(
-                    "raw_input_reads", self.build_report.saturation_payload(frame, 1000)
+                    "mean_reads_per_cell", self.build_report.saturation_payload(frame, 1000)
                 )
 
     def test_cli_populates_report_from_pipeline_outputs(self):
@@ -1108,13 +1112,19 @@ class ReportTemplateContractTests(unittest.TestCase):
             self.assertIn(">123<", rendered)
             self.assertIn(">Raw reads<", rendered)
             payload, _ = json.JSONDecoder().raw_decode(rendered.split("const payload = ", 1)[1])
-            self.assertEqual(payload["saturation"]["raw_input_reads"], [100, 1000])
+            self.assertEqual(payload["saturation"]["mean_reads_per_cell"], [0.813, 8.13])
+            self.assertEqual(payload["saturation"]["mean_reads_per_cell_labels"], ["1", "8"])
+            self.assertRegex(
+                rendered,
+                r'<div class="value">8</div>\s*<div class="label">Mean reads per cell</div>',
+            )
             self.assertEqual(payload["saturation"]["genes_per_cell"], [5, 7])
             self.assertEqual(payload["saturation"]["umis_per_cell"], [8, 10])
             self.assertEqual(payload["saturation"]["saturation"], [0.1, 0.2])
             for chart in ("saturation-genes", "saturation-umis", "saturation-rate"):
-                self.assertIn(f'plotIf("{chart}", [{{x: rawInputReads,', rendered)
-            self.assertIn('text: "Estimated Raw Input Reads"', rendered)
+                self.assertIn(f'plotIf("{chart}", [{{x: meanReadsPerCell,', rendered)
+            self.assertEqual(rendered.count("customdata: meanReadsPerCellLabels"), 3)
+            self.assertIn('text: "Mean Reads per Cell"', rendered)
             self.assertIn("downsampled reads from the processed read table", rendered)
             self.assertIn('"cell": "CELL_A"', rendered)
             self.assertIn('"status": "unassigned"', rendered)

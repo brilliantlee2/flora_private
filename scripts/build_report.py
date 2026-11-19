@@ -22,6 +22,7 @@ import pandas as pd
 
 BARCODE_RANK_MAX_POINTS = 20000
 BEAD_CHUNK_ROWS = 1_000_000
+MEAN_READS_PER_CELL_METRIC = "Reads per cell (mean)"
 BARNYARD_ASSIGNMENTS = (
     "human_singlet",
     "mouse_singlet",
@@ -849,10 +850,10 @@ def beads_per_droplet_payload(path, barcode_to_cell_path=None):
     return {"x": xs, "y": [hist[x] for x in xs], "n_cells": len(cell_barcodes)}
 
 
-def saturation_payload(df, total_reads):
-    if df.empty or "fraction" not in df or total_reads is None:
+def saturation_payload(df, mean_reads_per_cell):
+    if df.empty or "fraction" not in df or mean_reads_per_cell is None:
         return {}
-    if not 0 < total_reads <= JS_MAX_SAFE_INTEGER or total_reads != int(total_reads):
+    if not 0 < mean_reads_per_cell <= JS_MAX_SAFE_INTEGER:
         return {}
     try:
         fractions = [Decimal(str(value)) for value in df["fraction"]]
@@ -861,9 +862,11 @@ def saturation_payload(df, total_reads):
     if any(not fraction.is_finite() or not 0 <= fraction <= 1 for fraction in fractions):
         return {}
 
-    raw_reads = int(total_reads)
+    full_depth = Decimal(str(mean_reads_per_cell))
+    depths = [float(fraction * full_depth) for fraction in fractions]
     payload = {col: df[col].tolist() for col in df.columns}
-    payload["raw_input_reads"] = [round(fraction * raw_reads) for fraction in fractions]
+    payload["mean_reads_per_cell"] = depths
+    payload["mean_reads_per_cell_labels"] = [format_integer(depth) for depth in depths]
     return payload
 
 
@@ -929,7 +932,7 @@ def summary_rows(report_df, qc_df):
     items = [
         ("Estimated cells", "Estimated cells"),
         ("Input reads", "Input reads"),
-        ("Reads per cell (mean)", "Reads per cell (mean)"),
+        (MEAN_READS_PER_CELL_METRIC, MEAN_READS_PER_CELL_METRIC),
         ("UMIs per cell (median)", "UMIs per cell (median)"),
         ("Genes per cell (median)", "Genes per cell (median)"),
         ("Unique genes", "Unique genes"),
@@ -1016,8 +1019,8 @@ def violin_data_uri(values, color, title, ylabel):
 def new_report_markup(sections, show_saturation=False):
     if show_saturation:
         saturation_content = """
-      <p class="dynamic-note">Raw input reads are estimated by multiplying the total
-        raw input read count by each downsampling fraction. The curves use
+      <p class="dynamic-note">Mean reads per cell is the Summary value at full
+        depth scaled by each downsampling fraction. The curves use
         downsampled reads from the processed read table.</p>
       <div class="report-grid three">
         <div class="plot-panel"><div id="saturation-genes" class="dynamic-plot-lg"></div></div>
@@ -1026,8 +1029,8 @@ def new_report_markup(sections, show_saturation=False):
       </div>"""
     else:
         saturation_content = """
-      <p class="dynamic-note">Saturation curves are unavailable. A valid raw input
-        read count and downsampling fractions are required.</p>"""
+      <p class="dynamic-note">Saturation curves are unavailable. A valid Summary
+        mean reads per cell and downsampling fractions are required.</p>"""
     return f"""
 <style>
   .report-section {{ margin-bottom: 1.5rem; }}
@@ -1381,7 +1384,7 @@ def barnyard_report_script(payload):
 def build_html(args, payload, sections):
     barnyard_script = barnyard_report_script(payload)
     saturation = payload.get("saturation") or {}
-    show_saturation = bool(saturation.get("raw_input_reads"))
+    show_saturation = bool(saturation.get("mean_reads_per_cell"))
     report_body = new_report_markup(sections, show_saturation) + f"""
 <script>
   const payload = {script_safe_json(payload)};
@@ -1816,22 +1819,23 @@ def build_html(args, payload, sections):
   }}));
 
   const sat = payload.saturation || {{}};
-  const rawInputReads = sat.raw_input_reads || [];
-  const saturationXAxis = {{title: {{text: "Estimated Raw Input Reads", font: {{size: 12}}}}, tickformat: "~s", hoverformat: ",.0f"}};
-  const saturationHover = "Estimated raw input reads %{{x:,.0f}}<br>y=%{{y}}<extra></extra>";
-  plotIf("saturation-genes", [{{x: rawInputReads, y: sat.genes_per_cell || [], type: "scatter", mode: "lines", line: {{color: "#1358A2", width: 3}}, showlegend: false, hovertemplate: saturationHover}}], {{
+  const meanReadsPerCell = sat.mean_reads_per_cell || [];
+  const meanReadsPerCellLabels = sat.mean_reads_per_cell_labels || [];
+  const saturationXAxis = {{title: {{text: "Mean Reads per Cell", font: {{size: 12}}}}, tickformat: "~s"}};
+  const saturationHover = "Mean reads per cell %{{customdata}}<br>y=%{{y}}<extra></extra>";
+  plotIf("saturation-genes", [{{x: meanReadsPerCell, customdata: meanReadsPerCellLabels, y: sat.genes_per_cell || [], type: "scatter", mode: "lines", line: {{color: "#1358A2", width: 3}}, showlegend: false, hovertemplate: saturationHover}}], {{
     height: 400,
     title: {{text: "Median Genes per Cell", font: {{size: 14}}}},
     xaxis: saturationXAxis,
     yaxis: {{title: {{text: "Median Genes per Cell", standoff: 0}}}}
   }});
-  plotIf("saturation-umis", [{{x: rawInputReads, y: sat.umis_per_cell || [], type: "scatter", mode: "lines", line: {{color: "#1358A2", width: 3}}, showlegend: false, hovertemplate: saturationHover}}], {{
+  plotIf("saturation-umis", [{{x: meanReadsPerCell, customdata: meanReadsPerCellLabels, y: sat.umis_per_cell || [], type: "scatter", mode: "lines", line: {{color: "#1358A2", width: 3}}, showlegend: false, hovertemplate: saturationHover}}], {{
     height: 400,
     title: {{text: "Median UMI counts per cell", font: {{size: 14}}}},
     xaxis: saturationXAxis,
     yaxis: {{title: {{text: "Median UMI Counts per Cell"}}}}
   }});
-  plotIf("saturation-rate", [{{x: rawInputReads, y: (sat.saturation || []).map(v => v * 100), type: "scatter", mode: "lines", line: {{color: "#1358A2", width: 3}}, showlegend: false, hovertemplate: saturationHover}}], {{
+  plotIf("saturation-rate", [{{x: meanReadsPerCell, customdata: meanReadsPerCellLabels, y: (sat.saturation || []).map(v => v * 100), type: "scatter", mode: "lines", line: {{color: "#1358A2", width: 3}}, showlegend: false, hovertemplate: saturationHover}}], {{
     height: 400,
     title: {{text: "Sequencing saturation", font: {{size: 14}}}},
     xaxis: saturationXAxis,
@@ -1884,7 +1888,7 @@ def main():
         ("Estimated cells", "Estimated number of cells"),
         ("UMIs per cell (median)", "Median UMI counts per cell"),
         ("Genes per cell (median)", "Median genes per cell"),
-        ("Reads per cell (mean)", "Mean reads per cell"),
+        (MEAN_READS_PER_CELL_METRIC, "Mean reads per cell"),
     ]:
         value = next((row["Value"] for row in summary if row["Metric"] == source_label), "NA")
         summary_card_rows.append({"label": display_label, "value": value})
@@ -1896,7 +1900,9 @@ def main():
         },
         "readQc": read_qc,
         "perCell": per_cell,
-        "saturation": saturation_payload(saturation_df, total_reads),
+        "saturation": saturation_payload(
+            saturation_df, metric(report_df, qc_df, MEAN_READS_PER_CELL_METRIC)
+        ),
         "barcodeRank5p": barcode_rank_payload(args.barcode_counts_5p_tsv, args.whitelist_5p),
         "beads": beads_per_droplet_payload(args.read_assigned_cell, args.barcode_to_cell),
         "rnaCluster": rna_clusters,
