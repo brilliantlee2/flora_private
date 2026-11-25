@@ -12,6 +12,9 @@ Usage:
     --ref-dir /path/to/ref_dir \
     --out-dir /path/to/output_dir \
     [--gene-fasta /path/to/genome.fa] \
+    [--genome-aligner bonefish|minimap2] \
+    [--bonefish-bin /path/to/bonefish] \
+    [--genome-mmi /path/to/genome.splice.mmi] \
     [--junction-bed /path/to/genes.bed] \
     [--chrom-sizes /path/to/chrom_sizes.tsv] \
     [--gene-gtf /path/to/genes.gtf] \
@@ -52,6 +55,7 @@ Usage:
     [--feature-backend ont|legacy] \
     [--ont-jobs 1] \
     [--ont-temp-dir /path/to/local_scratch] \
+    [--stringtie-bin /path/to/stringtie] \
     [--stringtie-opts '-c 2'] \
     [--transcript-assign-mapq 30] \
     [--transcript-assign-chunk-size 200000] \
@@ -74,7 +78,9 @@ Notes:
      "BC_1536.txt" is used when present.
   5. --ref-dir looks for genome.fa, genes.bed, chrom_sizes.tsv, and genes.gtf.
   6. Explicit reference file arguments override files inferred from --ref-dir.
-  7. --gene-fasta is the minimap2 reference FASTA. --genome-fa is accepted as an alias.
+  7. Genome alignment uses Bonefish by default. Use --genome-aligner minimap2
+     to select minimap2 and --genome-mmi to use a prebuilt splice index.
+     --genome-fa is an alias for --gene-fasta.
   8. If --isoform-gtf is omitted, --gene-gtf is reused for isoform assignment.
   9. If --pair-min is omitted, PAIR_MIN is auto-resolved as:
      max(--auto-pair-min-floor, quantile(pair support, --auto-pair-min-quantile)).
@@ -83,14 +89,14 @@ Notes:
   11. --barcode-extract-mode fixed_seq is the current validated mode. probe is
      reserved for a future Sockeye-style local-alignment extractor and exits clearly.
   12. Light output is enabled by default. Trimmed cDNA reads stream directly to
-      minimap2 without creating alignment/<sample>.cdna.fastq.gz on disk.
+      the genome aligner without creating alignment/<sample>.cdna.fastq.gz on disk.
   13. Use --full-output or --save-intermediate to retain the trimmed cDNA FASTQ
       and other intermediate outputs for debugging.
      Use --remove-final-bam to remove every alignment/matrix BAM and index after
      matrices, QC, and the report finish successfully.
   14. Flora identifies barcode/UMI structures before alignment, trims validated
       terminal structures, and aligns the resulting cDNA reads with ONT-style
-      minimap2 streaming and secondary-alignment filtering.
+      spliced alignment, stream filtering of secondary alignments, and inline BAI.
   15. --skip-isoform skips isoform matrix generation (and legacy transcript assignment).
       Gene-level expression, RNA QC, and the HTML report still run.
   16. Advanced knobs are available for assignment and memory control:
@@ -99,7 +105,8 @@ Notes:
       --ref-interval, and --cell-gene-max-reads.
   17. --feature-backend ont (default) uses wf-single-cell v3.3.0-style sample
       transcriptome assembly and joint gene/transcript assignment. Requires
-      stringtie, gffread and gffcompare. legacy uses the original GTF overlap.
+      StringTie, minimap2, gffread and gffcompare. Use --stringtie-bin to select
+      a StringTie 2.2.2 executable. legacy uses the original GTF overlap.
       --gene-assign-mapq gates gene assignment; --transcript-assign-mapq applies
       only to legacy. ONT transcript assignment uses alignment score/coverage.
       ONT defaults to no per-cell/gene read cap (0); legacy defaults to 20000.
@@ -177,6 +184,12 @@ write_parameters_tsv() {
     printf "rtp_seq\t%s\n" "${RTP_SEQ}"
     printf "ref_dir\t%s\n" "${REF_DIR}"
     printf "gene_fasta\t%s\n" "${GENE_FASTA}"
+    printf "genome_aligner\t%s\n" "${GENOME_ALIGNER}"
+    printf "genome_mmi\t%s\n" "${GENOME_MMI}"
+    if [[ "${GENOME_ALIGNER}" == bonefish ]]; then
+      printf "bonefish_bin\t%s\n" "${BONEFISH_BIN}"
+      printf "bonefish_version\t%s\n" "${BONEFISH_VERSION}"
+    fi
     printf "junction_bed\t%s\n" "${JUNCTION_BED}"
     printf "chrom_sizes\t%s\n" "${CHROM_SIZES}"
     printf "gene_gtf\t%s\n" "${GENE_GTF}"
@@ -214,6 +227,8 @@ write_parameters_tsv() {
       printf "feature_reference\tFlora GTF-overlap\n"
     fi
     printf "stringtie_opts\t%s\n" "${STRINGTIE_OPTS}"
+    printf "stringtie_bin\t%s\n" "${STRINGTIE_BIN:-stringtie (PATH)}"
+    printf "stringtie_input_lookup\t%s\n" "${STRINGTIE_INPUT_LOOKUP:-indexed}"
     printf "ont_jobs\t%s\n" "${ONT_JOBS}"
     printf "ont_temp_dir\t%s\n" "${ONT_TEMP_DIR:-system temp/TMPDIR}"
     printf "transcript_assign_mapq\t%s\n" "${TRANSCRIPT_ASSIGN_MAPQ}"
@@ -289,13 +304,26 @@ remove_intermediate() {
 
 run_alignment_pipeline() {
   local input_fastq="$1"
-  minimap2 -ax splice -uf --MD -I 16G -t "${THREADS}" -K 10M \
-    --junc-bed "${JUNCTION_BED}" \
-    --cap-kalloc 100m \
-    "${GENE_FASTA}" "${input_fastq}" \
-  | samtools view -uh --no-PG - \
-  | samtools view -uh -F 256 - \
-  | samtools sort --no-PG -@ "${THREADS}" -o "${ALIGNED_BAM}" -
+  local reference="${GENOME_MMI:-${GENE_FASTA}}"
+  local -a mapper
+  if [[ "${GENOME_ALIGNER}" == bonefish ]]; then
+    mapper=("${BONEFISH_BIN}" -a -x cdna -u f)
+  else
+    mapper=(minimap2 -ax splice -uf)
+  fi
+  mapper+=(--MD -I 16G -t "${THREADS}" -K 10M --junc-bed "${JUNCTION_BED}")
+  if [[ "${GENOME_ALIGNER}" == minimap2 ]]; then
+    mapper+=(--cap-kalloc 100m)
+  fi
+  (
+    if [[ "${GENOME_ALIGNER}" == bonefish && -p "${input_fastq}" ]]; then
+      "${mapper[@]}" "${reference}" - < "${input_fastq}"
+    else
+      "${mapper[@]}" "${reference}" "${input_fastq}"
+    fi
+  ) | samtools view -uh --no-PG - \
+    | samtools view -uh -F 256 - \
+    | samtools sort --no-PG -@ "${THREADS}" --write-index -o "${ALIGNED_BAM}##idx##${ALIGNED_BAM}.bai" -
 }
 
 cleanup_alignment_stream() {
@@ -375,6 +403,10 @@ RTP_SEQ="GAGGTCCATGAAGTGAGCATCTTCTGCG"
 BARCODE_LIST_10BP=""
 REF_DIR=""
 GENE_FASTA=""
+GENOME_ALIGNER=bonefish
+GENOME_MMI=""
+BONEFISH_BIN=bonefish
+BONEFISH_VERSION=""
 JUNCTION_BED=""
 CHROM_SIZES=""
 GENE_GTF=""
@@ -420,6 +452,7 @@ FEATURE_BACKEND="ont"
 ONT_JOBS=1
 ONT_TEMP_DIR=""
 STRINGTIE_OPTS="-c 2"
+STRINGTIE_BIN=""
 TRANSCRIPT_ASSIGN_MAPQ=30
 TRANSCRIPT_ASSIGN_CHUNK_SIZE=200000
 REF_INTERVAL=1000
@@ -446,6 +479,12 @@ while [[ $# -gt 0 ]]; do
       ;;
     --ref-dir|--ref_dir) REF_DIR="$2"; shift 2 ;;
     --gene-fasta|--genome-fa) GENE_FASTA="$2"; shift 2 ;;
+    --genome-aligner) GENOME_ALIGNER="${2:?--genome-aligner requires a value}"; shift 2 ;;
+    --genome-aligner=*) GENOME_ALIGNER="${1#*=}"; shift ;;
+    --genome-mmi) GENOME_MMI="${2:?--genome-mmi requires a path}"; shift 2 ;;
+    --genome-mmi=*) GENOME_MMI="${1#*=}"; : "${GENOME_MMI:?--genome-mmi requires a path}"; shift ;;
+    --bonefish-bin) BONEFISH_BIN="${2:?--bonefish-bin requires an executable}"; shift 2 ;;
+    --bonefish-bin=*) BONEFISH_BIN="${1#*=}"; : "${BONEFISH_BIN:?--bonefish-bin requires an executable}"; shift ;;
     --junction-bed) JUNCTION_BED="$2"; shift 2 ;;
     --chrom-sizes) CHROM_SIZES="$2"; shift 2 ;;
     --gene-gtf) GENE_GTF="$2"; shift 2 ;;
@@ -489,6 +528,8 @@ while [[ $# -gt 0 ]]; do
     --feature-backend) FEATURE_BACKEND="$2"; shift 2 ;;
     --ont-jobs) ONT_JOBS="$2"; shift 2 ;;
     --ont-temp-dir) ONT_TEMP_DIR="$2"; shift 2 ;;
+    --stringtie-bin) STRINGTIE_BIN="${2:?--stringtie-bin requires an executable}"; shift 2 ;;
+    --stringtie-bin=*) STRINGTIE_BIN="${1#*=}"; : "${STRINGTIE_BIN:?--stringtie-bin requires an executable}"; shift ;;
     --stringtie-opts) STRINGTIE_OPTS="$2"; shift 2 ;;
     --stringtie-opts=*) STRINGTIE_OPTS="${1#*=}"; shift ;;
     --transcript-assign-mapq) TRANSCRIPT_ASSIGN_MAPQ="$2"; shift 2 ;;
@@ -504,6 +545,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ "${GENOME_ALIGNER}" != bonefish && "${GENOME_ALIGNER}" != minimap2 ]]; then
+  echo "[ERROR] --genome-aligner must be bonefish or minimap2." >&2
+  exit 1
+fi
 if [[ ! "${ONT_JOBS}" =~ ^[1-9][0-9]*$ ]]; then
   echo "[ERROR] --ont-jobs must be a positive integer." >&2
   exit 1
@@ -605,21 +650,46 @@ if [[ "${SKIP_GLYCINE}" -eq 0 ]]; then
 fi
 
 require_cmd python3
-require_cmd samtools
-require_cmd minimap2
-if [[ "${FEATURE_BACKEND}" == "legacy" && ( "${GENE_TAGGING_BACKEND}" != "rust" || "${SKIP_ISOFORM}" -eq 0 ) ]]; then
-  require_cmd bedtools
-fi
-if [[ "${FEATURE_BACKEND}" == "ont" && "${UPSTREAM_ONLY}" -eq 0 ]]; then
-  require_cmd stringtie
-  require_cmd gffread
-  require_cmd gffcompare
-  if [[ "$(stringtie --version)" != "2.2.2" ]]; then
-    echo "[ERROR] ONT 3.3.0 comparison requires StringTie 2.2.2; update environment.yml." >&2
+if [[ "${UPSTREAM_ONLY}" -eq 0 ]]; then
+  require_cmd samtools
+  if [[ "${GENOME_ALIGNER}" == bonefish ]]; then
+    if ! command -v "${BONEFISH_BIN}" >/dev/null 2>&1 \
+      || ! BONEFISH_VERSION="$("${BONEFISH_BIN}" --version)" \
+      || [[ "${BONEFISH_VERSION}" != "bonefish 0.5.0" ]]; then
+      echo "[ERROR] Expected Bonefish 0.5.0 at ${BONEFISH_BIN} (found: ${BONEFISH_VERSION:-unavailable})." >&2
+      echo "[ERROR] Set --bonefish-bin to a Bonefish 0.5.0 executable or use --genome-aligner minimap2." >&2
+      exit 1
+    fi
+    log "Genome aligner: ${BONEFISH_BIN} (${BONEFISH_VERSION})"
+  fi
+  if [[ "${GENOME_ALIGNER}" == minimap2 || "${FEATURE_BACKEND}" == ont ]]; then
+    require_cmd minimap2
+  fi
+  if [[ -n "${GENOME_MMI}" && ( ! -f "${GENOME_MMI}" || ! -r "${GENOME_MMI}" || ! -s "${GENOME_MMI}" ) ]]; then
+    echo "[ERROR] --genome-mmi requires a readable, nonempty file: ${GENOME_MMI}" >&2
     exit 1
   fi
-  python_asset "${DOWNSTREAM_DIR}/ont_features.py" >/dev/null
-  python_asset "${DOWNSTREAM_DIR}/ont_matrices.py" >/dev/null
+  if [[ "${FEATURE_BACKEND}" == legacy && ( "${GENE_TAGGING_BACKEND}" != rust || "${SKIP_ISOFORM}" -eq 0 ) ]]; then
+    require_cmd bedtools
+  fi
+  if [[ "${FEATURE_BACKEND}" == ont ]]; then
+    require_cmd "${STRINGTIE_BIN:-stringtie}"
+    require_cmd gffread
+    require_cmd gffcompare
+    if [[ -n "${STRINGTIE_BIN}" ]]; then
+      STRINGTIE_BIN="$(command -v "${STRINGTIE_BIN}")"
+      if [[ "${STRINGTIE_BIN}" != /* ]]; then
+        STRINGTIE_BIN="${PWD}/${STRINGTIE_BIN}"
+      fi
+    fi
+    if [[ "$("${STRINGTIE_BIN:-stringtie}" --version)" != 2.2.2 ]]; then
+      echo "[ERROR] ONT 3.3.0 comparison requires StringTie 2.2.2: ${STRINGTIE_BIN:-stringtie}" >&2
+      exit 1
+    fi
+    export STRINGTIE_INPUT_LOOKUP="${STRINGTIE_INPUT_LOOKUP:-indexed}"
+    python_asset "${DOWNSTREAM_DIR}/ont_features.py" >/dev/null
+    python_asset "${DOWNSTREAM_DIR}/ont_matrices.py" >/dev/null
+  fi
 fi
 require_file "${WHITELIST_3P}" "3p whitelist"
 require_file "${WHITELIST_5P}" "5p whitelist"
@@ -735,10 +805,19 @@ if [[ "${UPSTREAM_ONLY}" -eq 0 && "${ALIGNMENT_STREAMING}" -eq 1 ]]; then
   ALIGNMENT_STREAM_ACTIVE=1
   trap cleanup_alignment_stream EXIT
   ALIGNMENT_STAGE_TS=$(date +%s)
-  log "Streaming trimmed cDNA reads directly to minimap2 (no alignment FASTQ on disk)"
+  log "Streaming trimmed cDNA reads directly to ${GENOME_ALIGNER} (no alignment FASTQ on disk)"
   (
+    # Hold a read end before removing the inherited read/write guard.
+    exec 8<"${ALIGNMENT_FASTQ}"
     exec 9>&-
-    run_alignment_pipeline "${ALIGNMENT_FASTQ}" 2>&1 | tee "${ALIGN_LOG}"
+    if run_alignment_pipeline "${ALIGNMENT_FASTQ}" 2>&1 | tee "${ALIGN_LOG}"; then
+      exit 0
+    else
+      alignment_status=$?
+      # Let the upstream producer finish even if the aligner stops reading.
+      cat <&8 >/dev/null || true
+      exit "${alignment_status}"
+    fi
   ) &
   ALIGNMENT_STREAM_PID=$!
 fi
@@ -840,7 +919,7 @@ if [[ "${UPSTREAM_ONLY}" -eq 1 ]]; then
 fi
 
 step_start
-log "Step 2/6: ONT-style minimap2 alignment of barcode/UMI-trimmed cDNA reads"
+log "Step 2/6: ONT-style ${GENOME_ALIGNER} alignment of barcode/UMI-trimmed cDNA reads"
 if [[ "${ALIGNMENT_STREAMING}" -eq 1 ]]; then
   if wait "${ALIGNMENT_STREAM_PID}"; then
     ALIGNMENT_STAGE_STATUS=0
@@ -860,17 +939,10 @@ else
     ALIGNMENT_STAGE_STATUS=$?
   fi
 fi
-log "Stage alignment_pipeline (external) elapsed: $(($(date +%s) - ALIGNMENT_STAGE_TS))s" | tee -a "${ALIGN_LOG}"
+log "Stage alignment_pipeline (external) elapsed: $(($(date +%s) - ALIGNMENT_STAGE_TS))s (BAM and BAI)" | tee -a "${ALIGN_LOG}"
 if (( ALIGNMENT_STAGE_STATUS != 0 )); then exit "${ALIGNMENT_STAGE_STATUS}"; fi
-
-ALIGNED_INDEX_TS=$(date +%s)
-if samtools index "${ALIGNED_BAM}" 2>&1 | tee -a "${ALIGN_LOG}"; then
-  ALIGNED_INDEX_STATUS=0
-else
-  ALIGNED_INDEX_STATUS=$?
-fi
-log "Stage aligned_bam_index (external) elapsed: $(($(date +%s) - ALIGNED_INDEX_TS))s" | tee -a "${ALIGN_LOG}"
-if (( ALIGNED_INDEX_STATUS != 0 )); then exit "${ALIGNED_INDEX_STATUS}"; fi
+require_file "${ALIGNED_BAM}" "aligned BAM"
+require_file "${ALIGNED_BAM}.bai" "alignment BAM index"
 step_end "Step 2/6"
 
 step_start
@@ -911,6 +983,9 @@ pushd "${MATRIX_DIR}" >/dev/null
 
 if [[ "${FEATURE_BACKEND}" == "ont" ]]; then
   ONT_ARGS=()
+  if [[ -n "${STRINGTIE_BIN}" ]]; then
+    ONT_ARGS+=(--stringtie-bin "${STRINGTIE_BIN}")
+  fi
   if [[ -n "${ONT_TEMP_DIR}" ]]; then
     ONT_ARGS+=(--temp-dir "${ONT_TEMP_DIR}")
   fi

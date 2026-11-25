@@ -258,6 +258,7 @@ fn normalize_path_options(args: &mut [OsString]) -> Result<()> {
         "--ref_dir",
         "--gene-fasta",
         "--genome-fa",
+        "--genome-mmi",
         "--junction-bed",
         "--chrom-sizes",
         "--gene-gtf",
@@ -267,6 +268,13 @@ fn normalize_path_options(args: &mut [OsString]) -> Result<()> {
         "--glycine-outdir",
         "--ont-temp-dir",
     ];
+    const EXECUTABLE_OPTIONS: &[&str] = &["--bonefish-bin", "--stringtie-bin"];
+    let should_resolve = |option: &str, value: &std::ffi::OsStr| {
+        !value.is_empty()
+            && (PATH_OPTIONS.contains(&option)
+                || (EXECUTABLE_OPTIONS.contains(&option)
+                    && Path::new(value).file_name() != Some(value)))
+    };
     let cwd = std::env::current_dir().context("failed to resolve current directory")?;
     let mut index = 0;
     while index < args.len() {
@@ -286,19 +294,19 @@ fn normalize_path_options(args: &mut [OsString]) -> Result<()> {
             }
             continue;
         }
-        if PATH_OPTIONS.iter().any(|option| raw == *option) {
+        if PATH_OPTIONS.contains(&raw.as_ref()) || EXECUTABLE_OPTIONS.contains(&raw.as_ref()) {
             if index + 1 >= args.len() {
                 bail!("{} requires a value", raw)
             }
             let path = PathBuf::from(&args[index + 1]);
-            if path.is_relative() {
+            if path.is_relative() && should_resolve(&raw, path.as_os_str()) {
                 args[index + 1] = cwd.join(path).into_os_string();
             }
             index += 2;
             continue;
         }
         if let Some((option, value)) = raw.split_once('=') {
-            if option == "--fastq" || PATH_OPTIONS.contains(&option) {
+            if option == "--fastq" || should_resolve(option, std::ffi::OsStr::new(value)) {
                 let path = PathBuf::from(value);
                 if path.is_relative() {
                     args[index] = OsString::from(format!("{option}={}", cwd.join(path).display()));
@@ -333,6 +341,29 @@ mod tests {
         let mut directory = vec![OsString::from("--fastq-dir"), OsString::from("chunks")];
         normalize_path_options(&mut directory).unwrap();
         assert_eq!(PathBuf::from(&directory[1]), cwd.join("chunks"));
+    }
+
+    #[test]
+    fn normalizes_alignment_paths_but_preserves_names_on_path() {
+        let cwd = std::env::current_dir().unwrap();
+        let mut args = [
+            "--genome-mmi=spliced reference.mmi",
+            "--bonefish-bin",
+            "./tool dir/bonefish",
+            "--stringtie-bin",
+            "stringtie",
+        ]
+        .map(OsString::from);
+        normalize_path_options(&mut args).unwrap();
+        assert_eq!(
+            args[0].to_string_lossy(),
+            format!(
+                "--genome-mmi={}",
+                cwd.join("spliced reference.mmi").display()
+            )
+        );
+        assert_eq!(PathBuf::from(&args[2]), cwd.join("./tool dir/bonefish"));
+        assert_eq!(args[4], "stringtie");
     }
 
     #[test]

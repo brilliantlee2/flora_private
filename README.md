@@ -93,6 +93,12 @@ barcode/UMI extraction and cell assignment only. Full workflows accept multiple
 files after `--fastq`, or a non-recursive `--fastq-dir`. Glycine defaults to
 10 concurrent jobs sharing 64 total threads.
 
+Genome alignment defaults to Bonefish CPU 0.5.0. Put `bonefish` on PATH or
+provide `--bonefish-bin /path/to/bonefish`. Select `--genome-aligner minimap2`
+to use minimap2 for genome alignment. The ONT transcript remapper still uses
+minimap2. See [PBMC performance validation](docs/pbmc-perf.md) for the tested
+StringTie build and the full-sample comparison.
+
 ## Build the Linux x86_64 release
 
 After preparing the environment and passing the tests above, run:

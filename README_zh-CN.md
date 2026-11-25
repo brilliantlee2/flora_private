@@ -87,6 +87,11 @@ cargo build --release --locked
 全流程支持 `--fastq` 后输入多个文件，或用 `--fastq-dir` 非递归读取目录。
 Glycine 默认 10 个并发任务，共享 64 个总线程。
 
+基因组比对默认使用 Bonefish CPU 0.5.0。将 `bonefish` 放入 PATH，或用
+`--bonefish-bin /path/to/bonefish` 指定。用 `--genome-aligner minimap2`
+可选择 minimap2 基因组比对。ONT 转录组重比对仍使用 minimap2。
+StringTie 构建及全量对照命令见 [PBMC 性能验证](docs/pbmc-perf.md)。
+
 ## 构建 Linux x86_64 发行包
 
 完成环境准备和上述测试后执行：

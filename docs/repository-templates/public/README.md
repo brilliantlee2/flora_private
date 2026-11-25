@@ -83,6 +83,13 @@ bedtools --version
 ./flora glycine --help
 ```
 
+Genome alignment defaults to Bonefish CPU 0.5.0, available from
+[the Bonefish release page](https://github.com/DylanCosto/bonefish/releases/tag/v0.5.0).
+Put `bonefish` on PATH or pass `--bonefish-bin /path/to/bonefish`.
+`--genome-aligner minimap2` selects the existing minimap2 genome mode.
+An ONT feature run also uses minimap2 for transcript remapping, and accepts
+`--stringtie-bin /path/to/stringtie-2.2.2-same-start` to enable indexed input lookup.
+
 The embedded Python analysis modules require Python 3.11. Do not replace the environment with Python 3.10, 3.12, 3.13, or 3.14.
 
 For reproducible runs, always provide the 10 bp barcode whitelist explicitly with `--barcode-list-10bp /path/to/BC_1536.txt`. Automatic discovery of a whitelist placed next to the executable is not guaranteed in the current release.
@@ -99,6 +106,10 @@ SIF normally does not require root.
 The SIF includes Flora, Python 3.11, samtools, minimap2, bedtools, and the Python
 dependencies. Do not run `conda env create` or `conda activate flora` when using
 the SIF.
+
+For Bonefish genome alignment, bind a host directory that contains Bonefish
+0.5.0 into the SIF and pass its container path to `--bonefish-bin`. To use the
+minimap2 executable supplied by the image, pass `--genome-aligner minimap2`.
 
 ### 1. Create the build directory
 
