@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | Step 2 基因组比对 | 默认 Bonefish CPU 0.5.0，使用 `-a -x cdna -u f --MD -I 16G -K 10M` 和原 junction BED。不指定 MMI 时根据输入 FASTA 建索引。 | 120 万条 cDNA 第一轮到 BAM 和 BAI 就绪为 412.545 → 202.447 秒。第二轮 minimap2 耗时异常。chr19 重新组装后，0.51% 的共同 reads 改变了基因指派。 |
 | Step 2 BAM 索引 | 保留 `-F 256`。坐标排序时用 `samtools sort --write-index` 生成对应的 `.bam.bai`。 | 120 万条 cDNA 的输出子阶段平均 15.841 → 11.428 秒，解码 BAM 和索引查询一致。 |
-| Step 4 StringTie2 | 通过 `--stringtie-bin` 指定 `packaging/stringtie_input` 提供的 2.2.2 same-start 构建，默认 `STRINGTIE_INPUT_LOOKUP=indexed`。 | chr19 两轮组装 945 → 627 秒，归一化组装内容和第一轮逐 read 指派一致。 |
+| Step 4 StringTie2 | 自动使用 `flora setup-tools` 构建的 2.2.2 same-start，或通过 `--stringtie-bin` 指定，默认 `STRINGTIE_INPUT_LOOKUP=indexed`。 | chr19 两轮组装 945 → 627 秒，归一化组装内容和第一轮逐 read 指派一致。 |
 | Step 4 GN/TX 回填 | 对 `(chrom, read_id)` 主键做有界的 `IN` 批量查询，分块遵守 SQLite 参数上限。 | chr19 回填至 BAM 和 BAI 就绪的耗时分别减少约 63% 和 40%，六项输出核对一致。 |
 | Step 4 UMI 聚类 | 原样使用 `edf000a` 的 15 bp、编辑距离 3 的流式精确实现，其他输入仍走原有算法。 | 全量从 7,840 秒降到 1,879.58 秒，解码 BAM 和基因矩阵一致，新版峰值 RSS 3.26 GiB。 |
 
@@ -14,14 +14,13 @@
 
 ## 运行依赖
 
-运行使用现有的 `flora-ont330`，其中有 samtools 1.24 和 minimap2 2.31。用 `--bonefish-bin` 指定独立的 0.5.0 可执行文件，或把该文件所在目录加入当前运行的 PATH。可复用 PBMC A/B 用的同一个二进制。Linux x86_64 官方发布包为 [Bonefish 0.5.0](https://github.com/DylanCosto/bonefish/releases/tag/v0.5.0)，对应归档的 SHA-256 为 `216557338a1c3c205daa17aa956f24b98e1c51e48fce6128b4ed99314a5fcdda`。
-
-为激活本次验证过的 StringTie2 优化，显式传入之前用的 `stringtie-2.2.2-same-start`。两个 StringTie 构建的 `--version` 都显示 2.2.2，可用 `transcriptome/tool_versions.json` 中的绝对路径、SHA-256 和模式核对。需要重建时使用原来的构建脚本。
-
-```bash
-python3 packaging/stringtie_input/build.py \
-  --build-root /tmp/flora-perf-stringtie-2.2.2 --fetch --jobs 8
-```
+运行使用现有的 `flora-ont330`，其中有 samtools 1.24 和 minimap2 2.31。
+下面的 `flora setup-tools` 会按 [运行工具清单](../runtime-tools.json) 下载
+Bonefish CPU 0.5.0，并用原脚本构建 StringTie 2.2.2 same-start。
+Flora 自动使用安装好的程序。需要复用 A/B 测试中的二进制时，可用
+`--bonefish-bin` 和 `--stringtie-bin` 指定。可以通过
+`transcriptome/tool_versions.json` 中的路径、SHA-256 和模式区分两种
+`--version` 均显示 2.2.2 的 StringTie 构建。
 
 ## cycloneserver 上的全量 PBMC 集成对照
 
@@ -35,6 +34,7 @@ if [[ -z ${LIBCLANG_PATH:-} ]]; then
   if [[ -n $clang_lib ]]; then export LIBCLANG_PATH="$(dirname "$clang_lib")"; fi
 fi
 cargo build --release --locked --bin flora
+./target/release/flora setup-tools --jobs 8
 ```
 
 ```bash
@@ -44,17 +44,12 @@ cargo build --release --locked --bin flora
   DIST=/home/liyy/0.software/test_space/flora_private_saturation_re/dist/Flora-0.1.2-linux-x86_64
   BASE="$DIST/${S}_perf_baseline_20261123_123741"
   PARAMS="$BASE/results/qc/$S.parameters.tsv"
-  BONEFISH="$BASE/bonefish_ab.Cz8IuI/bonefish-v0.5.0-linux-x86_64/bonefish"
-  STRINGTIE=/home/liyy/0.software/stringtie-input-1111/stringtie-2.2.2-same-start
   FLORA="$PWD/target/release/flora"
-  [[ -s "$PARAMS" && -x "$BONEFISH" && -x "$STRINGTIE" && -x "$FLORA" ]]
-  "$BONEFISH" --version
-  "$STRINGTIE" --version
+  [[ -s "$PARAMS" && -x "$FLORA" ]]
 
   get() { awk -F '\t' -v k="$1" '$1==k {sub(/^[^\t]*\t/,""); print; exit}' "$PARAMS"; }
   [[ "$(get skip_glycine)" == 1 && "$(get feature_backend)" == ont ]]
-  args=(--skip-glycine --save-intermediate --sample-id "$S"
-        --bonefish-bin "$BONEFISH" --stringtie-bin "$STRINGTIE")
+  args=(--skip-glycine --save-intermediate --sample-id "$S")
   for key in full_length_fastq barcode_list_10bp gene_fasta junction_bed chrom_sizes gene_gtf isoform_gtf; do
     value="$(get "$key")"
     [[ -r "$value" && -s "$value" ]] || { printf '缺少 %s %s\n' "$key" "$value" >&2; exit 1; }

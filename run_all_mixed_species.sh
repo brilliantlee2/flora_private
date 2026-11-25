@@ -81,6 +81,7 @@ Notes:
   6. Explicit reference file arguments override files inferred from --ref-dir.
   7. Genome alignment uses Bonefish by default. Use --genome-aligner minimap2
      to select minimap2 and --genome-mmi to use a prebuilt splice index.
+     Run flora setup-tools to install Bonefish and the indexed StringTie build.
      --genome-fa is an alias for --gene-fasta.
   8. If --isoform-gtf is omitted, --gene-gtf is reused for isoform assignment.
   9. If --pair-min is omitted, PAIR_MIN is auto-resolved as:
@@ -120,6 +121,23 @@ require_cmd() {
     echo "[ERROR] Command not found: $cmd" >&2
     exit 1
   fi
+}
+
+resolve_workflow_tool() {
+  local selected="$1" managed="$2" fallback="$3"
+  if [[ -z "${selected}" ]]; then
+    if [[ -f "${managed}" && -x "${managed}" ]]; then
+      selected="${managed}"
+    else
+      selected="${fallback}"
+    fi
+  fi
+  selected="$(type -P -- "${selected}")" || return 1
+  [[ -f "${selected}" && -x "${selected}" ]] || return 1
+  if [[ "${selected}" != /* ]]; then
+    selected="${PWD}/${selected}"
+  fi
+  printf '%s\n' "${selected}"
 }
 
 require_file() {
@@ -405,7 +423,7 @@ REF_DIR=""
 GENE_FASTA=""
 GENOME_ALIGNER=bonefish
 GENOME_MMI=""
-BONEFISH_BIN=bonefish
+BONEFISH_BIN=""
 BONEFISH_VERSION=""
 JUNCTION_BED=""
 CHROM_SIZES=""
@@ -653,13 +671,25 @@ fi
 
 require_cmd python3
 if [[ "${UPSTREAM_ONLY}" -eq 0 ]]; then
+  managed_bin="$(python3 -c '
+import os
+from pathlib import Path
+
+if override := os.environ.get("FLORA_TOOLS_DIR"):
+    tools = Path(override)
+else:
+    data = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
+    tools = data / "flora" / "tools"
+print(tools.expanduser().resolve() / "bin")
+')"
   require_cmd samtools
   if [[ "${GENOME_ALIGNER}" == bonefish ]]; then
-    if ! command -v "${BONEFISH_BIN}" >/dev/null 2>&1 \
+    bonefish_requested="${BONEFISH_BIN:-bonefish}"
+    if ! BONEFISH_BIN="$(resolve_workflow_tool "${BONEFISH_BIN}" "${managed_bin}/bonefish" bonefish)" \
       || ! BONEFISH_VERSION="$("${BONEFISH_BIN}" --version)" \
       || [[ "${BONEFISH_VERSION}" != "bonefish 0.5.0" ]]; then
-      echo "[ERROR] Expected Bonefish 0.5.0 at ${BONEFISH_BIN} (found: ${BONEFISH_VERSION:-unavailable})." >&2
-      echo "[ERROR] Set --bonefish-bin to a Bonefish 0.5.0 executable or use --genome-aligner minimap2." >&2
+      echo "[ERROR] Expected Bonefish 0.5.0 at ${BONEFISH_BIN:-${bonefish_requested}} (found: ${BONEFISH_VERSION:-unavailable})." >&2
+      echo "[ERROR] Run 'flora setup-tools', set --bonefish-bin to a Bonefish 0.5.0 executable, or use --genome-aligner minimap2." >&2
       exit 1
     fi
     log "Genome aligner: ${BONEFISH_BIN} (${BONEFISH_VERSION})"
@@ -675,22 +705,22 @@ if [[ "${UPSTREAM_ONLY}" -eq 0 ]]; then
     require_cmd bedtools
   fi
   if [[ "${FEATURE_BACKEND}" == ont ]]; then
-    require_cmd "${STRINGTIE_BIN:-stringtie}"
     require_cmd gffread
     require_cmd gffcompare
-    if [[ -n "${STRINGTIE_BIN}" ]]; then
-      STRINGTIE_BIN="$(command -v "${STRINGTIE_BIN}")"
-      if [[ "${STRINGTIE_BIN}" != /* ]]; then
-        STRINGTIE_BIN="${PWD}/${STRINGTIE_BIN}"
-      fi
-    fi
-    if [[ "$("${STRINGTIE_BIN:-stringtie}" --version)" != 2.2.2 ]]; then
-      echo "[ERROR] ONT 3.3.0 comparison requires StringTie 2.2.2: ${STRINGTIE_BIN:-stringtie}" >&2
+    stringtie_requested="${STRINGTIE_BIN:-stringtie}"
+    if ! STRINGTIE_BIN="$(resolve_workflow_tool "${STRINGTIE_BIN}" "${managed_bin}/stringtie-2.2.2-same-start" stringtie)" \
+      || [[ "$("${STRINGTIE_BIN}" --version)" != 2.2.2 ]]; then
+      echo "[ERROR] ONT 3.3.0 comparison requires StringTie 2.2.2: ${STRINGTIE_BIN:-${stringtie_requested}}" >&2
+      echo "[ERROR] Run 'flora setup-tools' or set --stringtie-bin to a StringTie 2.2.2 executable." >&2
       exit 1
     fi
     export STRINGTIE_INPUT_LOOKUP="${STRINGTIE_INPUT_LOOKUP:-indexed}"
+    log "StringTie: ${STRINGTIE_BIN} (input lookup requested: ${STRINGTIE_INPUT_LOOKUP})"
     python_asset "${DOWNSTREAM_DIR}/ont_features.py" >/dev/null
     python_asset "${DOWNSTREAM_DIR}/ont_matrices.py" >/dev/null
+  fi
+  if [[ -d "${managed_bin}" ]]; then
+    export PATH="${managed_bin}${PATH:+:${PATH}}"
   fi
 fi
 require_file "${WHITELIST_3P}" "3p whitelist"

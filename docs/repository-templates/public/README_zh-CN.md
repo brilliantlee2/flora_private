@@ -66,6 +66,7 @@ export PYTHONUTF8=1
 
 conda env create -f environment.yml
 conda activate flora
+./flora setup-tools
 ```
 
 验证：
@@ -82,11 +83,14 @@ bedtools --version
 ./flora glycine --help
 ```
 
-基因组比对默认使用 Bonefish CPU 0.5.0，可从 [Bonefish 发布页](https://github.com/DylanCosto/bonefish/releases/tag/v0.5.0)
-获取。将 `bonefish` 放入 PATH，或传入 `--bonefish-bin /path/to/bonefish`。
-`--genome-aligner minimap2` 选择原有的 minimap2 基因组比对。ONT 转录组重比对
-使用 minimap2，可通过 `--stringtie-bin /path/to/stringtie-2.2.2-same-start`
-选择支持索引查找的组装程序。
+`./flora setup-tools` 自动下载 Bonefish CPU 0.5.0 并构建 StringTie 2.2.2
+same-start 补丁版。安装时按随包提供的 `runtime-tools.json` 校验各归档的
+SHA-256。Flora 会自动在 `${XDG_DATA_HOME:-$HOME/.local/share}/flora/tools`
+下找到这两个程序。在安装和运行前设置 `FLORA_TOOLS_DIR` 可选用其他目录。
+
+已有二进制可以用 `--bonefish-bin` 或 `--stringtie-bin` 指定。
+`--genome-aligner minimap2` 可选择 minimap2 做基因组比对。ONT 转录组重比对
+使用 minimap2。
 
 内嵌的 Python 分析模块需要 Python 3.11，不要替换为 Python 3.10、3.12、3.13 或 3.14。
 

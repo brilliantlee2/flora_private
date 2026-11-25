@@ -1,3 +1,4 @@
+# Python packages. For native tools, see runtime-tools.json and flora setup-tools.
 pandas>=2.3,<2.4
 numpy>=2.4,<2.5
 scipy>=1.17,<1.18

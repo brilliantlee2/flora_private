@@ -6,6 +6,13 @@ channels:
 dependencies:
   - python>=3.11,<3.12
   - pip
+  # Used by flora setup-tools to build the patched StringTie.
+  - make>=4.4,<4.5
+  - c-compiler
+  - cxx-compiler
+  - zlib
+  - bzip2
+  - liblzma-devel
   - samtools>=1.24,<1.25
   - minimap2>=2.31,<2.32
   - bedtools>=2.31,<2.32

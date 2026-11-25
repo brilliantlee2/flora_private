@@ -60,6 +60,10 @@ trap 'rm -rf "${TMP_DIR}"' EXIT
 tar -xzf "${ARCHIVE}" -C "${TMP_DIR}"
 STAGE_DIR="${TMP_DIR}/${TOP_DIR}"
 [[ -d "${STAGE_DIR}" ]] || { echo "[ERROR] Missing release root: ${STAGE_DIR}" >&2; exit 1; }
+if ! cmp -s "${ROOT_DIR}/runtime-tools.json" "${STAGE_DIR}/runtime-tools.json"; then
+  echo "[ERROR] Rebuild the binary release to embed the current Flora tools manifest." >&2
+  exit 1
+fi
 
 install -m 0644 "${ROOT_DIR}/docs/repository-templates/public/README.md" "${STAGE_DIR}/README.md"
 install -m 0644 "${ROOT_DIR}/docs/repository-templates/public/README_zh-CN.md" "${STAGE_DIR}/README_zh-CN.md"

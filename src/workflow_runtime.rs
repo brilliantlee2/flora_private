@@ -114,6 +114,39 @@ pub fn run(kind: WorkflowKind, mut args: Vec<OsString>) -> Result<()> {
     Ok(())
 }
 
+pub fn setup_tools(mut args: Vec<OsString>) -> Result<()> {
+    let explicit_python = take_option(&mut args, "--python")?;
+    let python = resolve_python(explicit_python)?;
+    let runtime = tempfile::Builder::new()
+        .prefix("flora-tools-runtime-")
+        .tempdir()
+        .context("failed to create Flora tools runtime directory")?;
+    let root = runtime.path();
+    let builder = root.join("packaging/stringtie_input");
+    let installer = root.join("packaging/setup_tools.pyc");
+    fs::create_dir_all(&builder)?;
+    write_asset(&installer, pyc!("setup_tools.pyc"))?;
+    write_asset(&builder.join("build.pyc"), pyc!("build.pyc"))?;
+    write_asset(
+        &builder.join("same_start_index.h"),
+        include_bytes!("../packaging/stringtie_input/same_start_index.h"),
+    )?;
+    write_asset(
+        &root.join("runtime-tools.json"),
+        include_bytes!("../runtime-tools.json"),
+    )?;
+
+    let status = Command::new(&python)
+        .arg(installer)
+        .args(args)
+        .status()
+        .context("failed to start the Flora tools installer")?;
+    if !status.success() {
+        bail!("Flora tools installation failed ({status})");
+    }
+    Ok(())
+}
+
 fn prepare_runtime(kind: WorkflowKind) -> Result<TempDir> {
     let runtime = tempfile::Builder::new()
         .prefix("flora-runtime-")

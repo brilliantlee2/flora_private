@@ -1,6 +1,7 @@
 import os
 import signal
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,7 +10,86 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def workflow_preflight(source):
+    end = source.index('require_file "${WHITELIST_3P}"')
+    start = source.rindex("require_cmd python3\n", 0, end)
+    first = source.index("resolve_workflow_tool() {")
+    helper = source[first:source.index("\n}\n", first) + 3]
+    return helper + "\n" + source[start:end]
+
+
+def version_executable(path, version):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"#!/bin/sh\nprintf '%s\\n' '{version}'\n")
+    path.chmod(0o755)
+
+
 class Step2AlignmentTest(unittest.TestCase):
+    def test_managed_tools_match_install_paths_and_preserve_explicit_choices(self):
+        settings = r'''
+UPSTREAM_ONLY=0
+GENOME_ALIGNER=bonefish
+FEATURE_BACKEND=ont
+GENE_TAGGING_BACKEND=rust
+SKIP_ISOFORM=0
+GENOME_MMI=''
+BONEFISH_BIN=$1
+BONEFISH_VERSION=''
+STRINGTIE_BIN=$2
+DOWNSTREAM_DIR=unused
+require_cmd() { command -v "$1" >/dev/null; }
+python_asset() { :; }
+python3() { "$TEST_PYTHON" "$@"; }
+samtools() { :; }
+minimap2() { :; }
+gffread() { :; }
+gffcompare() { :; }
+log() { printf '%s\n' "$*"; }
+'''
+        for runner in ("run_all.sh", "run_all_mixed_species.sh"):
+            preflight = workflow_preflight((ROOT / runner).read_text())
+            with tempfile.TemporaryDirectory() as work:
+                work = Path(work).resolve()
+                stock = work / "stock bin"
+                data_home = work / "data home"
+                home = work / "home"
+                override = work / "managed override"
+                home_override = home / "other install" / "bin"
+                for bin_dir in (stock, home / ".local/share/flora/tools/bin", data_home / "flora/tools/bin",
+                                override / "bin", home_override):
+                    version_executable(bin_dir / "bonefish", "bonefish 0.5.0")
+                    stringtie = "stringtie" if bin_dir == stock else "stringtie-2.2.2-same-start"
+                    version_executable(bin_dir / stringtie, "2.2.2")
+
+                env = {**os.environ, "HOME": str(home), "PATH": str(stock), "TEST_PYTHON": sys.executable}
+                for name in ("FLORA_TOOLS_DIR", "XDG_DATA_HOME", "STRINGTIE_INPUT_LOOKUP"):
+                    env.pop(name, None)
+                xdg = {"XDG_DATA_HOME": data_home.name}
+                custom = {**xdg, "FLORA_TOOLS_DIR": "managed override"}
+                cases = (
+                    ({}, ("", ""), home / ".local/share/flora/tools/bin", "indexed"),
+                    (xdg, ("", ""), data_home / "flora/tools/bin", "indexed"),
+                    ({**custom, "STRINGTIE_INPUT_LOOKUP": "linear"}, ("", ""), override / "bin", "linear"),
+                    ({"FLORA_TOOLS_DIR": "~/other install"}, ("", ""), home_override, "indexed"),
+                    (custom, ("bonefish", "stringtie"), stock, "indexed"),
+                    ({"FLORA_TOOLS_DIR": "missing"}, ("", ""), stock, "indexed"),
+                )
+                output = '\nprintf "tools:%s:%s:%s:%s\\n" "$BONEFISH_BIN" "$STRINGTIE_BIN" "$STRINGTIE_INPUT_LOOKUP" "$PATH"\n'
+                for settings_env, requested, selected, mode in cases:
+                    with self.subTest(runner=runner, environment=settings_env, requested=requested):
+                        result = subprocess.run(["/bin/bash", "-c", "set -eu\n" + settings + preflight + output,
+                                                 "test", *requested], cwd=work, env={**env, **settings_env},
+                                                capture_output=True, text=True, timeout=5)
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        bin_dir = selected
+                        if requested[0]:
+                            bin_dir = override / "bin"
+                        expected_path = str(stock) if bin_dir == stock else f"{bin_dir}:{stock}"
+                        stringtie = "stringtie" if selected == stock else "stringtie-2.2.2-same-start"
+                        self.assertIn(f"tools:{selected / 'bonefish'}:{selected / stringtie}:{mode}:{expected_path}",
+                                      result.stdout)
+                        self.assertIn(f"StringTie: {selected / stringtie}", result.stdout)
+
     def test_failed_streaming_alignment_drains_producer_and_keeps_status(self):
         for runner in ("run_all.sh", "run_all_mixed_species.sh"):
             source = (ROOT / runner).read_text()
@@ -53,9 +133,7 @@ wait "$ALIGNMENT_STREAM_PID"
     def test_bonefish_pin_only_applies_when_genome_alignment_uses_it(self):
         for runner in ("run_all.sh", "run_all_mixed_species.sh"):
             source = (ROOT / runner).read_text()
-            end = source.index('require_file "${WHITELIST_3P}"')
-            start = source.rindex("require_cmd python3\n", 0, end)
-            preflight = source[start:end]
+            preflight = workflow_preflight(source)
             settings = r'''
 UPSTREAM_ONLY=$1
 GENOME_ALIGNER=$2
@@ -63,22 +141,27 @@ FEATURE_BACKEND=legacy
 GENE_TAGGING_BACKEND=rust
 SKIP_ISOFORM=1
 GENOME_MMI=''
-BONEFISH_BIN=candidate
+BONEFISH_BIN=$3
 BONEFISH_VERSION=''
 require_cmd() { command -v "$1" >/dev/null; }
 samtools() { :; }
 minimap2() { :; }
-candidate() { printf '%s\n' 'bonefish 0.4.0'; }
 log() { :; }
 '''
-            for upstream, mapper, expected in (("0", "bonefish", 1), ("1", "bonefish", 0), ("0", "minimap2", 0)):
-                with self.subTest(runner=runner, upstream=upstream, mapper=mapper):
-                    result = subprocess.run(["bash", "-c", "set -eu\n" + settings + preflight,
-                                             "test", upstream, mapper], capture_output=True, text=True, timeout=5)
-                    self.assertEqual(result.returncode, expected, result.stderr)
-                    if expected:
-                        self.assertIn("Bonefish 0.5.0", result.stderr)
-                        self.assertIn("--genome-aligner minimap2", result.stderr)
+            with tempfile.TemporaryDirectory() as work:
+                candidate = Path(work) / "candidate"
+                version_executable(candidate, "bonefish 0.4.0")
+                for upstream, mapper, expected in (("0", "bonefish", 1), ("1", "bonefish", 0), ("0", "minimap2", 0)):
+                    with self.subTest(runner=runner, upstream=upstream, mapper=mapper):
+                        result = subprocess.run(["bash", "-c", "set -eu\n" + settings + preflight,
+                                                 "test", upstream, mapper, str(candidate)],
+                                                capture_output=True, text=True, timeout=5)
+                        self.assertEqual(result.returncode, expected, result.stderr)
+                        if expected:
+                            self.assertIn("Bonefish 0.5.0", result.stderr)
+                            self.assertIn("bonefish 0.4.0", result.stderr)
+                            self.assertIn("flora setup-tools", result.stderr)
+                            self.assertIn("--genome-aligner minimap2", result.stderr)
 
     def test_both_workflows_use_same_filter_and_inline_bai_for_each_mapper(self):
         for runner in ("run_all.sh", "run_all_mixed_species.sh"):

@@ -35,8 +35,9 @@ For an existing environment, use `conda env update -n flora -f environment.yml`
 instead of creating it, then reactivate it. Use Python 3.11.x.
 `environment.yml` includes the build tools and runtime dependencies;
 `environment.runtime.yml` is for packaged executables, and `requirements.txt`
-lists Python packages only. Both environment files include StringTie 2.2.2,
-`gffread`, and `gffcompare`, required for transcript reconstruction and annotation.
+lists Python packages only. [runtime-tools.json](runtime-tools.json) pins
+Bonefish and the patched StringTie. The Conda environment includes their setup
+prerequisites and the annotation tools `gffread` and `gffcompare`.
 
 Before compiling, locate libclang for `rust-htslib`/`bindgen`. This is only a
 build dependency, not a requirement for running the packaged executable.
@@ -93,11 +94,23 @@ barcode/UMI extraction and cell assignment only. Full workflows accept multiple
 files after `--fastq`, or a non-recursive `--fastq-dir`. Glycine defaults to
 10 concurrent jobs sharing 64 total threads.
 
-Genome alignment defaults to Bonefish CPU 0.5.0. Put `bonefish` on PATH or
-provide `--bonefish-bin /path/to/bonefish`. Select `--genome-aligner minimap2`
-to use minimap2 for genome alignment. The ONT transcript remapper still uses
-minimap2. See [PBMC performance validation](docs/pbmc-perf.md) for the tested
-StringTie build and the full-sample comparison.
+Install the native tools once in the activated environment.
+
+```bash
+./target/release/flora setup-tools
+```
+
+This verifies and installs Bonefish CPU 0.5.0 and builds the same-start
+StringTie 2.2.2 used in the performance tests. It supports Linux x86_64 and
+Apple Silicon macOS. Before compiling Flora, the source checkout also supports
+`python3 packaging/setup_tools.py`.
+
+Flora automatically finds the binaries under
+`${XDG_DATA_HOME:-$HOME/.local/share}/flora/tools`. Set `FLORA_TOOLS_DIR` before
+setup and workflow runs to use a shared or custom location. Existing binaries
+can be selected with `--bonefish-bin` or `--stringtie-bin`. To select minimap2
+for genome alignment, use `--genome-aligner minimap2`. The ONT transcript
+remapper uses minimap2. See [PBMC performance validation](docs/pbmc-perf.md).
 
 ## Build the Linux x86_64 release
 

@@ -5,6 +5,8 @@ use std::process::Command;
 
 const PYTHON_SOURCES: &[&str] = &[
     "main.py",
+    "packaging/setup_tools.py",
+    "packaging/stringtie_input/build.py",
     "scripts/Saturation.py",
     "scripts/add_cb_ur_tags.py",
     "scripts/add_gene_tags.py",

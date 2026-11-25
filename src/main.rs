@@ -142,6 +142,10 @@ fn main() -> Result<()> {
             args.drain(0..2);
             return workflow_runtime::run(WorkflowKind::Mixed, args);
         }
+        Some("setup-tools") => {
+            args.drain(0..2);
+            return workflow_runtime::setup_tools(args);
+        }
         Some("run") | Some("run-mixed") => {
             anyhow::bail!(
                 "unsupported command; use 'flora' for single species or 'flora mixed' for mixed species"
@@ -173,7 +177,8 @@ fn print_top_level_help() {
     println!("  flora [OPTIONS]          Run the complete single-species workflow");
     println!("  flora mixed [OPTIONS]    Run the complete mixed-species workflow");
     println!("  flora glycine [OPTIONS]  Run Glycine full-length read identification only");
-    println!("  flora analyze [OPTIONS]  Run barcode, UMI, and cell assignment only\n");
+    println!("  flora analyze [OPTIONS]  Run barcode, UMI, and cell assignment only");
+    println!("  flora setup-tools        Install Bonefish and the optimized StringTie\n");
 }
 
 fn dispatch_internal_stage(name: &str) -> Option<Result<()>> {

@@ -33,8 +33,9 @@ export PYTHONUTF8=1
 已有环境时，用 `conda env update -n flora -f environment.yml` 代替创建命令，
 然后重新激活。必须使用 Python 3.11.x。
 `environment.yml` 包含构建工具和运行依赖；`environment.runtime.yml` 用于
-已打包的可执行文件；`requirements.txt` 只列出 Python 包。两个环境文件均已包含
-转录本重构与注释所需的 StringTie 2.2.2、`gffread` 和 `gffcompare`。
+已打包的可执行文件。`requirements.txt` 只列出 Python 包。
+[运行工具清单](runtime-tools.json) 固定 Bonefish 和补丁版 StringTie 的来源与校验值。
+Conda 环境包含安装所需的依赖，以及注释工具 `gffread` 和 `gffcompare`。
 
 编译前为 `rust-htslib`/`bindgen` 设置 libclang 路径。
 这仅是构建依赖，运行已打包的 Flora 不需要单独设置。
@@ -87,10 +88,21 @@ cargo build --release --locked
 全流程支持 `--fastq` 后输入多个文件，或用 `--fastq-dir` 非递归读取目录。
 Glycine 默认 10 个并发任务，共享 64 个总线程。
 
-基因组比对默认使用 Bonefish CPU 0.5.0。将 `bonefish` 放入 PATH，或用
-`--bonefish-bin /path/to/bonefish` 指定。用 `--genome-aligner minimap2`
-可选择 minimap2 基因组比对。ONT 转录组重比对仍使用 minimap2。
-StringTie 构建及全量对照命令见 [PBMC 性能验证](docs/pbmc-perf.md)。
+在已激活的环境中安装一次这两个工具。
+
+```bash
+./target/release/flora setup-tools
+```
+
+安装程序会校验并安装 Bonefish CPU 0.5.0，并构建性能对照中使用的
+StringTie 2.2.2 same-start 补丁版。支持 Linux x86_64 和 Apple Silicon macOS。
+也可在编译 Flora 前从源码目录执行 `python3 packaging/setup_tools.py`。
+
+Flora 会自动在 `${XDG_DATA_HOME:-$HOME/.local/share}/flora/tools` 下查找。
+需要用共享目录或自定义目录时，在安装和运行前都设置 `FLORA_TOOLS_DIR`。
+可通过 `--bonefish-bin` 或 `--stringtie-bin` 指定已有的二进制。
+`--genome-aligner minimap2` 可选择 minimap2 做基因组比对。
+ONT 转录组重比对使用 minimap2。全量对照命令见 [PBMC 性能验证](docs/pbmc-perf.md)。
 
 ## 构建 Linux x86_64 发行包
 

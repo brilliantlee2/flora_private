@@ -67,6 +67,7 @@ export PYTHONUTF8=1
 
 conda env create -f environment.yml
 conda activate flora
+./flora setup-tools
 ```
 
 Verify the installation:
@@ -83,12 +84,15 @@ bedtools --version
 ./flora glycine --help
 ```
 
-Genome alignment defaults to Bonefish CPU 0.5.0, available from
-[the Bonefish release page](https://github.com/DylanCosto/bonefish/releases/tag/v0.5.0).
-Put `bonefish` on PATH or pass `--bonefish-bin /path/to/bonefish`.
-`--genome-aligner minimap2` selects the existing minimap2 genome mode.
-An ONT feature run also uses minimap2 for transcript remapping, and accepts
-`--stringtie-bin /path/to/stringtie-2.2.2-same-start` to enable indexed input lookup.
+`./flora setup-tools` downloads Bonefish CPU 0.5.0 and builds the same-start
+StringTie 2.2.2. It verifies the SHA-256 checksums of the archives listed in the
+bundled `runtime-tools.json`. Flora automatically finds the installed binaries
+under `${XDG_DATA_HOME:-$HOME/.local/share}/flora/tools`. Set `FLORA_TOOLS_DIR`
+before setup and workflow runs to use a different directory.
+
+Existing binaries can be selected with `--bonefish-bin` or `--stringtie-bin`.
+`--genome-aligner minimap2` selects minimap2 for genome alignment. An ONT feature
+run uses minimap2 for transcript remapping.
 
 The embedded Python analysis modules require Python 3.11. Do not replace the environment with Python 3.10, 3.12, 3.13, or 3.14.
 

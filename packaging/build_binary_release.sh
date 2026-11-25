@@ -98,10 +98,13 @@ MIXED_HELP="$("${STAGE_DIR}/flora" mixed --help 2>&1)" \
   || die "flora mixed help failed"
 printf '%s\n' "${MIXED_HELP}" | grep -Eq '^  flora mixed([[:space:]\\]|$)' \
   || die "flora mixed did not expose the mixed-species workflow"
+"${STAGE_DIR}/flora" setup-tools --python "${PYTHON_BIN}" --help >/dev/null \
+  || die "flora setup-tools help failed"
 install -m 0644 "${ROOT_DIR}/docs/repository-templates/public/README.md" "${STAGE_DIR}/README.md"
 install -m 0644 "${ROOT_DIR}/docs/repository-templates/public/README_zh-CN.md" "${STAGE_DIR}/README_zh-CN.md"
 install -m 0644 "${ROOT_DIR}/environment.runtime.yml" "${STAGE_DIR}/environment.yml"
 install -m 0644 "${ROOT_DIR}/requirements.txt" "${STAGE_DIR}/requirements.txt"
+install -m 0644 "${ROOT_DIR}/runtime-tools.json" "${STAGE_DIR}/runtime-tools.json"
 install -m 0644 "${ROOT_DIR}/THIRD_PARTY_NOTICES.md" "${STAGE_DIR}/THIRD_PARTY_NOTICES.md"
 install -m 0644 "${ROOT_DIR}/licenses/Glycine-MIT.txt" "${STAGE_DIR}/licenses/Glycine-MIT.txt"
 if [[ -f "${ROOT_DIR}/BC_1536.txt" ]]; then

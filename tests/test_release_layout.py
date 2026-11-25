@@ -33,6 +33,8 @@ class ReleaseLayoutTests(unittest.TestCase):
             "docs/repository-templates/private/README_zh-CN.md",
             "src/glycine/mod.rs",
             "runtime_manifest.json",
+            "runtime-tools.json",
+            "packaging/setup_tools.py",
             "vendor/edlib_rs-0.1.2/Cargo.toml",
             "vendor/rust-htslib/Cargo.toml",
         ]:
@@ -184,7 +186,9 @@ class ReleaseLayoutTests(unittest.TestCase):
             self.assertIn(f"- {dependency}", environment)
         for dependency in ["samtools", "minimap2", "bedtools", "scanpy>=1.11,<1.12", "pip"]:
             self.assertIn(f"- {dependency}", runtime_environment)
-        for build_dependency in ["rust", "cmake", "c-compiler", "cxx-compiler", "clang", "libclang"]:
+        for setup_dependency in ["make", "c-compiler", "cxx-compiler", "zlib", "bzip2", "liblzma-devel"]:
+            self.assertIn(f"- {setup_dependency}", runtime_environment)
+        for build_dependency in ["rust", "cmake", "clang", "libclang"]:
             self.assertNotRegex(runtime_environment, rf"(?m)^\s*- {build_dependency}(?:[=<>]|\s*$)")
 
     def test_large_runtime_data_are_ignored(self):
