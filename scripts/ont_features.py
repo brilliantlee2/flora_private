@@ -66,6 +66,15 @@ def log(message):
     print(f"[ont_features] {message}", file=sys.stderr, flush=True)
 
 
+def log_disk_space(label, path):
+    try:
+        free = shutil.disk_usage(path).free / (1024 ** 3)
+    except OSError as error:
+        log(f"{label}: unavailable for {path} ({error})")
+    else:
+        log(f"{label}: {free:.1f} GiB ({path})")
+
+
 def open_scratch_database(path, genome_path=None):
     db = sqlite3.connect(path)
     # Disposable scratch only: a failed run is rebuilt, never resumed from this DB.
@@ -554,16 +563,13 @@ def run(args):
     log("ONT 3.3.0 was withdrawn upstream; using the recorded historical source commit for comparison")
     log(f"Behavior reference: {REFERENCE_VERSION}; {json.dumps(versions)}")
     jobs, worker_threads = execution_layout(args.threads, getattr(args, "jobs", 1))
-    scratch_parent = getattr(args, "temp_dir", None)
-    if scratch_parent is not None:
-        scratch_parent = Path(scratch_parent).resolve()
-        scratch_parent.mkdir(parents=True, exist_ok=True)
+    scratch_parent = Path(getattr(args, "temp_dir", None) or out / ".flora-scratch").resolve()
+    scratch_parent.mkdir(parents=True, exist_ok=True)
     log(f"Scheduling: requested_jobs={getattr(args, 'jobs', 1)} effective_jobs={jobs} total_threads={args.threads} threads_per_job={worker_threads}; auxiliary tool threads may be additional")
     with tempfile.TemporaryDirectory(prefix="ont-work-", dir=scratch_parent) as temp:
         root = Path(temp)
         log(f"Scratch directory: {root}; disposable databases are not resumable")
-        free_gib = shutil.disk_usage(root).free / (1024 ** 3)
-        log(f"Scratch free space: {free_gib:.1f} GiB; check capacity for large datasets")
+        log_disk_space("Scratch free space", root)
         genome = args.genome.resolve()
         if not Path(str(genome) + ".fai").exists():
             # Each invocation gets its own link/index, including reruns with a new reference.
@@ -613,6 +619,11 @@ def run(args):
                                                  args.transcript_assigns, args.mapq, args.threads,
                                                  feature_lookup=feature_lookup)
             (out / "assignment_summary.json").write_text(json.dumps(stats, indent=2) + "\n")
+        except (OSError, sqlite3.DatabaseError, subprocess.CalledProcessError):
+            log_disk_space("Scratch free space at failure", root)
+            log_disk_space("Output free space at failure", out)
+            log("Check filesystem space and quota. Use --ont-temp-dir in Flora to select a larger scratch filesystem.")
+            raise
         finally:
             db.close()
 
@@ -627,7 +638,7 @@ def main():
     p.add_argument("--stringtie-opts", default="-c 2")
     p.add_argument("--stringtie-bin", type=Path, help="Explicit isolated StringTie 2.2.2 executable; otherwise use PATH")
     p.add_argument("--save-intermediate", action="store_true")
-    p.add_argument("--temp-dir", type=Path, help="Scratch parent; defaults to the system temp directory/TMPDIR")
+    p.add_argument("--temp-dir", type=Path, help="Scratch parent; defaults to <output-dir>/.flora-scratch")
     p.add_argument("--jobs", type=int, default=1, help="Concurrent chromosome jobs sharing --threads; default: 1")
     args = p.parse_args()
     if args.threads < 1 or args.jobs < 1 or not 0 <= args.mapq <= 255:

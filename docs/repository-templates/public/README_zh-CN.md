@@ -92,6 +92,10 @@ SHA-256。Flora 会自动在 `${XDG_DATA_HOME:-$HOME/.local/share}/flora/tools`
 `--genome-aligner minimap2` 可选择 minimap2 做基因组比对。ONT 转录组重比对
 使用 minimap2。
 
+流程的大型临时文件默认放在 `<out-dir>/.flora-scratch`。用
+`--ont-temp-dir /path/to/scratch` 可指定单独的工作盘。ONT 指派日志会在排序或
+读写失败时报告临时盘和结果盘的剩余空间。
+
 内嵌的 Python 分析模块需要 Python 3.11，不要替换为 Python 3.10、3.12、3.13 或 3.14。
 
 为保证运行可复现，建议始终使用 `--barcode-list-10bp /path/to/BC_1536.txt` 显式传入 10 bp barcode whitelist。当前版本不能保证自动发现放在可执行文件旁边的 whitelist。

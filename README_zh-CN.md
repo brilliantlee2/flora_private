@@ -104,6 +104,10 @@ Flora 会自动在 `${XDG_DATA_HOME:-$HOME/.local/share}/flora/tools` 下查找�
 `--genome-aligner minimap2` 可选择 minimap2 做基因组比对。
 ONT 转录组重比对使用 minimap2。全量对照命令见 [PBMC 性能验证](docs/pbmc-perf.md)。
 
+流程的大型临时文件默认放在 `<out-dir>/.flora-scratch`。可用
+`--ont-temp-dir /path/to/scratch` 选择单独的工作盘。ONT 指派日志记录启动时
+的临时盘余量，排序或读写失败时也会记录临时盘和结果盘的剩余空间。
+
 ## 构建 Linux x86_64 发行包
 
 完成环境准备和上述测试后执行：

@@ -112,6 +112,11 @@ can be selected with `--bonefish-bin` or `--stringtie-bin`. To select minimap2
 for genome alignment, use `--genome-aligner minimap2`. The ONT transcript
 remapper uses minimap2. See [PBMC performance validation](docs/pbmc-perf.md).
 
+Large temporary files use `<out-dir>/.flora-scratch` by default. Use
+`--ont-temp-dir /path/to/scratch` to select a separate filesystem. The ONT
+feature log records scratch capacity before processing and reports the remaining
+space on a sort or storage failure.
+
 ## Build the Linux x86_64 release
 
 After preparing the environment and passing the tests above, run:

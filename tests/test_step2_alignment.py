@@ -1,3 +1,4 @@
+import json
 import os
 import signal
 import subprocess
@@ -25,6 +26,47 @@ def version_executable(path, version):
 
 
 class Step2AlignmentTest(unittest.TestCase):
+    def test_workflow_routes_child_tempfiles_to_selected_scratch(self):
+        for name in ("run_all.sh", "run_all_mixed_species.sh"):
+            with tempfile.TemporaryDirectory() as work:
+                root = Path(work).resolve()
+                runner = root / name
+                runner.write_bytes((ROOT / name).read_bytes())
+                (root / "reference").mkdir()
+                (root / "barcodes.txt").write_text("ACGTACGTAC\n")
+                (root / "input.fastq").touch()
+                (root / "scripts").mkdir()
+                child = root / "scripts/generate_26bp_whitelists.py"
+                child.write_text(
+                    "import json, os, tempfile\n"
+                    "with tempfile.NamedTemporaryFile() as handle:\n"
+                    "    print('child scratch ' + json.dumps([os.environ.get('TMPDIR'), handle.name]))\n"
+                    "raise SystemExit(73)\n"
+                )
+                original_tmp = root / "parent scratch"
+                original_tmp.mkdir()
+                for override in (None, "explicit scratch"):
+                    with self.subTest(runner=name, override=override):
+                        output = root / ("output default" if override is None else "output explicit")
+                        args = ["--fastq", "input.fastq", "--ref-dir", "reference",
+                                "--barcode-list-10bp", "barcodes.txt", "--out-dir", output.name]
+                        expected = output / ".flora-scratch"
+                        if override is not None:
+                            args += ["--ont-temp-dir", override]
+                            expected = root / override
+                        result = subprocess.run(
+                            ["/bin/bash", str(runner), *args], cwd=root, timeout=5,
+                            env={**os.environ, "TMPDIR": str(original_tmp)},
+                            capture_output=True, text=True,
+                        )
+                        self.assertEqual(result.returncode, 73, result.stdout + result.stderr)
+                        line = next(line for line in result.stdout.splitlines() if line.startswith("child scratch "))
+                        env_path, file_path = json.loads(line.removeprefix("child scratch "))
+                        self.assertIsNotNone(env_path)
+                        child_tmp = Path(env_path).resolve()
+                        self.assertIn(expected, (child_tmp, *child_tmp.parents))
+                        self.assertEqual(Path(file_path).resolve().parent, child_tmp)
+
     def test_managed_tools_match_install_paths_and_preserve_explicit_choices(self):
         settings = r'''
 UPSTREAM_ONLY=0

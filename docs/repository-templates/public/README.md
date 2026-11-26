@@ -94,6 +94,10 @@ Existing binaries can be selected with `--bonefish-bin` or `--stringtie-bin`.
 `--genome-aligner minimap2` selects minimap2 for genome alignment. An ONT feature
 run uses minimap2 for transcript remapping.
 
+Large temporary files use `<out-dir>/.flora-scratch` by default. Use
+`--ont-temp-dir /path/to/scratch` to choose another filesystem. The ONT
+feature log shows the remaining space when a sort or storage failure occurs.
+
 The embedded Python analysis modules require Python 3.11. Do not replace the environment with Python 3.10, 3.12, 3.13, or 3.14.
 
 For reproducible runs, always provide the 10 bp barcode whitelist explicitly with `--barcode-list-10bp /path/to/BC_1536.txt`. Automatic discovery of a whitelist placed next to the executable is not guaranteed in the current release.

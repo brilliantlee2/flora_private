@@ -111,6 +111,8 @@ Notes:
       --gene-assign-mapq gates gene assignment; --transcript-assign-mapq applies
       only to legacy. ONT transcript assignment uses alignment score/coverage.
       ONT defaults to no per-cell/gene read cap (0); legacy defaults to 20000.
+      Workflow scratch defaults to <out-dir>/.flora-scratch.
+      Use --ont-temp-dir to select another writable filesystem with free space.
       ONT 3.3.0 was withdrawn upstream. This comparison backend pins historical
       source d46f92121c79c28a02105cf2444029e91dc4b609 and StringTie 2.2.2.
 EOF
@@ -248,7 +250,7 @@ write_parameters_tsv() {
     printf "stringtie_bin\t%s\n" "${STRINGTIE_BIN:-stringtie (PATH)}"
     printf "stringtie_input_lookup\t%s\n" "${STRINGTIE_INPUT_LOOKUP:-indexed}"
     printf "ont_jobs\t%s\n" "${ONT_JOBS}"
-    printf "ont_temp_dir\t%s\n" "${ONT_TEMP_DIR:-system temp/TMPDIR}"
+    printf "ont_temp_dir\t%s\n" "${ONT_TEMP_DIR}"
     printf "transcript_assign_mapq\t%s\n" "${TRANSCRIPT_ASSIGN_MAPQ}"
     printf "transcript_assign_chunk_size\t%s\n" "${TRANSCRIPT_ASSIGN_CHUNK_SIZE}"
     printf "ref_interval\t%s\n" "${REF_INTERVAL}"
@@ -622,9 +624,14 @@ if [[ -z "${ISOFORM_GTF}" ]]; then
 fi
 
 OUT_DIR="$(abspath_for_output "${OUT_DIR}")"
-if [[ -n "${ONT_TEMP_DIR}" ]]; then
-  ONT_TEMP_DIR="$(abspath_for_output "${ONT_TEMP_DIR}")"
+ONT_TEMP_DIR="${ONT_TEMP_DIR:-${OUT_DIR}/.flora-scratch}"
+if ! mkdir -p -- "${ONT_TEMP_DIR}" || [[ ! -w "${ONT_TEMP_DIR}" || ! -x "${ONT_TEMP_DIR}" ]]; then
+  echo "[ERROR] Cannot use workflow scratch directory: ${ONT_TEMP_DIR}. Set --ont-temp-dir to a writable directory." >&2
+  exit 1
 fi
+ONT_TEMP_DIR="$(cd -- "${ONT_TEMP_DIR}" && pwd -P)"
+export TMPDIR="${ONT_TEMP_DIR}"
+log "Workflow scratch directory: ${ONT_TEMP_DIR}"
 BARCODE_DIR="${OUT_DIR}/barcodes"
 require_cmd python3
 if [[ -z "${BARCODE_LIST_10BP}" ]]; then

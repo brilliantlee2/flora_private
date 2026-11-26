@@ -7,6 +7,7 @@ import importlib.util
 import io
 from pathlib import Path
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import threading
@@ -176,6 +177,44 @@ class BatchTests(unittest.TestCase):
 
 
 class BamParityTests(unittest.TestCase):
+    def test_standalone_uses_output_scratch_and_reports_capacity_before_cleanup(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            output = root / "results"
+            genome = root / "genome.fa"
+            genome.touch()
+            genome.with_suffix(".fa.fai").touch()
+            tool = root / "tool"
+            tool.touch()
+            args = argparse.Namespace(
+                output_dir=output, genome=genome, gtf=root / "genes.gtf",
+                threads=16, save_intermediate=False,
+            )
+            log = io.StringIO()
+            sort_error = subprocess.CalledProcessError(1, ["samtools", "sort"])
+
+            def fail_with_live_scratch(gtf, scratch):
+                self.assertEqual(scratch.parent, output / ".flora-scratch")
+                self.assertTrue(scratch.is_dir())
+                raise sort_error
+
+            def version(command, **kwargs):
+                return subprocess.CompletedProcess(command, 0, "2.2.2", "")
+
+            with (
+                patch.object(MOD.shutil, "which", return_value=str(tool)),
+                patch.object(MOD.subprocess, "run", side_effect=version),
+                patch.object(MOD, "split_annotation", side_effect=fail_with_live_scratch),
+                contextlib.redirect_stderr(log),
+            ):
+                with self.assertRaises(subprocess.CalledProcessError) as error:
+                    MOD.run(args)
+
+            self.assertIs(error.exception, sort_error)
+            self.assertIn("Scratch free space at failure", log.getvalue())
+            self.assertIn("Output free space at failure", log.getvalue())
+            self.assertEqual(list((output / ".flora-scratch").iterdir()), [])
+
     def test_run_isolates_worker_databases_and_uses_requested_scratch(self):
         import pysam
         import subprocess
