@@ -15,7 +15,8 @@
     {"name":"--ref-dir","aliases":["--ref_dir"],"type":"path","required":false,"required_when":[],"default":null,"conflicts":[],"description":"Directory supplying conventional reference filenames."},
     {"name":"--gene-fasta","aliases":["--genome-fa"],"type":"path","required":false,"required_when":[{"option":"--ref-dir","operator":"equals","value":null}],"default":null,"conflicts":[],"description":"Genome FASTA for alignment and ONT features; overrides ref-dir inference."},
     {"name":"--genome-aligner","aliases":[],"type":"string","required":false,"required_when":[],"default":"bonefish","conflicts":[],"description":"Select the Stage 2 spliced cDNA aligner.","choices":["bonefish","minimap2"]},
-    {"name":"--bonefish-bin","aliases":[],"type":"path","required":false,"required_when":[],"default":null,"conflicts":[],"description":"Select a Bonefish executable; defaults to bonefish on PATH."},
+    {"name":"--bonefish-bin","aliases":[],"type":"path","required":false,"required_when":[{"option":"--bonefish-seam-retry","operator":"equals","value":true}],"default":null,"conflicts":[],"description":"Select a Bonefish executable."},
+    {"name":"--bonefish-seam-retry","aliases":[],"type":"bool","required":false,"required_when":[],"default":false,"conflicts":[],"description":"Experimental Stage 2 long-window retry. Requires Bonefish alignment and an explicitly selected patched Bonefish 0.5.0."},
     {"name":"--genome-mmi","aliases":[],"type":"path","required":false,"required_when":[],"default":null,"conflicts":[],"description":"Use a prebuilt splice MMI in Stage 2; the default is the genome FASTA."},
     {"name":"--junction-bed","aliases":[],"type":"path","required":false,"required_when":[{"option":"--ref-dir","operator":"equals","value":null}],"default":null,"conflicts":[],"description":"Junction BED; overrides ref-dir inference."},
     {"name":"--chrom-sizes","aliases":[],"type":"path","required":false,"required_when":[{"option":"--ref-dir","operator":"equals","value":null}],"default":null,"conflicts":[],"description":"Chromosome sizes TSV; overrides ref-dir inference."},
@@ -75,7 +76,8 @@
     "barcode-list-10bp must resolve explicitly or through bundled BC_1536.txt",
     "fastq is required unless skip-glycine is set",
     "full-length-fastq is required when skip-glycine is set",
-    "isoform-gtf reuses gene-gtf when omitted"
+    "isoform-gtf reuses gene-gtf when omitted",
+    "bonefish-seam-retry requires the genome alignment stage, Bonefish, and a patched bonefish-bin"
   ],
   "resolution_rules": [
     "full-pipeline and upstream-only are accepted together; the last occurrence wins",

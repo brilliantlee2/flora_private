@@ -112,6 +112,14 @@ can be selected with `--bonefish-bin` or `--stringtie-bin`. To select minimap2
 for genome alignment, use `--genome-aligner minimap2`. The ONT transcript
 remapper uses minimap2. See [PBMC performance validation](docs/pbmc-perf.md).
 
+The experimental long-window seam retry is off by default. To test it in
+genome alignment, add both `--bonefish-seam-retry` and
+`--bonefish-bin /path/to/patched/bonefish` to a workflow command. Use the
+experimental Bonefish 0.5.0 binary from the seam-retry A/B test. It supports
+`BONEFISH_SEAM_RETRY`. The retry reduced alignment time on the 9011 benchmark
+subset and changed some splice chains and read assignments after independent
+assembly. Flora records the selected retry mode in the parameters TSV.
+
 Large temporary files use `<out-dir>/.flora-scratch` by default. Use
 `--ont-temp-dir /path/to/scratch` to select a separate filesystem. The ONT
 feature log records scratch capacity before processing and reports the remaining

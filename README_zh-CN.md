@@ -104,6 +104,12 @@ Flora 会自动在 `${XDG_DATA_HOME:-$HOME/.local/share}/flora/tools` 下查找�
 `--genome-aligner minimap2` 可选择 minimap2 做基因组比对。
 ONT 转录组重比对使用 minimap2。全量对照命令见 [PBMC 性能验证](docs/pbmc-perf.md)。
 
+超长窗口的接缝重试默认关闭。要在基因组比对中做实验，可在运行命令中同时加入
+`--bonefish-seam-retry` 和 `--bonefish-bin /path/to/patched/bonefish`，
+选择接缝重试 A/B 中使用的、支持 `BONEFISH_SEAM_RETRY` 的 Bonefish 0.5.0
+实验版。该重试缩短了 9011 子集的比对时间，同时改变了部分剪接链和独立组装后的
+逐 read 指派。Flora 会在参数 TSV 中记录是否启用。
+
 流程的大型临时文件默认放在 `<out-dir>/.flora-scratch`。可用
 `--ont-temp-dir /path/to/scratch` 选择单独的工作盘。ONT 指派日志记录启动时
 的临时盘余量，排序或读写失败时也会记录临时盘和结果盘的剩余空间。

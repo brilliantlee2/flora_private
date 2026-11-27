@@ -77,6 +77,7 @@ SKIP_ISOFORM=0
 GENOME_MMI=''
 BONEFISH_BIN=$1
 BONEFISH_VERSION=''
+BONEFISH_SEAM_RETRY_ENABLED=0
 STRINGTIE_BIN=$2
 DOWNSTREAM_DIR=unused
 require_cmd() { command -v "$1" >/dev/null; }
@@ -185,6 +186,7 @@ SKIP_ISOFORM=1
 GENOME_MMI=''
 BONEFISH_BIN=$3
 BONEFISH_VERSION=''
+BONEFISH_SEAM_RETRY_ENABLED=0
 require_cmd() { command -v "$1" >/dev/null; }
 samtools() { :; }
 minimap2() { :; }
@@ -205,17 +207,63 @@ log() { :; }
                             self.assertIn("flora setup-tools", result.stderr)
                             self.assertIn("--genome-aligner minimap2", result.stderr)
 
+    def test_experimental_retry_requires_a_compatible_explicit_bonefish(self):
+        settings = r'''
+UPSTREAM_ONLY=0
+GENOME_ALIGNER=bonefish
+FEATURE_BACKEND=legacy
+GENE_TAGGING_BACKEND=rust
+SKIP_ISOFORM=1
+GENOME_MMI=''
+BONEFISH_BIN=$1
+BONEFISH_VERSION=''
+BONEFISH_SEAM_RETRY_ENABLED=1
+require_cmd() { command -v "$1" >/dev/null; }
+samtools() { :; }
+log() { :; }
+'''
+        for runner in ("run_all.sh", "run_all_mixed_species.sh"):
+            preflight = workflow_preflight((ROOT / runner).read_text())
+            for args, error in (
+                ([], "requires --bonefish-bin"),
+                (["--genome-aligner", "minimap2"], "requires --genome-aligner bonefish"),
+                (["--upstream-only"], "requires the genome alignment stage"),
+            ):
+                result = subprocess.run(["bash", str(ROOT / runner), "--bonefish-seam-retry", *args],
+                                        capture_output=True, text=True, timeout=5)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(error, result.stderr)
+            with tempfile.TemporaryDirectory() as work:
+                candidate = Path(work) / "candidate"
+                version_executable(candidate, "bonefish 0.5.0")
+                script = "set -eu\n" + settings + preflight
+                def check():
+                    return subprocess.run(["bash", "-c", script, "test", str(candidate)],
+                                          capture_output=True, text=True, timeout=5)
+                result = check()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("does not support BONEFISH_SEAM_RETRY", result.stderr)
+                with candidate.open("a") as handle:
+                    handle.write("# BONEFISH_SEAM_RETRY\n")
+                result = check()
+                self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_both_workflows_use_same_filter_and_inline_bai_for_each_mapper(self):
         for runner in ("run_all.sh", "run_all_mixed_species.sh"):
             source = (ROOT / runner).read_text()
             pipeline = source[source.index("run_alignment_pipeline() {"):source.index("cleanup_alignment_stream() {")]
-            for mapper, stream, index in (("bonefish", False, ""), ("bonefish", True, "splice idx.mmi"),
-                                          ("minimap2", False, "splice idx.mmi"), ("minimap2", True, "")):
-                with self.subTest(runner=runner, mapper=mapper, stream=stream), tempfile.TemporaryDirectory() as work:
+            for mapper, stream, index, retry in (
+                ("bonefish", False, "", 0), ("bonefish", True, "splice idx.mmi", 0),
+                ("bonefish", False, "splice idx.mmi", 1), ("bonefish", True, "", 1),
+                ("minimap2", False, "splice idx.mmi", 0), ("minimap2", True, "", 0),
+            ):
+                with self.subTest(runner=runner, mapper=mapper, stream=stream, retry=retry), tempfile.TemporaryDirectory() as work:
                     result = subprocess.run(["bash", "-c", "set -euo pipefail\n" + pipeline + r'''
 GENOME_ALIGNER=$1
 GENOME_MMI=$2
 BONEFISH_BIN=candidate
+BONEFISH_SEAM_RETRY_ENABLED=$4
+export BONEFISH_SEAM_RETRY=1
 THREADS=8
 GENE_FASTA='gene ref.fa'
 JUNCTION_BED='genes bed'
@@ -223,6 +271,7 @@ ALIGNED_BAM='out.bam'
 record_args() { printf '%s\n' "$@" > "$1.args"; }
 candidate() {
   record_args bonefish "$@"
+  printf '%s\n' "$BONEFISH_SEAM_RETRY" > retry.env
   if [[ "${@: -1}" == - ]]; then cat; else cat "${@: -1}"; fi
 }
 minimap2() { record_args minimap2 "$@"; cat "${@: -1}"; }
@@ -241,7 +290,7 @@ else
   printf 'reads\n' > input.fq
 fi
 run_alignment_pipeline input.fq
-''', "test", mapper, index, str(int(stream))], cwd=work, capture_output=True, text=True, timeout=5)
+''', "test", mapper, index, str(int(stream)), str(retry)], cwd=work, capture_output=True, text=True, timeout=5)
                     self.assertEqual(result.returncode, 0, result.stderr)
                     self.assertEqual(result.stdout, "reads\n")
                     def argv(name):
@@ -254,6 +303,8 @@ run_alignment_pipeline input.fq
                         flags += ["--cap-kalloc", "100m"]
                     fastq_arg = "-" if mapper == "bonefish" and stream else "input.fq"
                     self.assertEqual(argv(mapper), prefix + flags + [index or "gene ref.fa", fastq_arg])
+                    if mapper == "bonefish":
+                        self.assertEqual((Path(work) / "retry.env").read_text().strip(), str(retry))
                     self.assertEqual(argv("samtools-view"), ["view", "-uh", "--no-PG", "-"])
                     self.assertEqual(argv("samtools-filter"), ["view", "-uh", "-F", "256", "-"])
                     self.assertEqual(argv("samtools-sort"), ["sort", "--no-PG", "-@", "8", "--write-index",

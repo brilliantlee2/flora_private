@@ -14,6 +14,7 @@ Usage:
     [--gene-fasta /path/to/genome.fa] \
     [--genome-aligner bonefish|minimap2] \
     [--bonefish-bin /path/to/bonefish] \
+    [--bonefish-seam-retry] \
     [--genome-mmi /path/to/genome.splice.mmi] \
     [--junction-bed /path/to/genes.bed] \
     [--chrom-sizes /path/to/chrom_sizes.tsv] \
@@ -82,6 +83,7 @@ Notes:
   7. Genome alignment uses Bonefish by default. Use --genome-aligner minimap2
      to select minimap2 and --genome-mmi to use a prebuilt splice index.
      Run flora setup-tools to install Bonefish and the indexed StringTie build.
+     --bonefish-seam-retry is experimental and requires a patched --bonefish-bin.
      --genome-fa is an alias for --gene-fasta.
   8. If --isoform-gtf is omitted, --gene-gtf is reused for isoform assignment.
   9. If --pair-min is omitted, PAIR_MIN is auto-resolved as:
@@ -208,6 +210,7 @@ write_parameters_tsv() {
     if [[ "${GENOME_ALIGNER}" == bonefish ]]; then
       printf "bonefish_bin\t%s\n" "${BONEFISH_BIN}"
       printf "bonefish_version\t%s\n" "${BONEFISH_VERSION}"
+      printf "bonefish_seam_retry\t%s\n" "${BONEFISH_SEAM_RETRY_ENABLED}"
     fi
     printf "junction_bed\t%s\n" "${JUNCTION_BED}"
     printf "chrom_sizes\t%s\n" "${CHROM_SIZES}"
@@ -336,6 +339,9 @@ run_alignment_pipeline() {
     mapper+=(--cap-kalloc 100m)
   fi
   (
+    if [[ "${GENOME_ALIGNER}" == bonefish ]]; then
+      export BONEFISH_SEAM_RETRY="${BONEFISH_SEAM_RETRY_ENABLED}"
+    fi
     if [[ "${GENOME_ALIGNER}" == bonefish && -p "${input_fastq}" ]]; then
       "${mapper[@]}" "${reference}" - < "${input_fastq}"
     else
@@ -427,6 +433,7 @@ GENOME_ALIGNER=bonefish
 GENOME_MMI=""
 BONEFISH_BIN=""
 BONEFISH_VERSION=""
+BONEFISH_SEAM_RETRY_ENABLED=0
 JUNCTION_BED=""
 CHROM_SIZES=""
 GENE_GTF=""
@@ -506,6 +513,7 @@ while [[ $# -gt 0 ]]; do
     --genome-mmi=*) GENOME_MMI="${1#*=}"; : "${GENOME_MMI:?--genome-mmi requires a path}"; shift ;;
     --bonefish-bin) BONEFISH_BIN="${2:?--bonefish-bin requires an executable}"; shift 2 ;;
     --bonefish-bin=*) BONEFISH_BIN="${1#*=}"; : "${BONEFISH_BIN:?--bonefish-bin requires an executable}"; shift ;;
+    --bonefish-seam-retry) BONEFISH_SEAM_RETRY_ENABLED=1; shift ;;
     --junction-bed) JUNCTION_BED="$2"; shift 2 ;;
     --chrom-sizes) CHROM_SIZES="$2"; shift 2 ;;
     --gene-gtf) GENE_GTF="$2"; shift 2 ;;
@@ -570,6 +578,20 @@ done
 if [[ "${GENOME_ALIGNER}" != bonefish && "${GENOME_ALIGNER}" != minimap2 ]]; then
   echo "[ERROR] --genome-aligner must be bonefish or minimap2." >&2
   exit 1
+fi
+if [[ "${BONEFISH_SEAM_RETRY_ENABLED}" -eq 1 ]]; then
+  if [[ "${GENOME_ALIGNER}" != bonefish ]]; then
+    echo "[ERROR] --bonefish-seam-retry requires --genome-aligner bonefish." >&2
+    exit 1
+  fi
+  if [[ "${UPSTREAM_ONLY}" -eq 1 ]]; then
+    echo "[ERROR] --bonefish-seam-retry requires the genome alignment stage." >&2
+    exit 1
+  fi
+  if [[ -z "${BONEFISH_BIN}" ]]; then
+    echo "[ERROR] --bonefish-seam-retry requires --bonefish-bin with the patched Bonefish 0.5.0 executable." >&2
+    exit 1
+  fi
 fi
 if [[ ! "${ONT_JOBS}" =~ ^[1-9][0-9]*$ ]]; then
   echo "[ERROR] --ont-jobs must be a positive integer." >&2
@@ -699,7 +721,12 @@ print(tools.expanduser().resolve() / "bin")
       echo "[ERROR] Run 'flora setup-tools', set --bonefish-bin to a Bonefish 0.5.0 executable, or use --genome-aligner minimap2." >&2
       exit 1
     fi
-    log "Genome aligner: ${BONEFISH_BIN} (${BONEFISH_VERSION})"
+    if [[ "${BONEFISH_SEAM_RETRY_ENABLED}" -eq 1 ]] \
+      && ! LC_ALL=C grep -aFq -- BONEFISH_SEAM_RETRY "${BONEFISH_BIN}"; then
+      echo "[ERROR] The selected Bonefish does not support BONEFISH_SEAM_RETRY: ${BONEFISH_BIN}" >&2
+      exit 1
+    fi
+    log "Genome aligner: ${BONEFISH_BIN} (${BONEFISH_VERSION}), experimental seam retry=${BONEFISH_SEAM_RETRY_ENABLED}"
   fi
   if [[ "${GENOME_ALIGNER}" == minimap2 || "${FEATURE_BACKEND}" == ont ]]; then
     require_cmd minimap2
