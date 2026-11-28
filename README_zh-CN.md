@@ -164,6 +164,28 @@ cat BUILD_INFO.txt
 发版前还应运行代表性数据；帮助命令只能验证 CLI，不能证明分析结果正确。
 压缩包应当只有 `flora` 一个可执行文件，不包含私有源码。
 
+## 运行示例
+
+激活 Flora Conda 环境后，替换示例中的变量值，在 Flora 可执行文件所在目录执行。
+
+```bash
+fastq_dir=/path/to/fastq_dir
+barcode_list_10bp=/path/to/BC_1536.txt
+ref_dir=/path/to/ref_dir
+sample_id=sample01
+exp_cells=7500
+
+nohup ./flora \
+  --fastq-dir "$fastq_dir" \
+  --barcode-list-10bp "$barcode_list_10bp" \
+  --glycine-jobs 10 \
+  --ref-dir "$ref_dir" \
+  --out-dir "./$sample_id" \
+  --sample-id "$sample_id" \
+  --exp-cells "$exp_cells" \
+  > "${sample_id}.log" 2>&1 &
+```
+
 ## 结果目录与文件保留
 
 建议每次运行用独立的 `--out-dir`，方便区分结果和日志。流程直接写入该目录。

@@ -181,6 +181,29 @@ Also run a representative dataset before release. Help commands verify the CLI,
 not the correctness of analysis results. The archive should contain only one
 executable, `flora`, and no private source files.
 
+## Example run
+
+Activate the Flora Conda environment, replace the example values, and run
+from the directory containing the Flora executable.
+
+```bash
+fastq_dir=/path/to/fastq_dir
+barcode_list_10bp=/path/to/BC_1536.txt
+ref_dir=/path/to/ref_dir
+sample_id=sample01
+exp_cells=7500
+
+nohup ./flora \
+  --fastq-dir "$fastq_dir" \
+  --barcode-list-10bp "$barcode_list_10bp" \
+  --glycine-jobs 10 \
+  --ref-dir "$ref_dir" \
+  --out-dir "./$sample_id" \
+  --sample-id "$sample_id" \
+  --exp-cells "$exp_cells" \
+  > "${sample_id}.log" 2>&1 &
+```
+
 ## Workflow results
 
 Use a separate `--out-dir` for each run to keep results and logs together. The
