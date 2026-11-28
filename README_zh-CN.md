@@ -32,6 +32,8 @@ export PYTHONUTF8=1
 
 已有环境时，用 `conda env update -n flora -f environment.yml` 代替创建命令，
 然后重新激活。必须使用 Python 3.11.x。
+如果 Flora 报 `Bad magic number in .pyc file`，重新激活 Flora 环境，并确认
+`python3 --version` 显示 3.11.x。
 `environment.yml` 包含构建工具和运行依赖；`environment.runtime.yml` 用于
 已打包的可执行文件。`requirements.txt` 只列出 Python 包。
 [运行工具清单](runtime-tools.json) 固定 Bonefish 和补丁版 StringTie 的来源与校验值。
@@ -88,7 +90,7 @@ cargo build --release --locked
 全流程支持 `--fastq` 后输入多个文件，或用 `--fastq-dir` 非递归读取目录。
 Glycine 默认 10 个并发任务，共享 64 个总线程。
 
-在已激活的环境中安装一次这两个工具。
+运行默认流程前，在已激活的环境中安装一次这两个工具。
 
 ```bash
 ./target/release/flora setup-tools
@@ -98,11 +100,17 @@ Glycine 默认 10 个并发任务，共享 64 个总线程。
 StringTie 2.2.2 same-start 补丁版。支持 Linux x86_64 和 Apple Silicon macOS。
 也可在编译 Flora 前从源码目录执行 `python3 packaging/setup_tools.py`。
 
-Flora 会自动在 `${XDG_DATA_HOME:-$HOME/.local/share}/flora/tools` 下查找。
+基因组比对默认使用 Bonefish 0.5.0。Flora 会自动在
+`${XDG_DATA_HOME:-$HOME/.local/share}/flora/tools` 下查找工具。
 需要用共享目录或自定义目录时，在安装和运行前都设置 `FLORA_TOOLS_DIR`。
 可通过 `--bonefish-bin` 或 `--stringtie-bin` 指定已有的二进制。
 `--genome-aligner minimap2` 可选择 minimap2 做基因组比对。
 ONT 转录组重比对使用 minimap2。全量对照命令见 [PBMC 性能验证](docs/pbmc-perf.md)。
+
+默认轻量模式通过管道传递剪切后的 cDNA。使用 `--genome-mmi` 指定多分片索引时，
+Bonefish 需要重新读取 cDNA，请加 `--save-intermediate` 或 `--full-output`，
+让流程在比对前先写出 FASTQ 文件。请使用由相同参考 FASTA 构建的索引，
+并为保留的 FASTQ 预留磁盘空间。
 
 超长窗口的接缝重试默认关闭。要在基因组比对中做实验，可在运行命令中同时加入
 `--bonefish-seam-retry` 和 `--bonefish-bin /path/to/patched/bonefish`，
@@ -140,7 +148,8 @@ dist/Flora-<version>-linux-x86_64.tar.gz.sha256
 会拒绝依赖更高版本符号的构建，但不会降低二进制的 glibc 要求。
 较旧系统需使用兼容的构建环境或 [Singularity](docs/singularity-build_zh-CN.md)。
 
-发布前，将压缩包解压到新目录，激活运行环境，独立检查：
+发布前，将压缩包解压到新目录，用包内的 `environment.yml` 准备并激活
+Python 3.11 运行环境，独立检查：
 
 ```bash
 ./flora --version
@@ -148,20 +157,36 @@ dist/Flora-<version>-linux-x86_64.tar.gz.sha256
 ./flora mixed --help
 ./flora glycine --help
 ./flora analyze --help
+./flora setup-tools
 cat BUILD_INFO.txt
 ```
 
 发版前还应运行代表性数据；帮助命令只能验证 CLI，不能证明分析结果正确。
 压缩包应当只有 `flora` 一个可执行文件，不包含私有源码。
 
-## 流程输出策略
+## 结果目录与文件保留
 
-默认轻量输出保留最终 tagged BAM/索引、表达矩阵、cell/barcode 对应关系、
-RNA 聚类、QC、`qc/metrics_summary.xlsx`、日志和 HTML 报告。
-成功结束后删除可重建的 read-level 表、加标签前的 aligned BAM、assignment TSV；
-如果 `alignment/` 变空，也会移除该目录。
+建议每次运行用独立的 `--out-dir`，方便区分结果和日志。流程直接写入该目录。
+例如设置 `--out-dir /data/results/sample --sample-id sample`，终端显示
+`Pipeline completed successfully.` 后，打开
+`/data/results/sample/qc/sample.single_cell_report.html` 查看报告。
 
-新增输出如下：
+下表路径均相对于 `--out-dir`。`<sample>` 是 `--sample-id` 的值，默认是 `sample`。
+
+| 路径 | 内容 |
+| --- | --- |
+| `qc/<sample>.single_cell_report.html` | 交互式报告。 |
+| `qc/metrics_summary.xlsx` | 汇总指标（含全深度饱和度）。 |
+| `qc/<sample>.parameters.tsv`、`logs/` | 本次运行参数和各阶段日志。基因组比对诊断见 `logs/01_alignment.log`。 |
+| `qc/<sample>.rna_qc_metrics.tsv`、`qc/<sample>.per_cell_qc.tsv`、`qc/<sample>.saturation.tsv` | 样本 QC、单细胞 QC 和饱和度。 |
+| `upstream/barcode_to_cell.csv` | Barcode 与细胞 ID 的对应关系。 |
+| `matrix/<sample>.gene_expression.tsv`、`matrix/<sample>.isoform_expression.tsv` | 基因和异构体表达计数。 |
+| `matrix/<sample>.rna_cluster.tsv` | RNA 聚类结果。 |
+| `matrix/<sample>.filtered.tagged.sorted.bam` 和 `.bam.bai` | 最终带标签的比对结果及索引。 |
+| `glycine/<sample>.full-length-plus-rescued.fq.gz` | 运行 Glycine 时，全长和挽救 reads 的默认保存路径。 |
+| `qc/barnyard_qc/` | `flora mixed` 的物种混合质控。 |
+
+默认 ONT 特征识别流程还会输出以下文件和目录。
 
 | 路径 | 内容 |
 | --- | --- |
@@ -179,17 +204,22 @@ RNA 聚类、QC、`qc/metrics_summary.xlsx`、日志和 HTML 报告。
 `barcodes.tsv.gz`（细胞 ID）。Processed 矩阵先按每细胞至少 200 个特征、
 每特征至少 3 个细胞、线粒体比例不超过 20% 过滤，再按每细胞 10,000 计数归一化并执行
 `log10(1+x)`。其中的细胞集合可能与报告的原始细胞判定不同。
-`--skip-isoform` 不输出转录本矩阵，原有 TSV 矩阵仍保留。
+`--skip-isoform` 会跳过异构体表达 TSV 和转录本 MEX 矩阵。ONT 流程仍会构建转录组，
+供联合分配使用。
+
+默认轻量模式在流程成功完成后清理可重建的逐 read 表、分配 TSV 以及加标签前的
+比对 BAM 和索引。`alignment/` 变空时也会移除。下游分析请用 `matrix/` 中的最终 BAM 和索引。
 
 | 选项 | 作用 |
 | --- | --- |
-| `--save-intermediate` | 保留 read-level assignment 等调试中间文件。 |
-| `--full-output` | 保留上游 FASTQ 输出和流程中间文件。 |
-| `--remove-final-bam` | 成功分析后删除 `alignment/` 与 `matrix/` 下全部 BAM/索引，包括最终 tagged BAM。 |
+| `--save-intermediate` | 保留 `alignment/<sample>.cdna.fastq.gz`、加标签前的 BAM 和索引及其他中间文件。 |
+| `--full-output` | 保留比对用 FASTQ 和中间文件，并在 `upstream/` 下写出 `matched_reads.fastq.gz`、`unmatched_reads.fastq.gz` 和 `cell_reads.fastq.gz`。 |
+| `--remove-final-bam` | 成功分析后删除 `alignment/` 与 `matrix/` 下由流程生成的 BAM 和索引，包括最终带标签的 BAM。 |
 
-这些参数控制文件保留，不改变分析阈值。BAM 删除选项与保留选项同时使用时，
-仍会删除 BAM。全流程不会开启 Glycine 其他分类 FASTQ 的输出；需要这些文件时，
-单独运行 `flora glycine` 并添加 `--keep-all-outputs`。
+这些参数控制文件保留。BAM 删除选项与保留选项同时使用时，仍会清理 `alignment/`
+与 `matrix/` 下的 BAM 和索引。保留的 ONT 调试文件位于 `transcriptome/intermediates/`。
+`--upstream-only` 在 barcode/UMI 提取与细胞分配后结束。
+若需要 Glycine 其他分类的 FASTQ，请单独运行 `flora glycine` 并添加 `--keep-all-outputs`。
 
 ## 发布新版本
 

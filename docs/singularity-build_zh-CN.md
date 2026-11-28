@@ -9,7 +9,7 @@
 
 - 构建机为 Linux x86_64，已安装 Singularity，且可以使用 `--fakeroot`。
 - Flora 发行压缩包，以及版本对应的 `packaging/singularity/Flora.def`。
-- 能联网下载 Ubuntu 软件包和 Conda 依赖。
+- 能联网下载 Ubuntu 软件包、Conda 依赖和 [固定版本工具归档](../runtime-tools.json)。
 - 仅从 Docker 镜像准备基础镜像时需要 Docker；也可以直接复制已有的基础 SIF。
 
 以下示例对应当前定义文件的 0.1.2 版本。其他版本需要同步修改定义文件中的
@@ -71,6 +71,9 @@ flora-base-ubuntu22.04.sif
 
 ## 4. 构建与验证
 
+构建时会通过发行包中的 `flora setup-tools` 安装 Bonefish CPU 0.5.0，并构建
+StringTie 2.2.2 same-start 版。两者都安装到镜像内的 `/opt/flora/tools`。
+
 ```bash
 env -u LD_LIBRARY_PATH \
 singularity build --fakeroot \
@@ -79,14 +82,16 @@ singularity build --fakeroot \
 
 singularity run --cleanenv Flora-0.1.2-linux-x86_64.sif --version
 singularity run --cleanenv Flora-0.1.2-linux-x86_64.sif --help
+singularity test --cleanenv Flora-0.1.2-linux-x86_64.sif
 
 sha256sum Flora-0.1.2-linux-x86_64.sif \
   > Flora-0.1.2-linux-x86_64.sif.sha256
 sha256sum -c Flora-0.1.2-linux-x86_64.sif.sha256
 ```
 
-每条命令成功后再继续。定义文件中的 `%test` 会检查 Python 包导入和必要的
-可执行工具。最终镜像大小取决于实际解析的依赖；缓存目录默认配置在 `/tmp` 下。
+每条命令成功后再继续。定义文件中的 `%test` 会检查 Python 包导入、必要的
+可执行工具以及镜像内比对工具的版本。最终镜像大小取决于实际解析的依赖。
+缓存目录默认配置在 `/tmp` 下。
 
 若 `--fakeroot` 提示缺少 subuid 映射，需要管理员配置构建机，或换到满足条件的
 主机构建，再复制最终 SIF。若运行时提示 user namespace 被禁用，则目标服务器
@@ -94,8 +99,8 @@ sha256sum -c Flora-0.1.2-linux-x86_64.sif.sha256
 
 ## 5. 运行与分发
 
-用户只需要最终 SIF 和可用的 Singularity，不需要 Docker、基础镜像或单独的
-Flora Conda 环境。请绑定流程所需的数据、参考和输出父目录，例如：
+最终 SIF 已包含 Flora Conda 环境和比对工具，基因组比对默认使用镜像内的 Bonefish。
+请绑定流程所需的数据、参考和输出父目录，例如：
 
 ```bash
 singularity run --cleanenv \
@@ -107,6 +112,12 @@ singularity run --cleanenv \
   --out-dir /data/sample_output \
   --sample-id sample
 ```
+
+这条命令会直接把结果写入 `/data/sample_output/`。先查看
+`qc/sample.single_cell_report.html`，基因计数在 `matrix/sample.gene_expression.tsv`，
+比对日志在 `logs/01_alignment.log`。验收新镜像时可用一份小样本增加
+`--save-intermediate`，检查 `alignment/sample.aligned.sorted.bam` 及对应的 `.bai`。
+更多路径及轻量模式的文件保留规则见 [README](../README_zh-CN.md)。
 
 最终 SIF 和校验文件可作为 GitHub Release 的可选附件。
 不要把镜像、Docker archive 或 Miniforge 安装器提交到 Git。

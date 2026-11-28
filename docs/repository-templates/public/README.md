@@ -22,7 +22,7 @@ Flora performs:
 For native execution, the current binary release requires:
 
 - Linux x86_64;
-- glibc 2.35 or newer (the release is built on Ubuntu 22.04/glibc 2.35);
+- glibc at or above the `required_glibc` value in the release's `BUILD_INFO.txt`;
 - Conda, Miniforge, Mambaforge, or Micromamba;
 - Python 3.11, installed by the bundled environment file.
 
@@ -35,9 +35,8 @@ uname -m
 ldd --version | head -n 1
 ```
 
-The expected architecture is `x86_64`. Older HPC operating systems, including
-systems with glibc 2.17, cannot run this binary release natively; use the
-Singularity procedure below instead.
+The expected architecture is `x86_64`. Use the Singularity procedure below if
+the host's glibc is older than the release requires.
 
 ## Download
 
@@ -49,13 +48,14 @@ Flora-<version>-linux-x86_64.tar.gz
 Flora-<version>-linux-x86_64.tar.gz.sha256
 ```
 
-Use the accompanying `.sha256` file to verify the download, then extract the
-archive. Replace `<version>` with the version that was downloaded:
+Set `version` to the downloaded version. Verify the archive before extracting it.
 
 ```bash
-sha256sum -c Flora-<version>-linux-x86_64.tar.gz.sha256
-tar -xzf Flora-<version>-linux-x86_64.tar.gz
-cd Flora-<version>-linux-x86_64
+version=0.1.2
+archive="Flora-${version}-linux-x86_64.tar.gz"
+sha256sum -c "${archive}.sha256" &&
+  tar -xzf "$archive" &&
+  cd "Flora-${version}-linux-x86_64"
 ```
 
 ## Install the runtime environment
@@ -90,15 +90,22 @@ bundled `runtime-tools.json`. Flora automatically finds the installed binaries
 under `${XDG_DATA_HOME:-$HOME/.local/share}/flora/tools`. Set `FLORA_TOOLS_DIR`
 before setup and workflow runs to use a different directory.
 
-Existing binaries can be selected with `--bonefish-bin` or `--stringtie-bin`.
-`--genome-aligner minimap2` selects minimap2 for genome alignment. An ONT feature
-run uses minimap2 for transcript remapping.
+Flora uses Bonefish for genome alignment by default. Use
+`--genome-aligner minimap2` to select minimap2. The ONT feature backend uses
+minimap2 for transcript remapping with either genome aligner. Select existing
+binaries with `--bonefish-bin` or `--stringtie-bin`.
+
+`--bonefish-seam-retry` is experimental and off by default. It requires an
+explicit `--bonefish-bin` pointing to a patched Bonefish 0.5.0 executable.
+`setup-tools` installs the standard build.
 
 Large temporary files use `<out-dir>/.flora-scratch` by default. Use
-`--ont-temp-dir /path/to/scratch` to choose another filesystem. The ONT
-feature log shows the remaining space when a sort or storage failure occurs.
+`--ont-temp-dir /path/to/scratch` to choose another filesystem. For ONT feature
+assignment, see `logs/04_gene.log` for scratch space and storage errors.
 
-The embedded Python analysis modules require Python 3.11. Do not replace the environment with Python 3.10, 3.12, 3.13, or 3.14.
+The embedded Python modules require Python 3.11. If Flora reports
+`Bad magic number in .pyc file`, reactivate the Flora environment and check
+that `python3 --version` shows 3.11.x.
 
 For reproducible runs, always provide the 10 bp barcode whitelist explicitly with `--barcode-list-10bp /path/to/BC_1536.txt`. Automatic discovery of a whitelist placed next to the executable is not guaranteed in the current release.
 
@@ -111,13 +118,11 @@ depends directly on the host's older glibc. The host must still be able to run
 Singularity, and the build machine must support `--fakeroot`; running the final
 SIF normally does not require root.
 
-The SIF includes Flora, Python 3.11, samtools, minimap2, bedtools, and the Python
-dependencies. Do not run `conda env create` or `conda activate flora` when using
-the SIF.
-
-For Bonefish genome alignment, bind a host directory that contains Bonefish
-0.5.0 into the SIF and pass its container path to `--bonefish-bin`. To use the
-minimap2 executable supplied by the image, pass `--genome-aligner minimap2`.
+The build machine needs network access for Ubuntu packages, Conda dependencies,
+and tool archives. The matching SIF recipe uses `flora setup-tools` to install
+Bonefish CPU 0.5.0 and same-start StringTie 2.2.2 in `/opt/flora/tools`.
+The resulting image supplies the workflow's Conda environment and tools. Pass
+`--genome-aligner minimap2` to select the image's minimap2 for genome alignment.
 
 ### 1. Create the build directory
 
@@ -132,18 +137,18 @@ Run the remaining commands from this directory.
 
 Open [GitHub Releases](https://github.com/brilliantlee2/Flora/releases), download
 the archive and checksum matching the version referenced by `Flora.def`, and
-save or copy both files into the new `flora_singularity_build` directory. The
-current `Flora.def` expects:
+save or copy both files into the new `flora_singularity_build` directory. These
+commands use version 0.1.2, which matches the accompanying `Flora.def`:
 
 ```text
-Flora-0.1.1-linux-x86_64.tar.gz
-Flora-0.1.1-linux-x86_64.tar.gz.sha256
+Flora-0.1.2-linux-x86_64.tar.gz
+Flora-0.1.2-linux-x86_64.tar.gz.sha256
 ```
 
 Verify the archive from inside the build directory:
 
 ```bash
-sha256sum -c Flora-0.1.1-linux-x86_64.tar.gz.sha256
+sha256sum -c Flora-0.1.2-linux-x86_64.tar.gz.sha256
 ```
 
 Do not extract the archive for the SIF build. `Flora.def` copies and extracts it
@@ -156,6 +161,9 @@ Still inside `flora_singularity_build`, run:
 ```bash
 wget https://raw.githubusercontent.com/brilliantlee2/Flora/main/Flora.def
 ```
+
+Check that the archive named in `Flora.def` under `%files` matches the local
+archive before building. For older releases, use their matching recipe.
 
 ### 4. Prepare the Ubuntu 22.04 base SIF
 
@@ -194,8 +202,8 @@ The `flora_singularity_build` directory should now contain at least:
 
 ```text
 Flora.def
-Flora-0.1.1-linux-x86_64.tar.gz
-Flora-0.1.1-linux-x86_64.tar.gz.sha256
+Flora-0.1.2-linux-x86_64.tar.gz
+Flora-0.1.2-linux-x86_64.tar.gz.sha256
 Miniforge3-Linux-x86_64.sh
 flora-base-ubuntu22.04.sif
 ```
@@ -208,16 +216,11 @@ actual SIF build inputs.
 ```bash
 env -u LD_LIBRARY_PATH \
 singularity build --fakeroot \
-  Flora-0.1.1-linux-x86_64.sif \
+  Flora-0.1.2-linux-x86_64.sif \
   Flora.def
 
-singularity run --cleanenv \
-  Flora-0.1.1-linux-x86_64.sif \
-  --version
-
-singularity run --cleanenv \
-  Flora-0.1.1-linux-x86_64.sif \
-  --help
+singularity test --cleanenv Flora-0.1.2-linux-x86_64.sif
+singularity run --cleanenv Flora-0.1.2-linux-x86_64.sif --version
 ```
 
 Bind the directories containing inputs, references, and outputs for a real run:
@@ -225,7 +228,7 @@ Bind the directories containing inputs, references, and outputs for a real run:
 ```bash
 singularity run --cleanenv \
   --bind /data:/data \
-  Flora-0.1.1-linux-x86_64.sif \
+  Flora-0.1.2-linux-x86_64.sif \
   --fastq /data/sample.fastq.gz \
   --barcode-list-10bp /data/BC_1536.txt \
   --ref-dir /data/GRCh38_flora \
@@ -233,8 +236,8 @@ singularity run --cleanenv \
   --sample-id sample
 ```
 
-The tested SIF is approximately 820 MiB. If the cluster provides Apptainer,
-replace `singularity` with `apptainer` in the commands above.
+If the cluster provides Apptainer, replace `singularity` with `apptainer` in
+the commands above.
 
 ## Prepare a reference
 
@@ -256,9 +259,14 @@ paftools.js gff2bed -j genes.gtf > genes.bed
 cut -f1,2 genome.fa.fai | sort -V > chrom_sizes.tsv
 ```
 
-`paftools.js` is distributed with minimap2.
+`paftools.js` is distributed with minimap2 and runs with the `k8` JavaScript
+interpreter.
 
 Chromosome or contig names must match across `genome.fa`, `genes.gtf`, `genes.bed`, and `chrom_sizes.tsv`. For example, do not mix `chr1` with `1` between files. An explicit `--isoform-gtf` can be supplied when the isoform annotation differs from `genes.gtf`; otherwise Flora reuses `genes.gtf`.
+
+A prebuilt splice index supplied with `--genome-mmi` must match the reference
+FASTA. Bonefish needs a regular cDNA FASTQ for a multi-part index. Add
+`--full-output` for that case so Flora writes the cDNA FASTQ before alignment.
 
 ## Analyze raw FASTQ
 
@@ -284,8 +292,8 @@ For chunked sequencing output, provide multiple files after one `--fastq`:
   --sample-id sample
 ```
 
-Alternatively, let Flora discover `.fastq.gz` and `.fq.gz` files directly in
-one directory (subdirectories are not searched):
+Alternatively, let Flora discover `.fastq.gz` and `.fq.gz` files at the top
+level of a directory. The filename check is case-insensitive.
 
 ```bash
 ./flora --fastq-dir /data/sample_chunks \
@@ -326,7 +334,8 @@ recalculated from the merged totals.
   --sample-id mixed_sample
 ```
 
-Mixed-species runs additionally generate `qc/barnyard_qc/barnyard_summary.tsv`, `barnyard_per_cell.tsv`, and a Barnyard QC section in the HTML report.
+Mixed-species runs add a Barnyard QC section to the HTML report and write
+`qc/barnyard_qc/barnyard_summary.tsv` and `qc/barnyard_qc/barnyard_per_cell.tsv`.
 
 ## Measured resource usage
 
@@ -334,34 +343,47 @@ A monitored memory-optimized `flora mixed --skip-glycine` run used a 149 GB comp
 
 ## Outputs
 
-In the default light-output mode, the output directory contains:
+Flora writes to `--out-dir` and uses `--sample-id` as the file prefix.
+For `--out-dir ./sample_output --sample-id sample`, open
+`./sample_output/qc/sample.single_cell_report.html`. The main files from a
+successful run in default light-output mode are listed relative to `--out-dir`.
 
-```text
-upstream/    Barcode correction, cell assignment, and knee plots
-matrix/      Final tagged BAM, gene/isoform matrices, and RNA clustering coordinates
-qc/          RNA QC, saturation, metrics_summary.xlsx, and report inputs
-logs/        Per-stage logs
-```
+| Path | Contents |
+| --- | --- |
+| `qc/<sample>.single_cell_report.html`, `qc/metrics_summary.xlsx` | HTML report and metrics workbook. |
+| `qc/<sample>.rna_qc_metrics.tsv`, `qc/<sample>.per_cell_qc.tsv`, `qc/<sample>.saturation.tsv` | RNA QC, per-cell metrics, and saturation data. |
+| `qc/<sample>.parameters.tsv` | Effective workflow settings. |
+| `matrix/<sample>.gene_expression.tsv`, `matrix/<sample>.isoform_expression.tsv` | Gene and isoform expression. |
+| `matrix/<sample>.rna_cluster.tsv` | RNA clustering and UMAP coordinates, when available. |
+| `matrix/<sample>.filtered.tagged.sorted.bam`, `matrix/<sample>.filtered.tagged.sorted.bam.bai` | Final tagged alignment and index. |
+| `upstream/barcode_to_cell.csv` | Barcode-to-cell mapping. |
+| `glycine/<sample>.full-length-plus-rescued.fq.gz` | Full-length reads when Glycine runs with its default output path. |
+| `logs/` | Stage logs. Start with `01_alignment.log` for alignment and `04_gene.log` for feature assignment. |
 
-Key outputs include `barcode_to_cell.csv`, the final
-`<sample>.filtered.tagged.sorted.bam` and index, gene and isoform expression
-matrices, Scanpy UMAP coordinates, `qc/metrics_summary.xlsx`, and
-`<sample>.single_cell_report.html`. Mixed-species analysis also reports the
-per-cell human/mouse UMI classification under `qc/barnyard_qc/`.
+The default ONT feature backend also writes
+`transcriptome/<sample>.transcriptome.fa.gz`,
+`transcriptome/<sample>.transcriptome.gtf.gz`, and
+`transcriptome/tool_versions.json`. Its MEX paths under `matrix/` are listed
+below.
 
-After the report is generated successfully, default light-output mode removes
-large reproducible intermediates such as the pre-tagging aligned BAM,
-read-level assignment CSVs, and assignment TSVs. The empty `alignment/`
-directory is then omitted. Add `--save-intermediate` to retain these debugging
-files, or `--full-output` to retain all upstream FASTQ outputs and
-intermediates. These options affect retained files only, not analytical
-results.
+| Matrix | Raw UMI counts | Filtered, normalized expression |
+| --- | --- | --- |
+| Gene | `<sample>.gene_raw_feature_bc_matrix/` | `<sample>.gene_processed_feature_bc_matrix/` |
+| Transcript | `<sample>.transcript_raw_feature_bc_matrix/` | `<sample>.transcript_processed_feature_bc_matrix/` |
 
-Add `--remove-final-bam` when no BAM deliverable is required. Flora then
-removes every BAM and index under `alignment/` and `matrix/`, including the
-final tagged BAM, only after matrices, QC, and the report finish successfully.
-Expression matrices, clustering results, `metrics_summary.xlsx`, and the HTML
-report are retained.
+Each MEX directory contains `matrix.mtx.gz`, `features.tsv.gz`, and
+`barcodes.tsv.gz` with Flora cell IDs. `--skip-isoform` omits isoform expression
+and transcript MEX matrices.
+`--upstream-only` stops after barcode and cell assignment and reports the
+files available under `upstream/`.
+
+After a successful light-output run, Flora removes intermediates such as the
+aligned BAM and read-level assignment tables, then removes an empty
+`alignment/` directory.
+
+- `--save-intermediate` retains debugging files, including the trimmed cDNA FASTQ and aligned BAM.
+- `--full-output` also writes matched, unmatched, and cell-assigned FASTQs under `upstream/`.
+- `--remove-final-bam` removes the workflow BAMs and indexes under `alignment/` and `matrix/` after successful completion, including the final tagged BAM. This takes precedence over either retention option for those files. Saved BAMs under `transcriptome/intermediates/` follow the intermediate-retention settings.
 
 ## Support
 

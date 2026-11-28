@@ -56,6 +56,20 @@ class ReleaseLayoutTests(unittest.TestCase):
         self.assertNotIn('install -m 0755 "${ROOT_DIR}/run_all_mixed_species.sh"', script)
         self.assertNotIn('"${STAGE_DIR}/target/release"', script)
 
+    def test_singularity_installs_and_checks_managed_alignment_tools(self):
+        recipe = (PROJECT_ROOT / "packaging/singularity/Flora.def").read_text(encoding="utf-8")
+        post = recipe.split("\n%post\n", 1)[1].split("\n%environment\n", 1)[0]
+        environment = recipe.split("\n%environment\n", 1)[1].split("\n%runscript\n", 1)[0]
+        checks = recipe.split("\n%test\n", 1)[1]
+
+        install = "/opt/flora/flora setup-tools --tools-dir /opt/flora/tools"
+        self.assertIn(install, post)
+        self.assertLess(post.index("conda env create"), post.index(install))
+        self.assertLess(post.index(install), post.index("conda clean"))
+        self.assertIn("export FLORA_TOOLS_DIR=/opt/flora/tools", environment)
+        self.assertIn("/opt/flora/tools/bin/bonefish --version", checks)
+        self.assertIn("/opt/flora/tools/bin/stringtie-2.2.2-same-start --version", checks)
+
     def test_binary_release_does_not_stage_runtime_sources(self):
         script = (PROJECT_ROOT / "packaging/build_binary_release.sh").read_text(
             encoding="utf-8"

@@ -93,6 +93,8 @@ Notes:
      reserved for a future Sockeye-style local-alignment extractor and exits clearly.
   12. Light output is enabled by default. Trimmed cDNA reads stream directly to
       the genome aligner without creating alignment/<sample>.cdna.fastq.gz on disk.
+       For a split reference index with Bonefish, use --save-intermediate or
+       --full-output so the mapper can reopen the trimmed FASTQ for each part.
   13. Use --full-output or --save-intermediate to retain the trimmed cDNA FASTQ
       and other intermediate outputs for debugging.
      Use --remove-final-bam to remove every alignment/matrix BAM and index after

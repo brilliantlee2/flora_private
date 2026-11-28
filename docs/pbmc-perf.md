@@ -12,9 +12,14 @@
 
 `--genome-aligner minimap2` 选择基因组 minimap2。它仍使用 `-ax splice -uf --MD` 和原内存限制。Step 4 转录组重比对使用 minimap2。旧版 `--secondary=no`、`-K 100M`、`--ont-jobs 2` 和 Glycine 的 Edlib 实验均属于单独对照。
 
+## 全量验证结果
+
+- PBMC 两套全流程分别用时 25 小时 34 分 07 秒和 18 小时 33 分 46 秒。两套结果识别到相同的 6,894 个细胞。以逐项 UMI 计数差的绝对值之和除以两套总 UMI，基因矩阵差异为 1.71%，转录本矩阵差异为 4.69%。两次运行使用了不同路径的全长 FASTQ，新流程同时改变了比对器、StringTie 构建和其他环节。上述结果用于比较两套全流程。
+- 9011 的 75,086,206 条 reads 使用同一份剪切后 cDNA、同一个单片 MMI 和 32 线程。实验版 Bonefish 开启接缝重试后，从开始比对到 BAM 和 BAI 就绪由 19,661 秒降到 6,314 秒，耗时减少 67.89%。全量有 396,000 条 reads 的主比对剪接链改变。在 chr2、chr14、chr22 独立组装后的共同 reads 中，12.54% 改变了基因指派，13.01% 改变了参考转录本指派。`--bonefish-seam-retry` 默认为关闭。
+
 ## 运行依赖
 
-运行使用现有的 `flora-ont330`，其中有 samtools 1.24 和 minimap2 2.31。
+运行使用包含 samtools 1.24 和 minimap2 2.31 的 Flora 环境。构建环境与安装步骤见 [README](../README_zh-CN.md)。
 下面的 `flora setup-tools` 会按 [运行工具清单](../runtime-tools.json) 下载
 Bonefish CPU 0.5.0，并用原脚本构建 StringTie 2.2.2 same-start。
 Flora 自动使用安装好的程序。需要复用 A/B 测试中的二进制时，可用
@@ -24,7 +29,7 @@ Flora 自动使用安装好的程序。需要复用 A/B 测试中的二进制时
 
 ## cycloneserver 上的全量 PBMC 集成对照
 
-在服务器的 `codex/perf` 工作树执行。命令复用 11 月 23 日基线的完整全长 FASTQ 和参数表，保留调试中间文件。参照 120 万 reads 的比对实验，先用基线 FASTA 准备单片 k15/w5 MMI，单独记录索引准备时间。
+在服务器的 `codex/perf` 工作树执行。命令复用 11 月 23 日基线的参数表，保留调试中间文件。若基线记录的全长 FASTQ 已移走，在启动前将 `PBMC_FULL_LENGTH_FASTQ` 设置为当前保存的全长 FASTQ 路径。命令先用基线 FASTA 准备单片 k15/w5 MMI，单独记录索引准备时间。
 
 ```bash
 conda activate flora-ont330
@@ -52,6 +57,7 @@ cargo build --release --locked --bin flora
   args=(--skip-glycine --save-intermediate --sample-id "$S")
   for key in full_length_fastq barcode_list_10bp gene_fasta junction_bed chrom_sizes gene_gtf isoform_gtf; do
     value="$(get "$key")"
+    if [[ "$key" == full_length_fastq ]]; then value="${PBMC_FULL_LENGTH_FASTQ:-$value}"; fi
     [[ -r "$value" && -s "$value" ]] || { printf '缺少 %s %s\n' "$key" "$value" >&2; exit 1; }
     args+=("--${key//_/-}" "$value")
   done
