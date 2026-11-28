@@ -858,7 +858,6 @@ class WorkflowTimingContractTest(unittest.TestCase):
         expected = (
             "Stage glycine (rust) elapsed:",
             "Stage alignment_pipeline (external) elapsed:",
-            "Stage aligned_bam_index (external) elapsed:",
             "Stage bamtobed (external) elapsed:",
             "Stage gene_bam_index (external) elapsed:",
             "Stage rna_cluster_analysis (python) elapsed:",

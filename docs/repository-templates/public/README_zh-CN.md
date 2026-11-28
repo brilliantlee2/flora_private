@@ -22,7 +22,7 @@ Flora 包括：
 当前二进制发行包在原生运行方式下需要：
 
 - Linux x86_64；
-- glibc 2.35 或更高版本（发行包在 Ubuntu 22.04/glibc 2.35 上构建）；
+- glibc 达到发行包 `BUILD_INFO.txt` 中的 `required_glibc` 要求；
 - Conda、Miniforge、Mambaforge 或 Micromamba；
 - 由环境文件安装的 Python 3.11。
 
@@ -35,8 +35,7 @@ uname -m
 ldd --version | head -n 1
 ```
 
-预期架构为 `x86_64`。使用 glibc 2.17 等较旧系统的 HPC 节点无法直接原生运行
-当前二进制发行包，可以使用下文的 Singularity 方案。
+预期架构为 `x86_64`。如果宿主机的 glibc 低于发行包要求，可用下文的 Singularity 方案。
 
 ## 下载
 
@@ -48,13 +47,14 @@ Flora-<version>-linux-x86_64.tar.gz
 Flora-<version>-linux-x86_64.tar.gz.sha256
 ```
 
-下载后使用对应的 `.sha256` 文件验证完整性，再解压压缩包。命令中的
-`<version>` 替换为实际下载的版本号：
+将 `version` 设为实际下载的版本号，校验压缩包后再解压。
 
 ```bash
-sha256sum -c Flora-<version>-linux-x86_64.tar.gz.sha256
-tar -xzf Flora-<version>-linux-x86_64.tar.gz
-cd Flora-<version>-linux-x86_64
+version=0.1.2
+archive="Flora-${version}-linux-x86_64.tar.gz"
+sha256sum -c "${archive}.sha256" &&
+  tar -xzf "$archive" &&
+  cd "Flora-${version}-linux-x86_64"
 ```
 
 ## 安装运行环境
@@ -66,6 +66,7 @@ export PYTHONUTF8=1
 
 conda env create -f environment.yml
 conda activate flora
+./flora setup-tools
 ```
 
 验证：
@@ -82,7 +83,25 @@ bedtools --version
 ./flora glycine --help
 ```
 
-内嵌的 Python 分析模块需要 Python 3.11，不要替换为 Python 3.10、3.12、3.13 或 3.14。
+`./flora setup-tools` 自动下载 Bonefish CPU 0.5.0 并构建 StringTie 2.2.2
+same-start 补丁版。安装时按随包提供的 `runtime-tools.json` 校验各归档的
+SHA-256。Flora 会自动在 `${XDG_DATA_HOME:-$HOME/.local/share}/flora/tools`
+下找到这两个程序。在安装和运行前设置 `FLORA_TOOLS_DIR` 可选用其他目录。
+
+Flora 默认用 Bonefish 做基因组比对，可用 `--genome-aligner minimap2` 切换为
+minimap2。ONT 特征指派的转录组重比对始终使用 minimap2。已有二进制程序可以用
+`--bonefish-bin` 或 `--stringtie-bin` 指定。
+
+`--bonefish-seam-retry` 是默认关闭的实验选项，启用时须用 `--bonefish-bin`
+显式指定打过补丁的 Bonefish 0.5.0。`setup-tools` 安装的是标准版。
+
+流程的大型临时文件默认放在 `<out-dir>/.flora-scratch`。用
+`--ont-temp-dir /path/to/scratch` 可指定单独的工作盘。ONT 特征指派的磁盘剩余
+空间和存储错误可在 `logs/04_gene.log` 查看。
+
+内嵌的 Python 分析模块需要 Python 3.11。如果 Flora 报
+`Bad magic number in .pyc file`，重新激活 Flora 环境，并确认
+`python3 --version` 显示 3.11.x。
 
 为保证运行可复现，建议始终使用 `--barcode-list-10bp /path/to/BC_1536.txt` 显式传入 10 bp barcode whitelist。当前版本不能保证自动发现放在可执行文件旁边的 whitelist。
 
@@ -93,8 +112,11 @@ bedtools --version
 22.04/glibc 2.35，因此 Flora 不再直接依赖计算节点的旧 glibc。宿主机仍需能够
 运行 Singularity，并支持 `--fakeroot` 构建；SIF 运行本身通常不需要 root。
 
-SIF 已包含 Flora、Python 3.11、samtools、minimap2、bedtools 和 Python 依赖，
-使用 SIF 时不需要再执行 `conda env create` 或 `conda activate flora`。
+构建机需要联网下载 Ubuntu 软件包、Conda 依赖及工具压缩包。配套定义文件调用
+`flora setup-tools`，将 Bonefish CPU 0.5.0 和 StringTie 2.2.2 same-start 版
+安装到镜像内的 `/opt/flora/tools`。SIF 内置流程使用的 Conda 环境和工具，默认
+使用镜像内的 Bonefish 做基因组比对。传入 `--genome-aligner minimap2` 可选用
+镜像内的 minimap2。
 
 ### 1. 创建构建目录
 
@@ -108,18 +130,18 @@ cd flora_singularity_build
 ### 2. 下载 Flora 发行包
 
 打开 [GitHub Releases](https://github.com/brilliantlee2/Flora/releases)，下载与
-`Flora.def` 版本一致的压缩包和校验文件，并确保它们被保存或复制到刚才创建的
-`flora_singularity_build` 目录。当前 `Flora.def` 对应：
+`Flora.def` 版本一致的压缩包和校验文件，并保存到 `flora_singularity_build`
+目录。以下命令使用与配套 `Flora.def` 一致的 0.1.2 版本。
 
 ```text
-Flora-0.1.1-linux-x86_64.tar.gz
-Flora-0.1.1-linux-x86_64.tar.gz.sha256
+Flora-0.1.2-linux-x86_64.tar.gz
+Flora-0.1.2-linux-x86_64.tar.gz.sha256
 ```
 
 进入构建目录后验证压缩包：
 
 ```bash
-sha256sum -c Flora-0.1.1-linux-x86_64.tar.gz.sha256
+sha256sum -c Flora-0.1.2-linux-x86_64.tar.gz.sha256
 ```
 
 构建 SIF 时不需要解压这个压缩包，`Flora.def` 会自动将其复制并解压到镜像中。
@@ -131,6 +153,9 @@ sha256sum -c Flora-0.1.1-linux-x86_64.tar.gz.sha256
 ```bash
 wget https://raw.githubusercontent.com/brilliantlee2/Flora/main/Flora.def
 ```
+
+构建前核对 `Flora.def` 的 `%files` 段，确认其中的压缩包文件名与本地文件一致。
+使用旧版发行包时，请使用该版本配套的定义文件。
 
 ### 4. 准备 Ubuntu 22.04 基础 SIF
 
@@ -167,8 +192,8 @@ curl -L --fail --retry 5 --retry-delay 5 \
 
 ```text
 Flora.def
-Flora-0.1.1-linux-x86_64.tar.gz
-Flora-0.1.1-linux-x86_64.tar.gz.sha256
+Flora-0.1.2-linux-x86_64.tar.gz
+Flora-0.1.2-linux-x86_64.tar.gz.sha256
 Miniforge3-Linux-x86_64.sh
 flora-base-ubuntu22.04.sif
 ```
@@ -180,16 +205,11 @@ flora-base-ubuntu22.04.sif
 ```bash
 env -u LD_LIBRARY_PATH \
 singularity build --fakeroot \
-  Flora-0.1.1-linux-x86_64.sif \
+  Flora-0.1.2-linux-x86_64.sif \
   Flora.def
 
-singularity run --cleanenv \
-  Flora-0.1.1-linux-x86_64.sif \
-  --version
-
-singularity run --cleanenv \
-  Flora-0.1.1-linux-x86_64.sif \
-  --help
+singularity test --cleanenv Flora-0.1.2-linux-x86_64.sif
+singularity run --cleanenv Flora-0.1.2-linux-x86_64.sif --version
 ```
 
 真实数据运行时显式绑定输入、参考和输出所在目录，例如：
@@ -197,7 +217,7 @@ singularity run --cleanenv \
 ```bash
 singularity run --cleanenv \
   --bind /data:/data \
-  Flora-0.1.1-linux-x86_64.sif \
+  Flora-0.1.2-linux-x86_64.sif \
   --fastq /data/sample.fastq.gz \
   --barcode-list-10bp /data/BC_1536.txt \
   --ref-dir /data/GRCh38_flora \
@@ -205,8 +225,7 @@ singularity run --cleanenv \
   --sample-id sample
 ```
 
-构建成功的实测 SIF 大约为 820 MiB。若集群管理员已提供 Apptainer，可将上述
-`singularity` 命令替换为 `apptainer`。
+若集群管理员已提供 Apptainer，可将上述 `singularity` 命令替换为 `apptainer`。
 
 ## 准备参考基因组
 
@@ -228,9 +247,13 @@ paftools.js gff2bed -j genes.gtf > genes.bed
 cut -f1,2 genome.fa.fai | sort -V > chrom_sizes.tsv
 ```
 
-`paftools.js` 由 minimap2 提供。
+`paftools.js` 随 minimap2 分发，通过 `k8` JavaScript 解释器运行。
 
 `genome.fa`、`genes.gtf`、`genes.bed` 和 `chrom_sizes.tsv` 中的染色体或 contig 名称必须一致，例如不能在不同文件中混用 `chr1` 和 `1`。如果转录本注释与 `genes.gtf` 不同，可以显式传入 `--isoform-gtf`；否则 Flora 会复用 `genes.gtf`。
+
+`--genome-mmi` 指定的预构建剪接索引须与参考 FASTA 匹配。Bonefish 处理分片索引时
+需要普通 cDNA FASTQ。遇到这种情况请添加 `--full-output`，让 Flora 先写出供比对的
+cDNA FASTQ。
 
 ## 分析原始 FASTQ
 
@@ -256,8 +279,8 @@ cut -f1,2 genome.fa.fai | sort -V > chrom_sizes.tsv
   --sample-id sample
 ```
 
-也可以直接传入目录。Flora 只搜索该目录当前层的 `.fastq.gz` 和
-`.fq.gz`，不递归搜索子目录：
+也可以直接传入目录。Flora 搜索该目录当前层的 `.fastq.gz` 和 `.fq.gz` 文件，
+文件名判断忽略大小写。
 
 ```bash
 ./flora --fastq-dir /data/sample_chunks \
@@ -296,38 +319,52 @@ Glycine 默认最多同时运行10个任务，并在这些任务之间共享64�
   --sample-id mixed_sample
 ```
 
-Mixed-species 模式还会生成 `qc/barnyard_qc/barnyard_summary.tsv`、`barnyard_per_cell.tsv`，并在 HTML 报告中增加 Barnyard QC 部分。
+混合物种模式会在 HTML 报告中增加 Barnyard QC 部分，并写出
+`qc/barnyard_qc/barnyard_summary.tsv` 和 `qc/barnyard_qc/barnyard_per_cell.tsv`。
 
 ## 实测资源消耗
 
 一次受监控的内存优化版 `flora mixed --skip-glycine` 运行使用了 149 GB 的压缩全长 FASTQ，共包含 138,615,368 条 reads。在流程线程为 32、cluster 线程为 16 时，进程树约运行 884 分钟（14 小时 44 分）。实际观测到的 PSS 峰值为 94.964 GiB，RSS 求和峰值为 94.973 GiB。
 
-## 主要输出
+## 结果目录
 
-默认轻量输出模式下，输出目录包括：
+Flora 将结果写入 `--out-dir`，文件名以 `--sample-id` 为前缀。例如使用
+`--out-dir ./sample_output --sample-id sample` 时，打开
+`./sample_output/qc/sample.single_cell_report.html` 查看报告。下表列出了默认
+轻量模式成功完成后的主要结果，路径均相对于 `--out-dir`。
 
-```text
-upstream/    barcode 矫正、cell assignment 和 knee plot
-matrix/      最终带标签 BAM、基因/转录本矩阵和 RNA 聚类坐标
-qc/          RNA QC、饱和度、metrics_summary.xlsx 和报告输入
-logs/        各步骤日志
-```
+| 路径 | 内容 |
+| --- | --- |
+| `qc/<sample>.single_cell_report.html`、`qc/metrics_summary.xlsx` | HTML 报告和指标工作簿。 |
+| `qc/<sample>.rna_qc_metrics.tsv`、`qc/<sample>.per_cell_qc.tsv`、`qc/<sample>.saturation.tsv` | RNA QC、逐细胞指标和饱和度数据。 |
+| `qc/<sample>.parameters.tsv` | 此次运行实际使用的参数。 |
+| `matrix/<sample>.gene_expression.tsv`、`matrix/<sample>.isoform_expression.tsv` | 基因和转录本表达量。 |
+| `matrix/<sample>.rna_cluster.tsv` | RNA 聚类结果及可用的 UMAP 坐标。 |
+| `matrix/<sample>.filtered.tagged.sorted.bam`、`matrix/<sample>.filtered.tagged.sorted.bam.bai` | 最终带标签的 BAM 及索引。 |
+| `upstream/barcode_to_cell.csv` | Barcode 到细胞的对应关系。 |
+| `glycine/<sample>.full-length-plus-rescued.fq.gz` | Glycine 运行且使用默认输出路径时生成的全长 reads。 |
+| `logs/` | 各阶段日志。基因组比对看 `01_alignment.log`，特征指派看 `04_gene.log`。 |
 
-关键结果包括 `barcode_to_cell.csv`、最终的
-`<sample>.filtered.tagged.sorted.bam` 及索引、基因和转录本表达矩阵、Scanpy UMAP
-坐标、`qc/metrics_summary.xlsx` 和
-`<sample>.single_cell_report.html`。Mixed-species 分析还会在
-`qc/barnyard_qc/` 中输出逐细胞的人/鼠 UMI 分类结果。
+默认的 ONT 特征指派还会写出组装转录本
+`transcriptome/<sample>.transcriptome.fa.gz`、
+`transcriptome/<sample>.transcriptome.gtf.gz`，以及
+`transcriptome/tool_versions.json`。各 MEX 目录位于 `matrix/` 下。
 
-报告成功生成后，默认轻量输出模式会删除可重新生成的大型中间文件，包括加标签前的
-aligned BAM、read-level assignment CSV 和 assignment TSV；清理后为空的
-`alignment/` 目录也不会保留。需要这些调试文件时添加
-`--save-intermediate`；需要保留全部上游 FASTQ 和中间文件时使用
-`--full-output`。这些选项只影响文件保留，不改变分析结果。
+| 矩阵 | 原始 UMI 计数 | 过滤、归一化后的表达量 |
+| --- | --- | --- |
+| 基因 | `<sample>.gene_raw_feature_bc_matrix/` | `<sample>.gene_processed_feature_bc_matrix/` |
+| 转录本 | `<sample>.transcript_raw_feature_bc_matrix/` | `<sample>.transcript_processed_feature_bc_matrix/` |
 
-不需要交付 BAM 时可添加 `--remove-final-bam`。Flora 会在矩阵、QC 和报告全部
-成功后删除 `alignment/` 与 `matrix/` 下的全部 BAM 及索引，包括最终 tagged
-BAM；表达矩阵、聚类结果、`metrics_summary.xlsx` 和 HTML 报告仍会保留。
+每个 MEX 目录包含 `matrix.mtx.gz`、`features.tsv.gz` 和保存 Flora 细胞 ID 的
+`barcodes.tsv.gz`。`--skip-isoform` 跳过转录本表达量和转录本 MEX 矩阵。
+`--upstream-only` 在细胞分配完成后结束，并列出 `upstream/` 中可用的文件。
+
+轻量模式成功完成后，Flora 会清理初始比对 BAM 和逐 read 指派表等中间文件，
+以及清理后为空的 `alignment/` 目录。
+
+- `--save-intermediate` 保留修剪后的 cDNA FASTQ、初始比对 BAM 等调试文件。
+- `--full-output` 还会在 `upstream/` 写出匹配、未匹配和已分到细胞的 FASTQ。
+- `--remove-final-bam` 在分析成功后删除 `alignment/` 和 `matrix/` 下流程生成的 BAM 和索引，包括最终带标签 BAM。对这些文件，删除优先于两个保留选项。`transcriptome/intermediates/` 中的 BAM 按中间文件保留设置处理。
 
 ## 问题反馈
 

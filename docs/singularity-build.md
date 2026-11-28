@@ -10,7 +10,8 @@ change Flora's analysis logic.
 
 - Linux x86_64 and Singularity with working `--fakeroot` on the build host.
 - A Flora release archive and the matching `packaging/singularity/Flora.def`.
-- Network access for Ubuntu packages and Conda dependencies.
+- Network access for Ubuntu packages, Conda dependencies, and the pinned tool
+  archives in [`runtime-tools.json`](../runtime-tools.json).
 - Docker only if preparing the base image from a Docker image. An existing base
   SIF can be copied instead.
 
@@ -76,6 +77,9 @@ flora-base-ubuntu22.04.sif
 
 ## 4. Build and validate
 
+The build installs Bonefish CPU 0.5.0 and builds the same-start StringTie 2.2.2
+in `/opt/flora/tools` using the release's `flora setup-tools` command.
+
 ```bash
 env -u LD_LIBRARY_PATH \
 singularity build --fakeroot \
@@ -84,6 +88,7 @@ singularity build --fakeroot \
 
 singularity run --cleanenv Flora-0.1.2-linux-x86_64.sif --version
 singularity run --cleanenv Flora-0.1.2-linux-x86_64.sif --help
+singularity test --cleanenv Flora-0.1.2-linux-x86_64.sif
 
 sha256sum Flora-0.1.2-linux-x86_64.sif \
   > Flora-0.1.2-linux-x86_64.sif.sha256
@@ -91,8 +96,9 @@ sha256sum -c Flora-0.1.2-linux-x86_64.sif.sha256
 ```
 
 Check that each command succeeds before continuing. The definition's `%test`
-checks Python imports and required executables. Final image size depends on the
-resolved dependencies. Cache directories are configured under `/tmp` by default.
+checks Python imports, required executables, and the versions of the managed
+alignment tools. Final image size depends on the resolved dependencies. Cache
+directories are configured under `/tmp` by default.
 
 If `--fakeroot` reports missing subuid mappings, ask the administrator to
 configure the build host, or build on another suitable host and copy the final
@@ -102,9 +108,10 @@ does not fix that host restriction.
 
 ## 5. Run and distribute
 
-Users need only the final SIF and a working Singularity installation, not Docker,
-the base image, or a separate Flora Conda environment. Bind every data/reference/
-output parent directory needed by the workflow. For example:
+The final SIF contains the Flora Conda environment and the managed alignment
+tools. The workflow uses the image's Bonefish for genome alignment by default.
+Bind every data, reference, and output parent directory needed by the workflow.
+For example:
 
 ```bash
 singularity run --cleanenv \
@@ -116,6 +123,13 @@ singularity run --cleanenv \
   --out-dir /data/sample_output \
   --sample-id sample
 ```
+
+This command writes results directly to `/data/sample_output/`. Open
+`qc/sample.single_cell_report.html` and find gene counts in
+`matrix/sample.gene_expression.tsv` and alignment messages in `logs/01_alignment.log`.
+To validate a new image with a small sample, add `--save-intermediate` and check
+`alignment/sample.aligned.sorted.bam` and its `.bai`. See the [README](../README.md)
+for the output layout and the default light-output retention policy.
 
 Upload the final SIF and checksum as optional GitHub Release assets. Do not
 commit images, Docker archives, or Miniforge installers to Git.

@@ -114,6 +114,39 @@ pub fn run(kind: WorkflowKind, mut args: Vec<OsString>) -> Result<()> {
     Ok(())
 }
 
+pub fn setup_tools(mut args: Vec<OsString>) -> Result<()> {
+    let explicit_python = take_option(&mut args, "--python")?;
+    let python = resolve_python(explicit_python)?;
+    let runtime = tempfile::Builder::new()
+        .prefix("flora-tools-runtime-")
+        .tempdir()
+        .context("failed to create Flora tools runtime directory")?;
+    let root = runtime.path();
+    let builder = root.join("packaging/stringtie_input");
+    let installer = root.join("packaging/setup_tools.pyc");
+    fs::create_dir_all(&builder)?;
+    write_asset(&installer, pyc!("setup_tools.pyc"))?;
+    write_asset(&builder.join("build.pyc"), pyc!("build.pyc"))?;
+    write_asset(
+        &builder.join("same_start_index.h"),
+        include_bytes!("../packaging/stringtie_input/same_start_index.h"),
+    )?;
+    write_asset(
+        &root.join("runtime-tools.json"),
+        include_bytes!("../runtime-tools.json"),
+    )?;
+
+    let status = Command::new(&python)
+        .arg(installer)
+        .args(args)
+        .status()
+        .context("failed to start the Flora tools installer")?;
+    if !status.success() {
+        bail!("Flora tools installation failed ({status})");
+    }
+    Ok(())
+}
+
 fn prepare_runtime(kind: WorkflowKind) -> Result<TempDir> {
     let runtime = tempfile::Builder::new()
         .prefix("flora-runtime-")
@@ -258,6 +291,7 @@ fn normalize_path_options(args: &mut [OsString]) -> Result<()> {
         "--ref_dir",
         "--gene-fasta",
         "--genome-fa",
+        "--genome-mmi",
         "--junction-bed",
         "--chrom-sizes",
         "--gene-gtf",
@@ -267,6 +301,13 @@ fn normalize_path_options(args: &mut [OsString]) -> Result<()> {
         "--glycine-outdir",
         "--ont-temp-dir",
     ];
+    const EXECUTABLE_OPTIONS: &[&str] = &["--bonefish-bin", "--stringtie-bin"];
+    let should_resolve = |option: &str, value: &std::ffi::OsStr| {
+        !value.is_empty()
+            && (PATH_OPTIONS.contains(&option)
+                || (EXECUTABLE_OPTIONS.contains(&option)
+                    && Path::new(value).file_name() != Some(value)))
+    };
     let cwd = std::env::current_dir().context("failed to resolve current directory")?;
     let mut index = 0;
     while index < args.len() {
@@ -286,19 +327,19 @@ fn normalize_path_options(args: &mut [OsString]) -> Result<()> {
             }
             continue;
         }
-        if PATH_OPTIONS.iter().any(|option| raw == *option) {
+        if PATH_OPTIONS.contains(&raw.as_ref()) || EXECUTABLE_OPTIONS.contains(&raw.as_ref()) {
             if index + 1 >= args.len() {
                 bail!("{} requires a value", raw)
             }
             let path = PathBuf::from(&args[index + 1]);
-            if path.is_relative() {
+            if path.is_relative() && should_resolve(&raw, path.as_os_str()) {
                 args[index + 1] = cwd.join(path).into_os_string();
             }
             index += 2;
             continue;
         }
         if let Some((option, value)) = raw.split_once('=') {
-            if option == "--fastq" || PATH_OPTIONS.contains(&option) {
+            if option == "--fastq" || should_resolve(option, std::ffi::OsStr::new(value)) {
                 let path = PathBuf::from(value);
                 if path.is_relative() {
                     args[index] = OsString::from(format!("{option}={}", cwd.join(path).display()));
@@ -333,6 +374,29 @@ mod tests {
         let mut directory = vec![OsString::from("--fastq-dir"), OsString::from("chunks")];
         normalize_path_options(&mut directory).unwrap();
         assert_eq!(PathBuf::from(&directory[1]), cwd.join("chunks"));
+    }
+
+    #[test]
+    fn normalizes_alignment_paths_but_preserves_names_on_path() {
+        let cwd = std::env::current_dir().unwrap();
+        let mut args = [
+            "--genome-mmi=spliced reference.mmi",
+            "--bonefish-bin",
+            "./tool dir/bonefish",
+            "--stringtie-bin",
+            "stringtie",
+        ]
+        .map(OsString::from);
+        normalize_path_options(&mut args).unwrap();
+        assert_eq!(
+            args[0].to_string_lossy(),
+            format!(
+                "--genome-mmi={}",
+                cwd.join("spliced reference.mmi").display()
+            )
+        );
+        assert_eq!(PathBuf::from(&args[2]), cwd.join("./tool dir/bonefish"));
+        assert_eq!(args[4], "stringtie");
     }
 
     #[test]

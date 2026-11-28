@@ -33,10 +33,13 @@ export PYTHONUTF8=1
 
 For an existing environment, use `conda env update -n flora -f environment.yml`
 instead of creating it, then reactivate it. Use Python 3.11.x.
+If Flora reports `Bad magic number in .pyc file`, reactivate the Flora
+environment and check that `python3 --version` shows 3.11.x.
 `environment.yml` includes the build tools and runtime dependencies;
 `environment.runtime.yml` is for packaged executables, and `requirements.txt`
-lists Python packages only. Both environment files include StringTie 2.2.2,
-`gffread`, and `gffcompare`, required for transcript reconstruction and annotation.
+lists Python packages only. [runtime-tools.json](runtime-tools.json) pins
+Bonefish and the patched StringTie. The Conda environment includes their setup
+prerequisites and the annotation tools `gffread` and `gffcompare`.
 
 Before compiling, locate libclang for `rust-htslib`/`bindgen`. This is only a
 build dependency, not a requirement for running the packaged executable.
@@ -93,6 +96,45 @@ barcode/UMI extraction and cell assignment only. Full workflows accept multiple
 files after `--fastq`, or a non-recursive `--fastq-dir`. Glycine defaults to
 10 concurrent jobs sharing 64 total threads.
 
+Install the native tools once from the activated environment before running
+the default workflow.
+
+```bash
+./target/release/flora setup-tools
+```
+
+This verifies and installs Bonefish CPU 0.5.0 and builds the same-start
+StringTie 2.2.2 used in the performance tests. It supports Linux x86_64 and
+Apple Silicon macOS. Before compiling Flora, the source checkout also supports
+`python3 packaging/setup_tools.py`.
+
+Genome alignment defaults to Bonefish 0.5.0. Flora automatically finds the
+binaries under `${XDG_DATA_HOME:-$HOME/.local/share}/flora/tools`. Set
+`FLORA_TOOLS_DIR` before setup and workflow runs to use a shared or custom
+location. Existing binaries can be selected with `--bonefish-bin` or
+`--stringtie-bin`. To select minimap2 for genome alignment, use
+`--genome-aligner minimap2`. The ONT transcript remapper uses minimap2. See
+[PBMC performance validation](docs/pbmc-perf.md).
+
+The default light-output mode streams trimmed cDNA to the aligner. If a
+prebuilt multi-part index supplied with `--genome-mmi` requires Bonefish to
+reread cDNA, use `--save-intermediate` or `--full-output` to write a regular
+FASTQ file before alignment. Use an index built from the same reference FASTA
+and allow space for the retained FASTQ.
+
+The experimental long-window seam retry is off by default. To test it in
+genome alignment, add both `--bonefish-seam-retry` and
+`--bonefish-bin /path/to/patched/bonefish` to a workflow command. Use the
+experimental Bonefish 0.5.0 binary from the seam-retry A/B test. It supports
+`BONEFISH_SEAM_RETRY`. The retry reduced alignment time on the 9011 benchmark
+subset and changed some splice chains and read assignments after independent
+assembly. Flora records the selected retry mode in the parameters TSV.
+
+Large temporary files use `<out-dir>/.flora-scratch` by default. Use
+`--ont-temp-dir /path/to/scratch` to select a separate filesystem. The ONT
+feature log records scratch capacity before processing and reports the remaining
+space on a sort or storage failure.
+
 ## Build the Linux x86_64 release
 
 After preparing the environment and passing the tests above, run:
@@ -122,7 +164,8 @@ it does not lower the binary's glibc requirement. For older hosts, use a
 compatible build environment or [Singularity](docs/singularity-build.md).
 
 Before publishing, extract the archive into a fresh directory, activate the
-runtime environment, and verify the executable independently:
+Python 3.11 environment prepared from the archive's `environment.yml`, and
+verify the executable independently:
 
 ```bash
 ./flora --version
@@ -130,6 +173,7 @@ runtime environment, and verify the executable independently:
 ./flora mixed --help
 ./flora glycine --help
 ./flora analyze --help
+./flora setup-tools
 cat BUILD_INFO.txt
 ```
 
@@ -137,15 +181,30 @@ Also run a representative dataset before release. Help commands verify the CLI,
 not the correctness of analysis results. The archive should contain only one
 executable, `flora`, and no private source files.
 
-## Workflow output policy
+## Workflow results
 
-Default light output retains the final tagged BAM/index, expression matrices,
-cell/barcode mapping, RNA clustering, QC, `qc/metrics_summary.xlsx`, logs, and
-the HTML report. After successful completion, reproducible read-level tables,
-the pre-tagging aligned BAM, and assignment TSVs are removed. An empty
-`alignment/` directory is also removed.
+Use a separate `--out-dir` for each run to keep results and logs together. The
+workflow writes directly to that directory. With `--out-dir /data/results/sample`
+and `--sample-id sample`, open `/data/results/sample/qc/sample.single_cell_report.html`
+when the console reports `Pipeline completed successfully.`
 
-Additional outputs:
+The following paths are relative to `--out-dir`. `<sample>` is the value of
+`--sample-id` and defaults to `sample`.
+
+| Path | Contents |
+| --- | --- |
+| `qc/<sample>.single_cell_report.html` | Interactive report. |
+| `qc/metrics_summary.xlsx` | Summary metrics, including full-depth saturation. |
+| `qc/<sample>.parameters.tsv`, `logs/` | Run parameters and stage logs. For genome alignment diagnostics, see `logs/01_alignment.log`. |
+| `qc/<sample>.rna_qc_metrics.tsv`, `qc/<sample>.per_cell_qc.tsv`, `qc/<sample>.saturation.tsv` | Sample QC, cell QC, and saturation. |
+| `upstream/barcode_to_cell.csv` | Barcode-to-cell mapping. |
+| `matrix/<sample>.gene_expression.tsv`, `matrix/<sample>.isoform_expression.tsv` | Gene and isoform expression counts. |
+| `matrix/<sample>.rna_cluster.tsv` | RNA clustering results. |
+| `matrix/<sample>.filtered.tagged.sorted.bam` and `.bam.bai` | Final tagged alignments and index. |
+| `glycine/<sample>.full-length-plus-rescued.fq.gz` | Default path for full-length and rescued reads when Glycine runs. |
+| `qc/barnyard_qc/` | Species-mixing QC for `flora mixed`. |
+
+The default ONT feature backend also writes these outputs.
 
 | Path | Contents |
 | --- | --- |
@@ -163,19 +222,26 @@ Each MEX directory contains `matrix.mtx.gz`, `features.tsv.gz`, and
 `barcodes.tsv.gz` (cell IDs). Processed matrices apply filters of at least 200
 features/cell, 3 cells/feature and at most 20% mitochondrial counts, then normalize
 to 10,000 counts/cell and apply `log10(1+x)`. Their cell set may differ from the
-report's original cell calls. `--skip-isoform` omits transcript matrices.
-The existing TSV matrices are retained.
+report's original cell calls. `--skip-isoform` omits the isoform expression TSV
+and transcript MEX matrices. The ONT backend still assembles the transcriptome
+for joint assignment.
+
+After a successful run, default light output removes reproducible read-level
+tables, assignment TSVs, and the pre-tagging aligned BAM/index. An empty
+`alignment/` directory is also removed. Use the final BAM and its index in
+`matrix/` for downstream alignment analysis.
 
 | Option | Effect |
 | --- | --- |
-| `--save-intermediate` | Retain read-level assignments and other debugging intermediates. |
-| `--full-output` | Retain upstream FASTQ outputs and workflow intermediates. |
-| `--remove-final-bam` | Remove all BAM/index files in `alignment/` and `matrix/` after successful analysis, including the final tagged BAM. |
+| `--save-intermediate` | Save `alignment/<sample>.cdna.fastq.gz`, the pre-tagging BAM/index, and other workflow intermediates. |
+| `--full-output` | Save the alignment FASTQ and intermediates, and write `matched_reads.fastq.gz`, `unmatched_reads.fastq.gz`, and `cell_reads.fastq.gz` in `upstream/`. |
+| `--remove-final-bam` | Remove workflow BAM/index files from `alignment/` and `matrix/` after successful analysis, including the final tagged BAM/index. |
 
-These switches control retained files, not analytical thresholds. BAM removal
-takes precedence when combined with either retention switch. Full workflows do
-not enable Glycine's extra classification FASTQs; run `flora glycine` with
-`--keep-all-outputs` to obtain those files.
+These switches control retained files. BAM removal in `alignment/` and `matrix/`
+takes precedence when combined with either retention switch. Saved ONT debugging
+files are under `transcriptome/intermediates/`. `--upstream-only` stops after
+barcode/UMI extraction and cell assignment. Run `flora glycine` with
+`--keep-all-outputs` to obtain Glycine's extra classification FASTQs.
 
 ## Publish a release
 

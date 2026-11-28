@@ -1,0 +1,34 @@
+{
+  "bonefish": {
+    "version": "bonefish 0.5.0",
+    "releases": {
+      "linux-x86_64": {
+        "archive": "bonefish-v0.5.0-linux-x86_64.tar.gz",
+        "url": "https://github.com/DylanCosto/bonefish/releases/download/v0.5.0/bonefish-v0.5.0-linux-x86_64.tar.gz",
+        "sha256": "216557338a1c3c205daa17aa956f24b98e1c51e48fce6128b4ed99314a5fcdda",
+        "member": "bonefish-v0.5.0-linux-x86_64/bonefish"
+      },
+      "macos-arm64": {
+        "archive": "bonefish-v0.5.0-macos-arm64.tar.gz",
+        "url": "https://github.com/DylanCosto/bonefish/releases/download/v0.5.0/bonefish-v0.5.0-macos-arm64.tar.gz",
+        "sha256": "67ce0f1fa873196d4e1994282d9521773765047816d766b63155f125e173c2c9",
+        "member": "bonefish-v0.5.0-macos-arm64/bonefish"
+      }
+    }
+  },
+  "stringtie": {
+    "version": "2.2.2",
+    "patch": "same-start-candidate-index-v1",
+    "index_sha256": "5035220a2872d4155c9569345f713bdc65d176772c48592705c29b2a1dc187bb",
+    "source": {
+      "archive": "stringtie-2.2.2.tar.gz",
+      "url": "https://codeload.github.com/gpertea/stringtie/tar.gz/refs/tags/v2.2.2",
+      "sha256": "17382efe7240c0efb2ac5efd6493882d58797062b3cc713344fb1a0211cb8ce1"
+    },
+    "libdeflate": {
+      "archive": "libdeflate.tar.gz",
+      "url": "https://codeload.github.com/ebiggers/libdeflate/tar.gz/9b565afd996d8b798fc7b94cddcc7cfa49293050",
+      "sha256": "8bc23999e454da31b8117db932b859107f1023d144ce89b4165cb819bfacdf2d"
+    }
+  }
+}

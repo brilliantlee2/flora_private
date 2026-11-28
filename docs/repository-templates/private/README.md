@@ -35,8 +35,8 @@ Cargo.toml / Cargo.lock       Rust package and locked dependencies
 src/                          Flora and integrated Glycine Rust source
 vendor/                       Patched rust-htslib and edlib_rs
 scripts/                      Python analysis, QC, plotting, and report source
-run_all.sh                    Private single-species regression baseline
-run_all_mixed_species.sh      Private mixed-species regression baseline
+run_all.sh                    Single-species workflow
+run_all_mixed_species.sh      Mixed-species workflow
 environment.yml               Private build and test environment
 environment.runtime.yml       Public binary runtime environment
 packaging/                    Release packaging tools
@@ -80,7 +80,9 @@ export LIBCLANG_PATH="$(dirname "$(find "$CONDA_PREFIX" -name 'libclang.so*' -pr
 ```bash
 cargo build --release --locked
 cargo test --locked
-bash -n run_all.sh run_all_mixed_species.sh packaging/build_binary_release.sh
+bash -n run_all.sh
+bash -n run_all_mixed_species.sh
+bash -n packaging/build_binary_release.sh
 python -m unittest discover -s tests -v
 ```
 
@@ -88,32 +90,35 @@ Verify the main CLI:
 
 ```bash
 ./target/release/flora --version
+./target/release/flora --help
+./target/release/flora mixed --help
 ./target/release/flora glycine --help
 ./target/release/flora analyze --help
-bash run_all.sh -h
+./target/release/flora setup-tools
 ```
 
 The full workflow accepts multiple paths after one `--fastq`, or a
 non-recursive `--fastq-dir`. Parallel Glycine defaults are 10 concurrent jobs
 sharing 64 total threads; verify these options in `flora --help` after changes.
 
-Before producing a single-binary public release, `flora run --help` and
-`flora run-mixed --help` must also succeed. The packaging script deliberately
-stops when either command is unavailable.
+`flora setup-tools` installs the default Bonefish 0.5.0 genome aligner and
+builds the same-start StringTie 2.2.2. Select minimap2 for genome alignment
+with `--genome-aligner minimap2`. For a multi-part Bonefish index supplied through
+`--genome-mmi`, use `--save-intermediate` or `--full-output` so the aligner can
+reread the cDNA FASTQ.
 
 ## Workflow output policy
 
-Default light-output mode retains the final tagged BAM and index, expression
-matrices, cell/barcode mapping, clustering results, QC tables,
-`qc/metrics_summary.xlsx`, logs, and the HTML report. After report generation,
-Flora removes reproducible read-level tables, the pre-tagging aligned BAM,
-assignment TSVs, and other large intermediates. Use `--save-intermediate` for
-debugging files or `--full-output` for all upstream FASTQ outputs and
-intermediates. These options do not alter analytical results.
+The workflow writes directly to `--out-dir`. Open
+`qc/<sample>.single_cell_report.html` for the report, `qc/metrics_summary.xlsx`
+for the workbook, and `matrix/` for expression and the final tagged BAM/index.
+Find the run settings in `qc/<sample>.parameters.tsv` and stage logs in `logs/`.
 
-Use `--remove-final-bam` to remove every alignment/matrix BAM and index after
-the report succeeds, including the final tagged BAM. Expression matrices, QC,
-`metrics_summary.xlsx`, and the HTML report remain available.
+Default light output cleans up the pre-tagging alignment and read-level
+intermediates. Use `--save-intermediate` to retain the cDNA FASTQ and debugging
+files, or `--full-output` to also write matched, unmatched, and assigned-cell
+reads FASTQ files. `--remove-final-bam` removes workflow BAMs and indexes from
+`alignment/` and `matrix/` after a successful run.
 
 ## Version update checklist
 
@@ -161,7 +166,7 @@ conda activate flora
 If the environment already exists, update it from the checked-in definition:
 
 ```bash
-conda env update -n flora -f environment.yml --prune
+conda env update -n flora -f environment.yml
 conda activate flora
 ```
 
@@ -178,8 +183,8 @@ samtools --version | head -n 2
 minimap2 --version
 bedtools --version
 
-export LIBCLANG_PATH="$(dirname "$(find "$CONDA_PREFIX" -name 'libclang.so*' -print -quit)")"
-test -n "$LIBCLANG_PATH"
+LIBCLANG_SO="$(find -L "$CONDA_PREFIX/lib" -maxdepth 1 -type f -name 'libclang.so*' -print -quit)"
+test -n "$LIBCLANG_SO" && export LIBCLANG_PATH="$(dirname "$LIBCLANG_SO")"
 ```
 
 Python must report `3.11.x`.
@@ -223,8 +228,8 @@ PYTHON_BIN="$CONDA_PREFIX/bin/python" \
   bash packaging/build_binary_release.sh
 ```
 
-Do not set a glibc ceiling lower than the symbols provided by the build host and
-linked libraries. The detected requirement is recorded in `BUILD_INFO.txt`.
+This ceiling rejects binaries that depend on newer glibc symbols. The detected
+requirement is recorded in `BUILD_INFO.txt`.
 
 ### 5. Locate the generated files
 
@@ -233,14 +238,11 @@ dist/Flora-<version>-linux-x86_64.tar.gz
 dist/Flora-<version>-linux-x86_64.tar.gz.sha256
 ```
 
-The script builds only `flora`, stages it at the archive root, compiles an
-allowlist of Python files as deterministic CPython 3.11 bytecode, copies the
-runtime environment and public documentation, removes extended attributes, and
-generates and verifies SHA256 automatically.
-
-The script deliberately refuses to package until both `flora run --help` and
-`flora run-mixed --help` succeed. During the migration period this failure is
-expected and prevents publication of an incomplete binary.
+The script builds only `flora`, stages it at the archive root, and copies the
+runtime environment and public documentation. Python assets are compiled and
+embedded in the executable. The script checks `flora --help`,
+`flora mixed --help`, and `flora setup-tools --help`, and generates and verifies
+the SHA-256 checksum.
 
 ## Build a Singularity image
 
@@ -254,7 +256,7 @@ Create an isolated build directory and copy the inputs:
 
 ```bash
 mkdir -p singularity_build
-cp dist/Flora-0.1.1-linux-x86_64.tar.gz singularity_build/
+cp dist/Flora-0.1.2-linux-x86_64.tar.gz singularity_build/
 cp packaging/singularity/Flora.def singularity_build/
 cd singularity_build
 ```
@@ -289,7 +291,7 @@ The four build inputs must be in the same directory:
 
 ```text
 Flora.def
-Flora-0.1.1-linux-x86_64.tar.gz
+Flora-0.1.2-linux-x86_64.tar.gz
 Miniforge3-Linux-x86_64.sh
 flora-base-ubuntu22.04.sif
 ```
@@ -299,30 +301,30 @@ Build and validate the SIF:
 ```bash
 env -u LD_LIBRARY_PATH \
 singularity build --fakeroot \
-  Flora-0.1.1-linux-x86_64.sif \
+  Flora-0.1.2-linux-x86_64.sif \
   Flora.def
 
 singularity run --cleanenv \
-  Flora-0.1.1-linux-x86_64.sif \
+  Flora-0.1.2-linux-x86_64.sif \
   --version
 
 singularity run --cleanenv \
-  Flora-0.1.1-linux-x86_64.sif \
+  Flora-0.1.2-linux-x86_64.sif \
   --help
 
-sha256sum Flora-0.1.1-linux-x86_64.sif \
-  > Flora-0.1.1-linux-x86_64.sif.sha256
+sha256sum Flora-0.1.2-linux-x86_64.sif \
+  > Flora-0.1.2-linux-x86_64.sif.sha256
 ```
 
-The tested image contains Flora, Python 3.11, samtools, minimap2, bedtools, and
-all Python dependencies, and is approximately 820 MiB. `Flora.def` uses
-per-user writable cache directories under `/tmp` for Fontconfig, Matplotlib,
-and Numba.
+`Flora.def` installs Bonefish 0.5.0 and the same-start StringTie 2.2.2 in
+`/opt/flora/tools` during the SIF build and checks both versions. The build
+requires network access for the pinned tool archives as well as the base
+dependencies. The final image size depends on the resolved packages.
 
 ## Validate the release archive
 
 ```bash
-ARCHIVE="dist/Flora-0.1.1-linux-x86_64.tar.gz"
+ARCHIVE="dist/Flora-0.1.2-linux-x86_64.tar.gz"
 
 tar -tzf "$ARCHIVE" | head -50
 tar -tzf "$ARCHIVE" | \
@@ -335,18 +337,18 @@ tar -tzf "$ARCHIVE" | \
 Extract and test independently:
 
 ```bash
-rm -rf /tmp/flora-release-test
-mkdir -p /tmp/flora-release-test
-tar -xzf "$ARCHIVE" -C /tmp/flora-release-test
-cd /tmp/flora-release-test/Flora-0.1.1-linux-x86_64
+release_check_dir="$(mktemp -d)"
+tar -xzf "$ARCHIVE" -C "$release_check_dir"
+cd "$release_check_dir/Flora-0.1.2-linux-x86_64"
 
 file flora
 ldd flora
 ./flora --version
+./flora --help
+./flora mixed --help
 ./flora glycine --help
-./flora run --help
-./flora run-mixed --help
-cat PYTHON_ABI.txt
+./flora analyze --help
+./flora setup-tools --help
 cat BUILD_INFO.txt
 ```
 
@@ -367,15 +369,15 @@ On Linux:
 
 ```bash
 cd /path/to/Flora
-sha256sum dist/Flora-0.1.1-linux-x86_64.tar.gz \
-  > dist/Flora-0.1.1-linux-x86_64.tar.gz.sha256
+sha256sum dist/Flora-0.1.2-linux-x86_64.tar.gz \
+  > dist/Flora-0.1.2-linux-x86_64.tar.gz.sha256
 ```
 
 Verify it:
 
 ```bash
 cd dist
-sha256sum -c Flora-0.1.1-linux-x86_64.tar.gz.sha256
+sha256sum -c Flora-0.1.2-linux-x86_64.tar.gz.sha256
 ```
 
 ## Publish to the public GitHub repository
@@ -392,11 +394,11 @@ Commit and push only the public documentation. Upload the `.tar.gz` and `.sha256
 With GitHub CLI:
 
 ```bash
-gh release create v0.1.1 \
-  dist/Flora-0.1.1-linux-x86_64.tar.gz \
-  dist/Flora-0.1.1-linux-x86_64.tar.gz.sha256 \
+gh release create v0.1.2 \
+  dist/Flora-0.1.2-linux-x86_64.tar.gz \
+  dist/Flora-0.1.2-linux-x86_64.tar.gz.sha256 \
   --repo brilliantlee2/Flora \
-  --title "Flora v0.1.1" \
+  --title "Flora v0.1.2" \
   --generate-notes
 ```
 

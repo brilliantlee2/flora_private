@@ -2,10 +2,12 @@
 
 import contextlib
 import argparse
+import hashlib
 import importlib.util
 import io
 from pathlib import Path
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import threading
@@ -79,7 +81,7 @@ class BatchTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 MOD.execution_layout(threads, jobs)
 
-    def test_lookup_is_one_join_and_handles_missing_and_other_chromosome(self):
+    def test_lookup_queries_feature_key_without_writing_temp_rows(self):
         db = sqlite3.connect(":memory:")
         self.addCleanup(db.close)
         db.execute("CREATE TABLE features(chrom,read_id,gene,transcript,reason,PRIMARY KEY(chrom,read_id)) WITHOUT ROWID")
@@ -89,10 +91,42 @@ class BatchTests(unittest.TestCase):
         ])
         statements = []
         db.set_trace_callback(statements.append)
-        self.assertTrue(hasattr(MOD, "lookup_batch"), "need bounded batch joins")
         result = MOD.lookup_batch(db, "features", ["same", "missing"], "chr1")
         self.assertEqual(result, {"same": ("G1", "T1", "candidate")})
-        self.assertEqual(sum(s.lstrip().upper().startswith("SELECT") for s in statements), 1)
+        self.assertEqual(len(statements), 1)
+        self.assertIn("WHERE chrom='chr1' AND read_id IN (", statements[0])
+
+    @unittest.skipUnless(hasattr(sqlite3.Connection, "setlimit"), "requires Python sqlite3 setlimit")
+    def test_feature_shard_chunks_queries_for_sqlite_parameter_limit(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "shard.sqlite"
+            with MOD.open_scratch_database(path) as db:
+                db.executemany("INSERT INTO features VALUES (?,?,?,?,?)", [
+                    ("chr1", "a", "G1", "T1", "candidate"),
+                    ("chr1", "c", "G2", "T2", "candidate"),
+                    ("chr2", "e", "G3", "T3", "candidate"),
+                ])
+            db.close()
+            with MOD.ChromosomeFeatureLookup({"chr1": path}) as lookup:
+                self.assertEqual(lookup.lookup("chr1", []), {})
+                lookup.db.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, 3)
+                statements = []
+                lookup.db.set_trace_callback(statements.append)
+                self.assertEqual(lookup.lookup("chr1", ["e", "a", "b", "c", "d", "c"]), {
+                    "a": ("G1", "T1", "candidate"),
+                    "c": ("G2", "T2", "candidate"),
+                })
+                self.assertEqual(lookup.lookup("chr1", []), {})
+                self.assertEqual(len(statements), 3)
+                self.assertTrue(all("WHERE chrom='chr1' AND read_id IN (" in sql for sql in statements))
+
+    def test_stringtie_command_accepts_an_explicit_path(self):
+        self.assertEqual(MOD.stringtie_executable(None), "stringtie")
+        binary = MOD.stringtie_executable("./my StringTie")
+        self.assertEqual(binary, str(Path("./my StringTie").resolve()))
+        self.assertEqual(MOD.assembly_command(binary, "reference.gtf", "stringtie.gff", 8, "-c 2", "flora_chr3"),
+                         [binary, "-L", "-c", "2", "-p", "8", "-G", "reference.gtf", "-l", "flora_chr3",
+                          "-o", "stringtie.gff", "-"])
 
     def test_duplicate_validation_catches_cross_batch_and_same_batch(self):
         self.assertTrue(hasattr(MOD, "validate_read_ids"), "need batch duplicate validation")
@@ -143,6 +177,44 @@ class BatchTests(unittest.TestCase):
 
 
 class BamParityTests(unittest.TestCase):
+    def test_standalone_uses_output_scratch_and_reports_capacity_before_cleanup(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            output = root / "results"
+            genome = root / "genome.fa"
+            genome.touch()
+            genome.with_suffix(".fa.fai").touch()
+            tool = root / "tool"
+            tool.touch()
+            args = argparse.Namespace(
+                output_dir=output, genome=genome, gtf=root / "genes.gtf",
+                threads=16, save_intermediate=False,
+            )
+            log = io.StringIO()
+            sort_error = subprocess.CalledProcessError(1, ["samtools", "sort"])
+
+            def fail_with_live_scratch(gtf, scratch):
+                self.assertEqual(scratch.parent, output / ".flora-scratch")
+                self.assertTrue(scratch.is_dir())
+                raise sort_error
+
+            def version(command, **kwargs):
+                return subprocess.CompletedProcess(command, 0, "2.2.2", "")
+
+            with (
+                patch.object(MOD.shutil, "which", return_value=str(tool)),
+                patch.object(MOD.subprocess, "run", side_effect=version),
+                patch.object(MOD, "split_annotation", side_effect=fail_with_live_scratch),
+                contextlib.redirect_stderr(log),
+            ):
+                with self.assertRaises(subprocess.CalledProcessError) as error:
+                    MOD.run(args)
+
+            self.assertIs(error.exception, sort_error)
+            self.assertIn("Scratch free space at failure", log.getvalue())
+            self.assertIn("Output free space at failure", log.getvalue())
+            self.assertEqual(list((output / ".flora-scratch").iterdir()), [])
+
     def test_run_isolates_worker_databases_and_uses_requested_scratch(self):
         import pysam
         import subprocess
@@ -188,10 +260,17 @@ class BamParityTests(unittest.TestCase):
             def version(command, **kwargs):
                 return subprocess.CompletedProcess(command, 0, "2.2.2" if command[0] == "stringtie" else "test", "")
             self.assertTrue(hasattr(MOD, "execution_layout"), "need isolated chromosome workers")
-            with patch.object(MOD.shutil, "which", return_value="tool"), patch.object(MOD.subprocess, "run", side_effect=version), \
+            tool = root / "tool"
+            tool.write_bytes(b"mock executable identity")
+            with patch.object(MOD.shutil, "which", return_value=str(tool)), patch.object(MOD.subprocess, "run", side_effect=version), \
                     patch.object(MOD, "assemble", side_effect=assemble), patch.object(MOD, "remap_chromosome", side_effect=remap), \
-                    patch.object(MOD, "load_candidates", return_value={"T": ("G", "T")}), contextlib.redirect_stderr(io.StringIO()):
+                    patch.object(MOD, "load_candidates", return_value={"T": ("G", "T")}), \
+                    patch.dict("os.environ", {"STRINGTIE_INPUT_LOOKUP": "indexed"}), contextlib.redirect_stderr(io.StringIO()):
                 MOD.run(args)
+            versions = MOD.json.loads((args.output_dir / "tool_versions.json").read_text())
+            self.assertEqual(versions["stringtie_executable"], str(tool.resolve()))
+            self.assertEqual(versions["stringtie_sha256"], hashlib.sha256(tool.read_bytes()).hexdigest())
+            self.assertEqual(versions["stringtie_input_lookup_requested"], "indexed")
             self.assertEqual(len(worker_paths), 2)
             self.assertFalse(list(scratch.iterdir()), "scratch must be removed after success")
             self.assertEqual((root / "g.tsv").read_text(), "r0\tAssigned\t60\tG\nr1\tAssigned\t60\tG\n")

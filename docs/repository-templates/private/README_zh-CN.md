@@ -33,8 +33,8 @@ Cargo.toml / Cargo.lock       Rust 包和锁定依赖
 src/                          Flora 与内置 Glycine Rust 源码
 vendor/                       修改过的 rust-htslib 和 edlib_rs
 scripts/                      Python 分析、QC、作图和报告源码
-run_all.sh                    私有单物种回归基准
-run_all_mixed_species.sh      私有 mixed-species 回归基准
+run_all.sh                    单物种流程
+run_all_mixed_species.sh      混合物种流程
 environment.yml               私有构建与测试环境
 environment.runtime.yml       公开二进制运行环境
 packaging/                    发行打包工具
@@ -78,7 +78,9 @@ export LIBCLANG_PATH="$(dirname "$(find "$CONDA_PREFIX" -name 'libclang.so*' -pr
 ```bash
 cargo build --release --locked
 cargo test --locked
-bash -n run_all.sh run_all_mixed_species.sh packaging/build_binary_release.sh
+bash -n run_all.sh
+bash -n run_all_mixed_species.sh
+bash -n packaging/build_binary_release.sh
 python -m unittest discover -s tests -v
 ```
 
@@ -86,29 +88,32 @@ python -m unittest discover -s tests -v
 
 ```bash
 ./target/release/flora --version
+./target/release/flora --help
+./target/release/flora mixed --help
 ./target/release/flora glycine --help
 ./target/release/flora analyze --help
-bash run_all.sh -h
+./target/release/flora setup-tools
 ```
 
 全流程支持在一个 `--fastq` 后传入多个路径，也支持非递归的
 `--fastq-dir`。并行 Glycine 默认为10个并发任务共享64个总线程；修改后应通过
 `flora --help` 检查这些选项。
 
-生成单二进制公开发行包前，`flora run --help` 和
-`flora run-mixed --help` 也必须成功。如果任意命令不可用，打包脚本会主动停止。
+`flora setup-tools` 会安装默认基因组比对器 Bonefish 0.5.0 并构建 StringTie 2.2.2
+same-start 版。用 `--genome-aligner minimap2` 可以选择 minimap2。通过 `--genome-mmi`
+提供 Bonefish 多分片索引时，加 `--save-intermediate` 或 `--full-output`，让比对器可以
+重新读取 cDNA FASTQ。
 
 ## 流程输出策略
 
-默认轻量输出模式会保留最终带标签 BAM 及索引、表达矩阵、cell/barcode 对应关系、
-聚类结果、QC 表格、`qc/metrics_summary.xlsx`、日志和 HTML 报告。报告生成后，
-Flora 会删除可重新生成的 read-level 表格、加标签前的 aligned BAM、assignment
-TSV 和其他大型中间文件。调试时使用 `--save-intermediate`；需要全部上游 FASTQ
-和中间文件时使用 `--full-output`。这些选项不会改变分析结果。
+流程直接写到 `--out-dir`。在 `qc/<sample>.single_cell_report.html` 查看报告，
+在 `qc/metrics_summary.xlsx` 查看工作簿，在 `matrix/` 找到表达矩阵和最终带标签的
+BAM 及索引。运行参数见 `qc/<sample>.parameters.tsv`，阶段日志见 `logs/`。
 
-使用 `--remove-final-bam` 可在报告成功后删除全部 alignment/matrix BAM 及索引，
-包括最终 tagged BAM；表达矩阵、QC、`metrics_summary.xlsx` 和 HTML 报告仍会
-保留。
+默认轻量模式清理加标签前的比对结果和逐 read 中间文件。用 `--save-intermediate`
+保留 cDNA FASTQ 和调试文件，用 `--full-output` 可额外输出匹配、未匹配和细胞
+reads FASTQ。`--remove-final-bam` 在分析成功后清理 `alignment/` 和 `matrix/` 下
+由流程生成的 BAM 和索引。
 
 ## 版本更新清单
 
@@ -156,7 +161,7 @@ conda activate flora
 如果环境已经存在，根据仓库中的环境文件更新：
 
 ```bash
-conda env update -n flora -f environment.yml --prune
+conda env update -n flora -f environment.yml
 conda activate flora
 ```
 
@@ -173,8 +178,8 @@ samtools --version | head -n 2
 minimap2 --version
 bedtools --version
 
-export LIBCLANG_PATH="$(dirname "$(find "$CONDA_PREFIX" -name 'libclang.so*' -print -quit)")"
-test -n "$LIBCLANG_PATH"
+LIBCLANG_SO="$(find -L "$CONDA_PREFIX/lib" -maxdepth 1 -type f -name 'libclang.so*' -print -quit)"
+test -n "$LIBCLANG_SO" && export LIBCLANG_PATH="$(dirname "$LIBCLANG_SO")"
 ```
 
 Python 必须显示为 `3.11.x`。
@@ -218,8 +223,7 @@ PYTHON_BIN="$CONDA_PREFIX/bin/python" \
   bash packaging/build_binary_release.sh
 ```
 
-不要将 glibc 上限设置得低于构建主机和链接库所需的版本。检测到的需求会记录在
-`BUILD_INFO.txt` 中。
+该上限会拒绝需要更高版本 glibc 符号的二进制。检测到的需求会记录在 `BUILD_INFO.txt` 中。
 
 ### 5. 查看输出文件
 
@@ -228,11 +232,9 @@ dist/Flora-<version>-linux-x86_64.tar.gz
 dist/Flora-<version>-linux-x86_64.tar.gz.sha256
 ```
 
-脚本只构建 `flora`，将其放在压缩包根目录，将白名单中的 Python 脚本编译为确定性
-CPython 3.11 字节码，复制运行环境和公开文档，清理扩展属性，并自动生成与验证 SHA256。
-
-只有 `flora run --help` 和 `flora run-mixed --help` 都成功时才允许打包。在迁移尚未完成的
-阶段，这个失败是预期行为，用于防止发布不完整的二进制包。
+脚本只构建 `flora`，将其放在压缩包根目录，并复制运行环境和公开文档。Python 资源
+编译后嵌入可执行文件。脚本检查 `flora --help`、`flora mixed --help` 和
+`flora setup-tools --help`，并自动生成与验证 SHA-256 校验值。
 
 ## 构建 Singularity 镜像
 
@@ -245,7 +247,7 @@ Python/生信依赖封装到 Singularity SIF 中。已经验证的基础系统�
 
 ```bash
 mkdir -p singularity_build
-cp dist/Flora-0.1.1-linux-x86_64.tar.gz singularity_build/
+cp dist/Flora-0.1.2-linux-x86_64.tar.gz singularity_build/
 cp packaging/singularity/Flora.def singularity_build/
 cd singularity_build
 ```
@@ -279,7 +281,7 @@ curl -L --fail --retry 5 --retry-delay 5 \
 
 ```text
 Flora.def
-Flora-0.1.1-linux-x86_64.tar.gz
+Flora-0.1.2-linux-x86_64.tar.gz
 Miniforge3-Linux-x86_64.sh
 flora-base-ubuntu22.04.sif
 ```
@@ -289,29 +291,29 @@ flora-base-ubuntu22.04.sif
 ```bash
 env -u LD_LIBRARY_PATH \
 singularity build --fakeroot \
-  Flora-0.1.1-linux-x86_64.sif \
+  Flora-0.1.2-linux-x86_64.sif \
   Flora.def
 
 singularity run --cleanenv \
-  Flora-0.1.1-linux-x86_64.sif \
+  Flora-0.1.2-linux-x86_64.sif \
   --version
 
 singularity run --cleanenv \
-  Flora-0.1.1-linux-x86_64.sif \
+  Flora-0.1.2-linux-x86_64.sif \
   --help
 
-sha256sum Flora-0.1.1-linux-x86_64.sif \
-  > Flora-0.1.1-linux-x86_64.sif.sha256
+sha256sum Flora-0.1.2-linux-x86_64.sif \
+  > Flora-0.1.2-linux-x86_64.sif.sha256
 ```
 
-实测镜像包含 Flora、Python 3.11、samtools、minimap2、bedtools 和完整 Python
-依赖，大小约为 820 MiB。`Flora.def` 使用每个用户独立的 `/tmp` 缓存目录，避免
-只读 SIF 中的 Fontconfig、Matplotlib 和 Numba 缓存警告。
+`Flora.def` 在构建时将 Bonefish 0.5.0 和 StringTie 2.2.2 same-start 版安装到
+`/opt/flora/tools`，并检查两个工具的版本。构建机需要联网获取固定版本的工具归档和
+软件依赖。最终镜像大小取决于实际安装的软件包。
 
 ## 检查发行包
 
 ```bash
-ARCHIVE="dist/Flora-0.1.1-linux-x86_64.tar.gz"
+ARCHIVE="dist/Flora-0.1.2-linux-x86_64.tar.gz"
 
 tar -tzf "$ARCHIVE" | head -50
 tar -tzf "$ARCHIVE" | \
@@ -324,18 +326,18 @@ tar -tzf "$ARCHIVE" | \
 独立解压测试：
 
 ```bash
-rm -rf /tmp/flora-release-test
-mkdir -p /tmp/flora-release-test
-tar -xzf "$ARCHIVE" -C /tmp/flora-release-test
-cd /tmp/flora-release-test/Flora-0.1.1-linux-x86_64
+release_check_dir="$(mktemp -d)"
+tar -xzf "$ARCHIVE" -C "$release_check_dir"
+cd "$release_check_dir/Flora-0.1.2-linux-x86_64"
 
 file flora
 ldd flora
 ./flora --version
+./flora --help
+./flora mixed --help
 ./flora glycine --help
-./flora run --help
-./flora run-mixed --help
-cat PYTHON_ABI.txt
+./flora analyze --help
+./flora setup-tools --help
 cat BUILD_INFO.txt
 ```
 
@@ -356,15 +358,15 @@ Linux：
 
 ```bash
 cd /path/to/Flora
-sha256sum dist/Flora-0.1.1-linux-x86_64.tar.gz \
-  > dist/Flora-0.1.1-linux-x86_64.tar.gz.sha256
+sha256sum dist/Flora-0.1.2-linux-x86_64.tar.gz \
+  > dist/Flora-0.1.2-linux-x86_64.tar.gz.sha256
 ```
 
 验证：
 
 ```bash
 cd dist
-sha256sum -c Flora-0.1.1-linux-x86_64.tar.gz.sha256
+sha256sum -c Flora-0.1.2-linux-x86_64.tar.gz.sha256
 ```
 
 ## 发布到公开 GitHub 仓库
@@ -381,11 +383,11 @@ cp docs/repository-templates/public/README_zh-CN.md /path/to/Flora-public/README
 使用 GitHub CLI：
 
 ```bash
-gh release create v0.1.1 \
-  dist/Flora-0.1.1-linux-x86_64.tar.gz \
-  dist/Flora-0.1.1-linux-x86_64.tar.gz.sha256 \
+gh release create v0.1.2 \
+  dist/Flora-0.1.2-linux-x86_64.tar.gz \
+  dist/Flora-0.1.2-linux-x86_64.tar.gz.sha256 \
   --repo brilliantlee2/Flora \
-  --title "Flora v0.1.1" \
+  --title "Flora v0.1.2" \
   --generate-notes
 ```
 

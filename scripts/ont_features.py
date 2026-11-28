@@ -11,9 +11,12 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 import csv
 from dataclasses import dataclass
+from functools import lru_cache
 import gzip
+import hashlib
 import itertools
 import json
+import os
 from pathlib import Path
 import re
 import shlex
@@ -61,6 +64,15 @@ def select_features(hits, genome_mapq, min_mapq=30, min_read_cov=0.4, min_tr_cov
 
 def log(message):
     print(f"[ont_features] {message}", file=sys.stderr, flush=True)
+
+
+def log_disk_space(label, path):
+    try:
+        free = shutil.disk_usage(path).free / (1024 ** 3)
+    except OSError as error:
+        log(f"{label}: unavailable for {path} ({error})")
+    else:
+        log(f"{label}: {free:.1f} GiB ({path})")
 
 
 def open_scratch_database(path, genome_path=None):
@@ -116,17 +128,35 @@ class ChromosomeFeatureLookup:
         self.close()
 
 
+@lru_cache(maxsize=16)
+def feature_lookup_sql(count):
+    placeholders = ",".join("?" for _ in range(count))
+    return ("SELECT read_id,gene,transcript,reason FROM features "
+            f"WHERE chrom=? AND read_id IN ({placeholders})")
+
+
+def lookup_features(db, names, chrom):
+    keys = sorted(set(names))
+    max_variables = db.getlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER) if hasattr(db, "getlimit") else 999
+    chunk_size = min(10_000, max_variables - 1)
+    result = {}
+    for start in range(0, len(keys), chunk_size):
+        chunk = keys[start:start + chunk_size]
+        for read_id, gene, transcript, reason in db.execute(feature_lookup_sql(len(chunk)), (chrom, *chunk)):
+            result[read_id] = gene, transcript, reason
+    return result
+
+
 def lookup_batch(db, table, names, chrom=None):
-    if table not in {"features", "genome"}:
+    if table == "features":
+        return lookup_features(db, names, chrom)
+    if table != "genome":
         raise ValueError(f"Invalid lookup table: {table}")
     db.execute("CREATE TEMP TABLE IF NOT EXISTS lookup_reads(read_id TEXT PRIMARY KEY) WITHOUT ROWID")
     db.execute("DELETE FROM lookup_reads")
     db.executemany("INSERT INTO lookup_reads VALUES (?)", ((n,) for n in sorted(set(names))))
     # Read requests in key order for locality; one join per batch, not one SELECT/read.
-    if table == "genome":
-        rows = db.execute("SELECT r.read_id,g.mapq FROM lookup_reads r CROSS JOIN genome g ON g.read_id=r.read_id")
-    else:
-        rows = db.execute("SELECT r.read_id,f.gene,f.transcript,f.reason FROM lookup_reads r CROSS JOIN features f ON f.read_id=r.read_id AND f.chrom=?", (chrom,))
+    rows = db.execute("SELECT r.read_id,g.mapq FROM lookup_reads r CROSS JOIN genome g ON g.read_id=r.read_id")
     return {row[0]: row[1:] for row in rows}
 
 
@@ -193,7 +223,10 @@ def process_chromosome(item, args, root, genome, threads):
     genome_db = directory / "genome.sqlite"
     db = open_scratch_database(directory / "features.sqlite", genome_path=genome_db)
     try:
-        assemble(args.bam, chrom, gtf, genome, directory, threads, args.stringtie_opts, f"flora_chr{number}")
+        assembly_kwargs = {}
+        if getattr(args, "stringtie_bin", None):
+            assembly_kwargs["stringtie_bin"] = stringtie_executable(args.stringtie_bin)
+        assemble(args.bam, chrom, gtf, genome, directory, threads, args.stringtie_opts, f"flora_chr{number}", **assembly_kwargs)
         fasta = directory / "transcriptome.fa"
         if fasta.exists() and fasta.stat().st_size:
             remap_chromosome(db, args.bam, chrom, fasta, directory / "transcript.bam", threads)
@@ -350,11 +383,20 @@ def assign_chromosome(db, chrom, transcript_bam, candidates, min_mapq):
     log(f"Stage feature_assignment ({chrom}) elapsed: {time.monotonic() - started:.2f}s; reads={processed}")
 
 
-def assemble(bam, chrom, gtf, genome, directory, threads, options, label):
+def stringtie_executable(value):
+    # Preserve explicit ./name paths: Path('./name') otherwise stringifies to name.
+    return str(Path(value).expanduser().resolve()) if value is not None else "stringtie"
+
+
+def assembly_command(binary, gtf, output, threads, options, label):
+    return [str(binary), "-L", *shlex.split(options), "-p", str(threads),
+            "-G", str(gtf), "-l", label, "-o", str(output), "-"]
+
+
+def assemble(bam, chrom, gtf, genome, directory, threads, options, label, stringtie_bin="stringtie"):
     started = time.monotonic()
     view = subprocess.Popen(["samtools", "view", "-h", str(bam), chrom], stdout=subprocess.PIPE)
-    command = ["stringtie", "-L", *shlex.split(options), "-p", str(threads),
-               "-G", str(gtf), "-l", label, "-o", str(directory / "stringtie.gff"), "-"]
+    command = assembly_command(stringtie_bin, gtf, directory / "stringtie.gff", threads, options, label)
     log(shlex.join(command))
     try:
         result = subprocess.run(command, stdin=view.stdout)
@@ -498,7 +540,8 @@ def write_tagged_assignments(db, tagged_bam, output_bam, gene_tsv, transcript_ts
 def run(args):
     import pysam
 
-    for name in ("minimap2", "samtools", "stringtie", "gffread", "gffcompare"):
+    selected_stringtie = stringtie_executable(getattr(args, "stringtie_bin", None))
+    for name in ("minimap2", "samtools", selected_stringtie, "gffread", "gffcompare"):
         if shutil.which(name) is None:
             raise RuntimeError(f"Missing required tool: {name}; update the Flora conda environment")
     out = args.output_dir.resolve()
@@ -507,24 +550,26 @@ def run(args):
                 "reference_container": REFERENCE_CONTAINER, "reference_withdrawn": REFERENCE_WITHDRAWN}
     for name, flag in [("minimap2", "--version"), ("samtools", "--version"),
                        ("stringtie", "--version"), ("gffread", "--version"), ("gffcompare", "--version")]:
-        p = subprocess.run([name, flag], capture_output=True, text=True, errors="replace")
+        command_name = selected_stringtie if name == "stringtie" else name
+        p = subprocess.run([command_name, flag], capture_output=True, text=True, errors="replace")
         versions[name] = ((p.stdout + p.stderr).strip().splitlines() or ["unknown"])[0]
+    stringtie_path = Path(shutil.which(selected_stringtie)).resolve()
+    versions["stringtie_executable"] = str(stringtie_path)
+    versions["stringtie_sha256"] = hashlib.sha256(stringtie_path.read_bytes()).hexdigest()
+    versions["stringtie_input_lookup_requested"] = os.environ.get("STRINGTIE_INPUT_LOOKUP", "default")
     (out / "tool_versions.json").write_text(json.dumps(versions, indent=2) + "\n")
     if versions["stringtie"] != "2.2.2":
         raise RuntimeError("The ONT 3.3.0 comparison backend requires StringTie 2.2.2; update the pinned Flora conda environment")
     log("ONT 3.3.0 was withdrawn upstream; using the recorded historical source commit for comparison")
     log(f"Behavior reference: {REFERENCE_VERSION}; {json.dumps(versions)}")
     jobs, worker_threads = execution_layout(args.threads, getattr(args, "jobs", 1))
-    scratch_parent = getattr(args, "temp_dir", None)
-    if scratch_parent is not None:
-        scratch_parent = Path(scratch_parent).resolve()
-        scratch_parent.mkdir(parents=True, exist_ok=True)
+    scratch_parent = Path(getattr(args, "temp_dir", None) or out / ".flora-scratch").resolve()
+    scratch_parent.mkdir(parents=True, exist_ok=True)
     log(f"Scheduling: requested_jobs={getattr(args, 'jobs', 1)} effective_jobs={jobs} total_threads={args.threads} threads_per_job={worker_threads}; auxiliary tool threads may be additional")
     with tempfile.TemporaryDirectory(prefix="ont-work-", dir=scratch_parent) as temp:
         root = Path(temp)
         log(f"Scratch directory: {root}; disposable databases are not resumable")
-        free_gib = shutil.disk_usage(root).free / (1024 ** 3)
-        log(f"Scratch free space: {free_gib:.1f} GiB; check capacity for large datasets")
+        log_disk_space("Scratch free space", root)
         genome = args.genome.resolve()
         if not Path(str(genome) + ".fai").exists():
             # Each invocation gets its own link/index, including reruns with a new reference.
@@ -574,6 +619,11 @@ def run(args):
                                                  args.transcript_assigns, args.mapq, args.threads,
                                                  feature_lookup=feature_lookup)
             (out / "assignment_summary.json").write_text(json.dumps(stats, indent=2) + "\n")
+        except (OSError, sqlite3.DatabaseError, subprocess.CalledProcessError):
+            log_disk_space("Scratch free space at failure", root)
+            log_disk_space("Output free space at failure", out)
+            log("Check filesystem space and quota. Use --ont-temp-dir in Flora to select a larger scratch filesystem.")
+            raise
         finally:
             db.close()
 
@@ -586,8 +636,9 @@ def main():
     p.add_argument("--threads", type=int, default=16)
     p.add_argument("--mapq", type=int, default=30)
     p.add_argument("--stringtie-opts", default="-c 2")
+    p.add_argument("--stringtie-bin", type=Path, help="Explicit isolated StringTie 2.2.2 executable; otherwise use PATH")
     p.add_argument("--save-intermediate", action="store_true")
-    p.add_argument("--temp-dir", type=Path, help="Scratch parent; defaults to the system temp directory/TMPDIR")
+    p.add_argument("--temp-dir", type=Path, help="Scratch parent; defaults to <output-dir>/.flora-scratch")
     p.add_argument("--jobs", type=int, default=1, help="Concurrent chromosome jobs sharing --threads; default: 1")
     args = p.parse_args()
     if args.threads < 1 or args.jobs < 1 or not 0 <= args.mapq <= 255:

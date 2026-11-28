@@ -58,12 +58,17 @@ From: flora-base-ubuntu22.04.sif
     test -x /opt/conda/envs/flora/bin/gffread
     test -x /opt/conda/envs/flora/bin/gffcompare
 
+    /opt/conda/bin/conda run --no-capture-output \
+        --prefix /opt/conda/envs/flora \
+        /opt/flora/flora setup-tools --tools-dir /opt/flora/tools
+
     /opt/conda/bin/conda clean -afy
     apt-get clean
     rm -rf /var/lib/apt/lists/*
 
 %environment
     export PATH=/opt/conda/envs/flora/bin:/opt/flora:/opt/conda/bin:$PATH
+    export FLORA_TOOLS_DIR=/opt/flora/tools
     export LANG=C.UTF-8
     export LC_ALL=C.UTF-8
     export PYTHONUTF8=1
@@ -104,3 +109,5 @@ From: flora-base-ubuntu22.04.sif
     /opt/conda/envs/flora/bin/stringtie --version
     /opt/conda/envs/flora/bin/gffread --version
     /opt/conda/envs/flora/bin/gffcompare --version
+    test "$(/opt/flora/tools/bin/bonefish --version)" = "bonefish 0.5.0" || exit 1
+    test "$(/opt/flora/tools/bin/stringtie-2.2.2-same-start --version)" = "2.2.2" || exit 1
